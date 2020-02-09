@@ -1,0 +1,4 @@
+include cotengra/kahypar_profiles/*.ini
+include LICENSE.md
+include README.md
+graft tests
