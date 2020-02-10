@@ -31,7 +31,8 @@ class ContractionCosts:
     __slots__ = ['size_dict', 'nslices', 'contractions',
                  '_size', '_flops', '_scores', 'original_flops']
 
-    def __init__(self, contractions, size_dict, nslices=1, original_flops=None):
+    def __init__(self, contractions, size_dict,
+                 nslices=1, original_flops=None):
         self.size_dict = size_dict
         self.nslices = nslices
         self.contractions = tuple(sorted(contractions, key=lambda c: -c.size))

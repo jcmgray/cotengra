@@ -5,7 +5,6 @@ import itertools
 import functools
 import collections
 
-
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn
 

@@ -155,7 +155,7 @@ def td_str_to_tree_decomposition(td_str):
 
     # The next line will look like "s td 28 25 95"
     # Currently unused
-    num_nodes, max_bag, num_vertices = map(int, line.split()[2:])
+    # num_nodes, max_bag, num_vertices = map(int, line.split()[2:])
 
     line = next(lines)
     while line[0] == 'b':

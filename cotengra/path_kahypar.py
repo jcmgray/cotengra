@@ -1,6 +1,5 @@
 import random
-import functools
-from os.path import expanduser, join, abspath, dirname
+from os.path import join, abspath, dirname
 
 from .core import HyperGraph, PartitionTreeBuilder
 from .hyper import register_hyper_function
