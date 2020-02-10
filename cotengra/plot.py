@@ -226,6 +226,7 @@ def plot_tree(
     iterations=500,
     edge_scale=1.0,
     node_scale=1.0,
+    highlight=(),
     edge_colormap='GnBu',
     node_colormap='YlOrRd',
     figsize=(5, 5),
@@ -243,12 +244,12 @@ def plot_tree(
     from matplotlib import pyplot as plt
 
     # draw the contraction tree
-    G = tree_to_networkx(tree)
+    G_tree = tree_to_networkx(tree)
     leaves = tree.get_leaves_ordered()
 
     # set the tree edge and node sizes
-    edge_weights = [edge_scale * 0.8 * G.edges[e]['size'] for e in G.edges]
-    node_weights = [node_scale * 8. * G.nodes[n]['flops'] for n in G.nodes]
+    edge_weights = [edge_scale * 0.8 * G_tree.edges[e]['size'] for e in G_tree.edges]
+    node_weights = [node_scale * 8. * G_tree.nodes[n]['flops'] for n in G_tree.nodes]
 
     # tree edge colors
     ew_range = min(edge_weights), max(edge_weights)
@@ -273,25 +274,31 @@ def plot_tree(
             for ix in inds:
                 ind_map[ix].append(nd)
         # turn into another nx graph
-        rG = nx.Graph()
+        G_tn = nx.Graph()
         any_hyper = False
         for ix, nodes in ind_map.items():
             width = math.log2(tree.size_dict[ix])
             # regular edge
             if len(nodes) == 2:
-                rG.add_edge(*nodes, ind=ix, width=width)
+                G_tn.add_edge(*nodes, ind=ix, width=width)
             # hyperedge
             else:
                 any_hyper = True
-                rG.add_node(ix)
+                G_tn.add_node(ix)
                 for nd in nodes:
-                    rG.add_edge(ix, nd, ind=ix, width=width)
-        edge_widths_raw = [rG.edges[e]['width'] for e in rG.edges]
+                    G_tn.add_edge(ix, nd, ind=ix, width=width)
+
+        edge_widths_raw = [G_tn.edges[e]['width'] for e in G_tn.edges]
+        edge_colors_raw = [
+            (0., 0., 0., raw_edge_alpha) if G_tn.edges[e]['ind'] not in highlight
+            else (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
+            for e in G_tn.edges
+        ]
 
     if layout == 'tent':
         # place raw graph first
-        pos = nx.kamada_kawai_layout(rG)
-        pos = nx.spring_layout(rG, k=k, iterations=iterations, pos=pos)
+        pos = nx.kamada_kawai_layout(G_tn)
+        pos = nx.spring_layout(G_tn, k=k, iterations=iterations, pos=pos)
         # 'flatten' a bit onto plane
         pos = {k: [v[0], v[1] / 2] for k, v in pos.items()}
         # place the top of the tree
@@ -300,7 +307,7 @@ def plot_tree(
         pos[tree.root] = (0, 1.0 * (xmax - xmin))
         # layout the tree nodes between bottom and top
         pos.update(nx.spring_layout(
-            G, fixed=pos, pos=pos, k=k, iterations=iterations
+            G_tree, fixed=pos, pos=pos, k=k, iterations=iterations
         ))
 
     elif layout == 'ring':
@@ -310,12 +317,12 @@ def plot_tree(
             pos[x] = (math.sin(2 * math.pi * i / tree.N),
                       math.cos(2 * math.pi * i / tree.N))
         # layout the remaining tree nodes
-        pos = nx.spring_layout(G, fixed=pos, pos=pos,
+        pos = nx.spring_layout(G_tree, fixed=pos, pos=pos,
                                k=k, iterations=iterations)
         # if there are hyperedges layout the faux-nodes
         if plot_raw_graph and any_hyper:
             fixed_raw = {k: v for k, v in pos.items() if k in leaves}
-            pos.update(nx.spring_layout(rG, fixed=fixed_raw, pos=fixed_raw,
+            pos.update(nx.spring_layout(G_tn, fixed=fixed_raw, pos=fixed_raw,
                                         k=k, iterations=iterations))
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
@@ -324,13 +331,13 @@ def plot_tree(
 
     if plot_raw_graph:
         nx.draw_networkx_edges(
-            rG, pos=pos, ax=ax,
+            G_tn, pos=pos, ax=ax,
             width=edge_widths_raw,
-            edge_color=(0., 0., 0., raw_edge_alpha))
+            edge_color=edge_colors_raw)
 
-    nx.draw_networkx_edges(G, pos=pos, ax=ax, width=edge_weights,
+    nx.draw_networkx_edges(G_tree, pos=pos, ax=ax, width=edge_weights,
                            edge_color=edge_colors, alpha=tree_alpha)
-    nx.draw_networkx_nodes(G, pos=pos, ax=ax, node_size=node_weights,
+    nx.draw_networkx_nodes(G_tree, pos=pos, ax=ax, node_size=node_weights,
                            node_color=node_colors, alpha=tree_alpha)
 
     if colorbars:

@@ -244,7 +244,7 @@ The slicing performed within the loop is a cheap single shot version, once you h
 * `ContractionTree.plot_ring` - tree plotted as sorted ring with chords for original TN
 * `ContractionTree.plot_tent` - tree plotted above original TN
 * `ContractionTree.plot_contractions` - relationship between SIZE and FLOPs for each contraction in a tree
-* `SliceFinder.plot_slicings` - explore relation between saved memory and increased cost of sliced indices
+* `SliceFinder.plot_slicings` - explore relation between saved memory and increased cost of sliced indices. You can also supply the sequence of sliced indices to the tree plotters as the ``highlight=`` kwarg to directly visualize where they are.
 
 <p align="left"><img src="https://imgur.com/idOvZSy.png" alt="cotengra" width="100%" height="100%"></p>
 
