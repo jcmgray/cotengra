@@ -150,8 +150,8 @@ class HyperOptimizer(RandomOptimizer):
 
     Parameters
     ----------
-    methods : None or sequence[str], optional
-        Which methods to use from ``list_hyper_functions()``.
+    methods : None or sequence[str] or str, optional
+        Which method(s) to use from ``list_hyper_functions()``.
     minimize : {'flops', 'size', 'combo' or callable}, optional
         How to score each trial, used to train the optimizer and rank the
         results. If a custom callable, it should take a ``trial`` dict as its
@@ -197,7 +197,13 @@ class HyperOptimizer(RandomOptimizer):
         self.method_choices = []
         self.param_choices = []
         self.scores = []
-        self._methods = DEFAULT_METHODS if methods is None else list(methods)
+
+        if methods is None:
+            self._methods = DEFAULT_METHODS
+        elif isinstance(methods, str):
+            self._methods = [methods]
+        else:
+            self._methods = list(methods)
 
         selector_opts = {} if selector_opts is None else dict(selector_opts)
         self._selector = getattr(btb.selection, selector)(self._methods,
