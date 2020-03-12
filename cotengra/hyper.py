@@ -410,11 +410,11 @@ class HyperOptimizer(RandomOptimizer):
         return trials
 
     def print_trials(self, sort=None):
-        header = "{:>11} {:>7} {:>7}     {}"
-        print(header.format('METHOD', 'SIZE', 'FLOPS', 'PARAMS'))
-        row = "{:>11} {:>7.2f} {:>7.2f}    {}"
+        header = "{:>11} {:>11} {:>11}     {}"
+        print(header.format('METHOD', 'log2[SIZE]', 'log10[FLOPS]', 'PARAMS'))
+        row = "{:>11} {:>11.2f} {:>11.2f}    {}"
         for choice, size, cost, params in self.get_trials(sort):
-            print(row.format(choice, log2(size), log2(cost), params))
+            print(row.format(choice, log2(size), log10(cost), params))
 
     def to_df(self):
         import pandas
