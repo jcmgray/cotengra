@@ -18,7 +18,7 @@ def plot_trials(
     if y is None:
         y = self.minimize
 
-    if y is 'score':
+    if y == 'score':
         best_y = min(self.scores)
         ylabel = 'Score'
     if y == 'size':

@@ -62,7 +62,7 @@ def kahypar_subgraph_find_membership(
 
     if profile is None:
         profile_mode = {'direct': 'k', 'recursive': 'r'}[mode]
-        profile = f"{objective}_{profile_mode}KaHyPar_dissertation.ini"
+        profile = f"{objective}_{profile_mode}KaHyPar_sea20.ini"
 
     context = kahypar.Context()
     context.loadINIconfiguration(join(KAHYPAR_PROFILE_DIR, profile))
