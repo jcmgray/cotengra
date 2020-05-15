@@ -639,14 +639,14 @@ class PartitionTreeBuilder:
                 continue
 
             # let the target number of communities depend on subgraph size
-            parts = max(2, int((subsize / tree.N)**parts_decay * parts))
+            sub_parts = max(int((subsize / tree.N)**parts_decay * parts), 2)
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
             membership = self.partition_fn(
                 subgraph, output, rand_size_dict,
                 weight_nodes=weight_nodes, weight_edges=weight_edges,
-                parts=parts, **kwargs,
+                parts=sub_parts, **kwargs,
             )
 
             # divide subgraph up e.g. if we enumerate the subgraph index sets

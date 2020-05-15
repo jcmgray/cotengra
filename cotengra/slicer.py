@@ -152,8 +152,9 @@ class ContractionCosts:
                                 original_flops=self.original_flops)
 
     def __repr__(self):
-        s = "<ContractionCosts(flops={:.3e}, size={:.3e}, nslices={:.3e})>"
-        return s.format(self.flops, self.size, self.nslices)
+        s = ("<ContractionCosts(flops={:.3e}, size={:.3e}, "
+             "nslices={:.3e}, overhead={:.3f})>")
+        return s.format(self.flops, self.size, self.nslices, self.overhead)
 
 
 class SliceFinder:

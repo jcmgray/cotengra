@@ -213,13 +213,17 @@ class HyperOptimizer(RandomOptimizer):
         kwargs.setdefault('max_repeats', 128)
         kwargs.setdefault('parallel', True)
 
-        if isinstance(kwargs['parallel'], int):
+        if (
+            not isinstance(kwargs['parallel'], bool) and
+            isinstance(kwargs['parallel'], int)
+        ):
             nworkers = kwargs['parallel']
         elif hasattr(kwargs['parallel'], '_max_workers'):
             nworkers = kwargs['parallel']._max_workers
-        elif kwargs['parallel'] is not False:
+        else:
             import psutil
             nworkers = psutil.cpu_count()
+
         kwargs.setdefault('pre_dispatch', 2 * nworkers)
 
         super().__init__(**kwargs)
