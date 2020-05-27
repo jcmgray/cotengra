@@ -306,8 +306,10 @@ def plot_tree(
         xmax = max(v[0] for v in pos.values())
         pos[tree.root] = (0, 1.0 * (xmax - xmin))
         # layout the tree nodes between bottom and top
+        # first need to filter out TN nodes not appearing in tree
+        tree_pos = {k: v for k, v in pos.items() if k in G_tree.nodes}
         pos.update(nx.spring_layout(
-            G_tree, fixed=pos, pos=pos, k=k, iterations=iterations
+            G_tree, fixed=tree_pos, pos=tree_pos, k=k, iterations=iterations
         ))
 
     elif layout == 'ring':
