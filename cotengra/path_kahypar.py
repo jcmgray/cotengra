@@ -85,12 +85,12 @@ register_hyper_function(
     space={
         'random_strength': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
         'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
-        'fuse_output_inds': {'type': 'BOOL'},
         'cutoff': {'type': 'INT', 'min': 10, 'max': 40},
         'imbalance': {'type': 'FLOAT', 'min': 0.01, 'max': 1.0},
         'parts': {'type': 'INT', 'min': 2, 'max': 16},
         'parts_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
+        # 'fuse_output_inds': {'type': 'BOOL'},
     },
 )

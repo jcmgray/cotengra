@@ -13,6 +13,10 @@ from .slicer import SliceFinder
 DEFAULT_METHODS = ['greedy']
 if importlib.util.find_spec('kahypar'):
     DEFAULT_METHODS += ['kahypar']
+else:
+    import warnings
+    warnings.warn("Couldn't import `kahypar` - skipping from default "
+                  "hyper optimizer.")
 
 
 _OPT_FNS = {}
@@ -190,6 +194,7 @@ class HyperOptimizer(RandomOptimizer):
         selector='UCB1',
         selector_opts=None,
         progbar=False,
+        training_steps=1000,
         **kwargs
     ):
         import btb.selection
@@ -209,6 +214,8 @@ class HyperOptimizer(RandomOptimizer):
         self._selector = getattr(btb.selection, selector)(self._methods,
                                                           **selector_opts)
         self._tuners = get_default_tuner_spaces(tuner)
+        self.training_steps = training_steps
+        self.best_compressed_score = float('inf')
 
         kwargs.setdefault('max_repeats', 128)
         kwargs.setdefault('parallel', True)
@@ -259,8 +266,11 @@ class HyperOptimizer(RandomOptimizer):
         return trial_fn, (inputs, output, size_dict)
 
     def compute_score(self, trial):
+        import random
         trial['score'] = self._score_fn(trial)**self.score_compression
-        return -trial['score']
+
+        # random smudge is for baytune/scikit-learn nan/inf bug
+        return - trial['score'] * random.gauss(1.0, 1e-6)
 
     def get_setting(self):
         import warnings
@@ -279,7 +289,15 @@ class HyperOptimizer(RandomOptimizer):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module='sklearn')
             compressed_score = self.compute_score(trial)
-            self._tuners[method].record(params, compressed_score)
+
+            # only fit tuners after the training epoch if the score is best
+            new_best = compressed_score < self.best_compressed_score
+            if new_best:
+                self.best_compress_score = compressed_score
+
+            if (len(self.scores) < self.training_steps) or new_best:
+                self._tuners[method].record(params, compressed_score)
+
             self.method_choices.append(method)
             self.param_choices.append(params)
 
