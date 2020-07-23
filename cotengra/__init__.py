@@ -1,73 +1,136 @@
 import functools
+import itertools
 
 from opt_einsum.paths import register_path_fn
 
-from . import path_kahypar
-from . import path_igraph
-
 from .core import ContractionTree
 from .slicer import SliceFinder, SlicedContractor
+
+from . import path_greedy
+from . import path_igraph
+from . import path_kahypar
+from . import path_labels
+
 from .path_quickbb import QuickBBOptimizer, optimize_quickbb
 from .path_flowcutter import FlowCutterOptimizer, optimize_flowcutter
-from .hyper import HyperOptimizer, hyper_optimize, list_hyper_functions
+
+from . import hyper_baytune
+from . import hyper_choco
+from . import hyper_nevergrad
+from . import hyper_skopt
+from . import hyper_random
+
+from .hyper import list_hyper_functions, HyperOptimizer, get_hyper_space
+
+
 from .plot import (
-    plot_trials,
-    plot_trials_alt,
+    plot_contractions,
+    plot_contractions_alt,
     plot_scatter,
     plot_scatter_alt,
+    plot_slicings,
+    plot_slicings_alt,
     plot_tree,
     plot_tree_ring,
     plot_tree_tent,
-    plot_contractions,
-    plot_contractions_alt,
-    plot_slicings,
-    plot_slicings_alt,
+    plot_trials,
+    plot_trials_alt,
 )
 
-UniformOptimizer = functools.partial(HyperOptimizer, tuner='Uniform')
-"""Does no gaussian process tuning by default, just randomly samples.
+
+UniformOptimizer = functools.partial(HyperOptimizer, optlib='random')
+"""Does no gaussian process tuning by default, just randomly samples - requires
+no optimization library.
 """
 
-UniformGreedy = functools.partial(UniformOptimizer, methods=['greedy'])
-UniformKaHyPar = functools.partial(UniformOptimizer, methods=['kahypar'])
-UniformBetweenness = functools.partial(UniformOptimizer,
-                                       methods=['betweenness'])
-UniformSpinglass = functools.partial(UniformOptimizer, methods=['spinglass'])
+QuasiRandOptimizer = functools.partial(
+    HyperOptimizer, optlib='chocolate', sampler='QuasiRandom')
+"""Does no gaussian process tuning by default, just randomly samples but in a
+more 'even' way than purely random - requires ``chocolate``.
+"""
 
 
 __all__ = (
-    "path_kahypar",
-    "path_igraph",
     "ContractionTree",
-    "SliceFinder",
-    "SlicedContractor",
-    "QuickBBOptimizer",
-    "optimize_quickbb",
     "FlowCutterOptimizer",
-    "optimize_flowcutter",
-    "HyperOptimizer",
+    "get_hyper_space",
+    "hyper_baytune",
+    "hyper_choco",
+    "hyper_nevergrad",
     "hyper_optimize",
+    "hyper_random",
+    "hyper_skopt",
+    "HyperOptimizer",
     "list_hyper_functions",
-    "UniformOptimizer",
-    "UniformGreedy",
-    "UniformKaHyPar",
-    "UniformBetweenness",
-    "UniformSpinglass",
-    "plot_trials",
-    "plot_trials_alt",
+    "optimize_flowcutter",
+    "optimize_quickbb",
+    "path_greedy",
+    "path_igraph",
+    "path_kahypar",
+    "path_labels",
+    "plot_contractions",
+    "plot_contractions_alt",
     "plot_scatter",
     "plot_scatter_alt",
+    "plot_slicings",
+    "plot_slicings_alt",
     "plot_tree",
     "plot_tree_ring",
     "plot_tree_tent",
-    "plot_contractions",
-    "plot_contractions_alt",
-    "plot_slicings",
-    "plot_slicings_alt",
+    "plot_trials",
+    "plot_trials_alt",
+    "QuasiRandOptimizer",
+    "QuickBBOptimizer",
+    "SlicedContractor",
+    "SliceFinder",
+    "UniformOptimizer",
 )
 
 
 # add some defaults to opt_einsum
+
+def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
+    optimizer = HyperOptimizer(**opts)
+    return optimizer(inputs, output, size_dict, memory_limit)
+
+
+named_pars = ('', '-par', '-seq')
+named_meths = ('g', 'k', 'l', 'gk', 'gl')
+named_reps = (32, 64, 128, 256)
+named_reconfs = ('', '-rf', '-rw', '-rc')
+named_progbars = ('', '-v')
+
+for par, meths, rep, rec, progbar in itertools.product(
+    named_pars, named_meths, named_reps, named_reconfs, named_progbars
+):
+    methods = ()
+    if 'g' in meths:
+        methods += ('greedy',)
+    if 'k' in meths:
+        methods += ('kahypar',)
+    if 'l' in meths:
+        methods += ('labels',)
+
+    parallel = {'': 'auto', '-seq': False, '-par': True}[par]
+    reconf_opts = {
+        '': None,
+        '-rf': dict(minimize='flops'),
+        '-rw': dict(minimize='write'),
+        '-rc': dict(minimize='combo'),
+    }[rec]
+
+    register_path_fn(
+        f'hyp-{meths}{rec}{par}-{rep}{progbar}',
+        functools.partial(
+            hyper_optimize,
+            methods=methods,
+            parallel=parallel,
+            reconf_opts=reconf_opts,
+            max_repeats=rep,
+            progbar=bool(progbar),
+        )
+    )
+
 
 register_path_fn(
     'hyper',
@@ -80,6 +143,10 @@ register_path_fn(
 register_path_fn(
     'hyper-greedy',
     functools.partial(hyper_optimize, methods=['greedy']),
+)
+register_path_fn(
+    'hyper-labels',
+    functools.partial(hyper_optimize, methods=['labels']),
 )
 register_path_fn(
     'hyper-kahypar',
@@ -117,17 +184,3 @@ register_path_fn(
     'quickbb-60',
     functools.partial(optimize_quickbb, max_time=60),
 )
-
-
-# monkey patch plot methods
-
-HyperOptimizer.plot_trials = plot_trials
-HyperOptimizer.plot_trials_alt = plot_trials_alt
-HyperOptimizer.plot_scatter = plot_scatter
-HyperOptimizer.plot_scatter_alt = plot_scatter_alt
-ContractionTree.plot_ring = plot_tree_ring
-ContractionTree.plot_tent = plot_tree_tent
-ContractionTree.plot_contractions = plot_contractions
-ContractionTree.plot_contractions_alt = plot_contractions_alt
-SliceFinder.plot_slicings = plot_slicings
-SliceFinder.plot_slicings_alt = plot_slicings_alt

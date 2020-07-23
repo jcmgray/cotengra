@@ -27,11 +27,14 @@ def plot_trials(
     if y == 'flops':
         best_y = math.log10(self.best[y])
         ylabel = 'log10[FLOPS]'
+    if y == 'write':
+        best_y = math.log10(self.best[y])
+        ylabel = 'log10[WRITE]'
     if y == 'combo':
         best_y = math.log2(self.best['flops']) + math.log2(self.best['size'])
-        ylabel = 'log2[FLOPS] + log2[SIZE]'
-        df['combo'] = [math.log2(s) + math.log2(f)
-                       for s, f in zip(self.sizes, self.costs)]
+        ylabel = 'log2[FLOPS] + log2[WRITE]'
+        df['combo'] = [math.log2(f) + math.log2(m)
+                       for f, m in zip(self.costs_flops, self.WRITEe)]
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     ax.axhline(best_y, color=(0, 0, 0, 0.1), linestyle=':')
@@ -116,8 +119,17 @@ def plot_trials_alt(self, y=None, width=800, height=300):
     ).interactive()
 
 
+_scatter_labels = {
+    'size': 'log2[SIZE]',
+    'flops': 'log10[FLOPS]',
+    'write': 'log10[WRITE]',
+}
+
+
 def plot_scatter(
     self,
+    x='size',
+    y='flops',
     hue='method',
     style='method',
     color_scheme='Set2',
@@ -130,16 +142,16 @@ def plot_scatter(
     df = self.to_df()
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     sns.scatterplot(
-        x='size',
-        y='flops',
+        x=x,
+        y=y,
         hue=hue,
         style=style,
         data=df,
         palette=color_scheme,
     )
 
-    ax.set(ylabel='log10[FLOPS]', xlabel='log2[SIZE]',
-           xlim=(min(df['size'] - 1), max(df['size'] + 1)))
+    ax.set(ylabel=_scatter_labels[y], xlabel=_scatter_labels[x],
+           xlim=(min(df[x] - 1), max(df[x] + 1)))
     ax.grid(True, c=(0.98, 0.98, 0.98))
     ax.set_axisbelow(True)
 
@@ -161,6 +173,8 @@ def plot_scatter(
 
 def plot_scatter_alt(
     self,
+    x='size',
+    y='flops',
     color='run:Q',
     color_scheme='purplebluegreen',
     shape='method:N',
@@ -176,10 +190,8 @@ def plot_scatter_alt(
         alt.Chart(df)
         .mark_point()
         .encode(
-            x=alt.X('size:Q', title='log2[SIZE]',
-                    scale=alt.Scale(zero=False)),
-            y=alt.Y('flops:Q', title='log10[FLOPS]',
-                    scale=alt.Scale(zero=False)),
+            x=alt.X(x, title=_scatter_labels[x], scale=alt.Scale(zero=False)),
+            y=alt.Y(y, title=_scatter_labels[y], scale=alt.Scale(zero=False)),
             size=alt.Size(
                 'random_strength:Q',
                 scale=alt.Scale(range=[50, 150], type='log'),
@@ -248,8 +260,10 @@ def plot_tree(
     leaves = tree.get_leaves_ordered()
 
     # set the tree edge and node sizes
-    edge_weights = [edge_scale * 0.8 * G_tree.edges[e]['size'] for e in G_tree.edges]
-    node_weights = [node_scale * 8. * G_tree.nodes[n]['flops'] for n in G_tree.nodes]
+    edge_weights = [edge_scale * 0.8 * G_tree.edges[e]['size']
+                    for e in G_tree.edges]
+    node_weights = [node_scale * 8. * G_tree.nodes[n]['flops']
+                    for n in G_tree.nodes]
 
     # tree edge colors
     ew_range = min(edge_weights), max(edge_weights)
@@ -270,7 +284,7 @@ def plot_tree(
         # collect which nodes each edge connects
         ind_map = collections.defaultdict(list)
         for nd in leaves:
-            inds, = nd
+            inds, = tree.node_to_terms(nd)
             for ix in inds:
                 ind_map[ix].append(nd)
         # turn into another nx graph
@@ -290,7 +304,8 @@ def plot_tree(
 
         edge_widths_raw = [G_tn.edges[e]['width'] for e in G_tn.edges]
         edge_colors_raw = [
-            (0., 0., 0., raw_edge_alpha) if G_tn.edges[e]['ind'] not in highlight
+            (0., 0., 0., raw_edge_alpha)
+            if G_tn.edges[e]['ind'] not in highlight
             else (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
             for e in G_tn.edges
         ]
@@ -517,13 +532,14 @@ def slicefinder_to_df(slice_finder, relative_flops=False):
         newflops = [float(x.total_flops) /
                     float(slice_finder.cost0.total_flops) for x in all_ccs]
     else:
-        newflops = [x.total_flops for x in all_ccs]
-    numslices = [x.nslices for x in all_ccs]
+        newflops = [math.log10(x.total_flops) for x in all_ccs]
+
+    numslices = [math.log2(x.nslices) for x in all_ccs]
 
     return pd.DataFrame({
-        'size': maxsizes,
-        'flops': newflops,
-        'numslices': numslices,
+        'log2[SIZE]': maxsizes,
+        'log10[FLOPS]': newflops,
+        'log2[NSLICES]': numslices,
     })
 
 
@@ -538,17 +554,13 @@ def plot_slicings(
     import matplotlib as mpl
     from matplotlib import pyplot as plt
     import seaborn as sns
-    import numpy as np
     import warnings
 
     df = slicefinder_to_df(slice_finder, relative_flops=relative_flops)
 
-    df['log10[FLOPS]'] = np.log10(df['flops'])
-    df['log2[NSLICES]'] = np.log2(df['numslices'])
-
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     sns.scatterplot(
-        x='size',
+        x='log2[SIZE]',
         y='log10[FLOPS]',
         hue='log2[NSLICES]',
         palette=color_scheme,
@@ -556,14 +568,12 @@ def plot_slicings(
         alpha=point_opacity,
     )
 
-    ax.set(xlim=(max(df['size'] + 1), min(df['size'] - 1)),
-           xlabel='log2[SIZE]')
+    ax.set(xlim=(max(df['log2[SIZE]'] + 1), min(df['log2[SIZE]'] - 1)))
     ax.grid(True, c=(0.98, 0.98, 0.98))
     ax.set_axisbelow(True)
     ax.get_legend().remove()
 
     ax_cb = fig.add_axes([1.02, 0.25, 0.02, 0.55])
-    ax_cb.set(title='log2[NSLICES]')
     nm = mpl.colors.Normalize(vmin=df['log2[NSLICES]'].min(),
                               vmax=df['log2[NSLICES]'].max())
     cm = getattr(mpl.cm, color_scheme)
@@ -587,9 +597,13 @@ def plot_slicings_alt(
 
     df = slicefinder_to_df(slice_finder, relative_flops=relative_flops)
 
+    df['size'] = 2**df['log2[SIZE]']
+    df['flops'] = 10**df['log10[FLOPS]']
+    df['numslices'] = 2**df['log2[NSLICES]']
+
     return alt.Chart(df).mark_point().encode(
         x=alt.X('size:Q', sort='descending',
-                scale=alt.Scale(type='linear', zero=False)),
+                scale=alt.Scale(type='log', zero=False)),
         y=alt.Y('flops:Q', scale=alt.Scale(type='log')),
         color=alt.Color('numslices:Q',
                         scale=alt.Scale(type='log', scheme=color_scheme),

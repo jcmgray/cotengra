@@ -43,7 +43,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 import copy
-import networkx as nx
 
 
 class TreeDecomposition:
@@ -56,6 +55,7 @@ class TreeDecomposition:
         A tree decomposition consisting of a tree of nodes and a lookup table
         mapping decomposition nodes to vertices in the original graph.
         """
+        import networkx as nx
         self.tree = nx.Graph()
         self.bags = {}
 

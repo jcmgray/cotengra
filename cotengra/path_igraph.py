@@ -9,7 +9,7 @@ from .hyper import register_hyper_function
 
 def oe_to_igraph(inputs, output, size_dict,
                  weight_nodes='constant', weight_edges='log'):
-    """Convert opt_einsum format to networkx graph incl. weights.
+    """Convert opt_einsum format to igraph graph incl. weights.
     """
     import igraph as ig
 
@@ -117,12 +117,8 @@ def trial_igraph_dendrogram(
         raise ValueError("Invalid method: '{}'.".format(method))
 
     ssa_path = dendrogram.merges
-    tree = ContractionTree.from_path(inputs, output, size_dict,
+    return ContractionTree.from_path(inputs, output, size_dict,
                                      ssa_path=ssa_path)
-
-    return {'tree': tree, 'ssa_path': tree.ssa_path(),
-            'flops': tree.total_flops(), 'size': tree.max_size()}
-
 
 # ----------------------------- HYPER REGISTERS ----------------------------- #
 

@@ -112,10 +112,7 @@ def optimize_quickbb(inputs, output, size_dict, memory_limit=None,
 
 def trial_quickbb(inputs, output, size_dict, max_time=10, seed=None):
     opt = QuickBBOptimizer(max_time=max_time, seed=seed)
-    tree = opt.build_tree(inputs, output, size_dict)
-
-    return {'tree': tree, 'ssa_path': tree.ssa_path(),
-            'flops': tree.total_flops(), 'size': tree.max_size()}
+    return opt.build_tree(inputs, output, size_dict)
 
 
 register_hyper_function(

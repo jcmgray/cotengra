@@ -43,7 +43,7 @@ class FlowCutterOptimizer(PathOptimizer):
         self.out = process.stdout.read().decode('utf-8')
 
         # self reported treewidth
-        self.treewidth = int(re.findall('s td (\d+) (\d+)', self.out)[-1][1])
+        self.treewidth = int(re.findall(r's td (\d+) (\d+)', self.out)[-1][1])
 
     def compute_edge_path(self, lg):
         td = td_str_to_tree_decomposition(self.out)
@@ -85,10 +85,7 @@ def optimize_flowcutter(inputs, output, size_dict, memory_limit=None,
 
 def trial_flowcutter(inputs, output, size_dict, max_time=10, seed=None):
     opt = FlowCutterOptimizer(max_time=max_time, seed=seed)
-    tree = opt.build_tree(inputs, output, size_dict)
-
-    return {'tree': tree, 'ssa_path': tree.ssa_path(),
-            'flops': tree.total_flops(), 'size': tree.max_size()}
+    return opt.build_tree(inputs, output, size_dict)
 
 
 register_hyper_function(

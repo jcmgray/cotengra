@@ -1,4 +1,5 @@
 import subprocess
+import functools
 from collections import defaultdict
 
 import pytest
@@ -52,10 +53,13 @@ def contraction_20_5():
 
 
 @pytest.mark.parametrize(('opt', 'requires'), [
-    (ctg.UniformGreedy, ''),
-    (ctg.UniformBetweenness, 'igraph'),
-    (ctg.UniformSpinglass, 'igraph'),
-    (ctg.UniformKaHyPar, 'kahypar'),
+    (functools.partial(ctg.UniformOptimizer, methods='greedy'), ''),
+    (functools.partial(ctg.UniformOptimizer, methods='labels'), ''),
+    (functools.partial(ctg.UniformOptimizer, methods='kahypar'), 'kahypar'),
+    (functools.partial(ctg.UniformOptimizer, methods='betweenness'), 'igraph'),
+    (functools.partial(ctg.UniformOptimizer, methods='labelprop'), 'igraph'),
+    (functools.partial(ctg.UniformOptimizer, methods='spinglass'), 'igraph'),
+    (functools.partial(ctg.UniformOptimizer, methods='walktrap'), 'igraph'),
 ])
 def test_basic(contraction_20_5, opt, requires):
 
@@ -69,18 +73,27 @@ def test_basic(contraction_20_5, opt, requires):
     assert path_info.speedup > 1
 
 
-def test_hyper(contraction_20_5):
-    pytest.importorskip('btb')
-    pytest.importorskip('psutil')
+@pytest.mark.parametrize(('optlib', 'requires'), [
+    ('baytune', 'btb'),
+    ('chocolate', 'chocolate'),
+    ('nevergrad', 'nevergrad'),
+    ('skopt', 'skopt'),
+])
+@pytest.mark.parametrize('parallel', [False, True])
+def test_hyper(contraction_20_5, optlib, requires, parallel):
     pytest.importorskip('kahypar')
+    pytest.importorskip(requires)
+    if parallel:
+        pytest.importorskip('distributed')
+
     eq, _, _, arrays = contraction_20_5
     optimizer = ctg.HyperOptimizer(
-        max_repeats=32,
-        parallel=False,
+        max_repeats=16, parallel=parallel, optlib=optlib,
     )
     _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
     assert path_info.speedup > 1
     assert {x[0] for x in optimizer.get_trials()} == {'greedy', 'kahypar'}
+    optimizer.print_trials()
 
 
 @pytest.mark.parametrize("optimize", [
@@ -94,3 +107,73 @@ def test_binaries(contraction_20_5, optimize):
     optimizer = optimize(max_time=1)
     _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
     assert path_info.speedup > 1
+
+
+@pytest.mark.parametrize('parallel', [False, True])
+def test_hyper_slicer(parallel):
+    if parallel:
+        pytest.importorskip('distributed')
+
+    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    optimizer = ctg.HyperOptimizer(
+        max_repeats=16, parallel=parallel, optlib='random',
+        slicing_opts={'target_slices': 1000}, progbar=True,
+    )
+    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
+    assert optimizer.best['tree'].multiplicity >= 1000
+    assert optimizer.best['flops'] > optimizer.best['original_flops']
+
+
+@pytest.mark.parametrize('parallel', [False, True])
+def test_hyper_reconf(parallel):
+    if parallel:
+        pytest.importorskip('distributed')
+
+    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    optimizer = ctg.HyperOptimizer(
+        max_repeats=16, parallel=parallel, optlib='random',
+        reconf_opts={'subtree_size': 6}, progbar=True,
+    )
+    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
+    assert optimizer.best['flops'] < optimizer.best['original_flops']
+
+
+@pytest.mark.parametrize('parallel', [False, True])
+def test_hyper_slicer_reconf(parallel):
+    if parallel:
+        pytest.importorskip('distributed')
+
+    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    optimizer = ctg.HyperOptimizer(
+        max_repeats=16, parallel=parallel, optlib='random',
+        slicing_reconf_opts={
+            'target_size': 2**19,
+            'reconf_opts': {
+                'subtree_size': 6,
+            },
+        }, progbar=True,
+    )
+    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
+    assert optimizer.best['tree'].max_size() <= 2**19
+
+
+def test_insane_nested():
+    pytest.importorskip('distributed')
+
+    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    optimizer = ctg.HyperOptimizer(
+        max_repeats=16, parallel=True, optlib='random', progbar=True,
+        slicing_reconf_opts={
+            'target_size': 2**20,
+            'forested': True,
+            'max_repeats': 8,
+            'num_trees': 2,
+            'reconf_opts': {
+                'forested': True,
+                'num_trees': 2,
+                'subtree_size': 6,
+            }
+        }
+    )
+    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
+    assert optimizer.best['tree'].max_size() <= 2**20

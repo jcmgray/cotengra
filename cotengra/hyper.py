@@ -1,26 +1,52 @@
 import time
-import functools
+import warnings
+
 import importlib
 from math import log2, log10
 
-from opt_einsum.paths import ssa_greedy_optimize
-from opt_einsum.path_random import thermal_chooser, RandomOptimizer
+from opt_einsum.paths import PathOptimizer
 
-from .core import jitter_dict, ContractionTree
-from .slicer import SliceFinder
+from .core import parse_parallel_arg, get_n_workers, get_score_fn
+from .plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 
 
 DEFAULT_METHODS = ['greedy']
 if importlib.util.find_spec('kahypar'):
     DEFAULT_METHODS += ['kahypar']
 else:
-    import warnings
+    DEFAULT_METHODS += ['labels']
     warnings.warn("Couldn't import `kahypar` - skipping from default "
-                  "hyper optimizer.")
+                  "hyper optimizer and using basic `labels` method instead.")
 
 
-_OPT_FNS = {}
+if importlib.util.find_spec('btb'):
+    DEFAULT_OPTLIB = 'baytune'
+elif importlib.util.find_spec('chocolate'):
+    DEFAULT_OPTLIB = 'chocolate'
+elif importlib.util.find_spec('skopt'):
+    DEFAULT_OPTLIB = 'skopt'
+elif importlib.util.find_spec('nevergrad'):
+    DEFAULT_OPTLIB = 'nevergrad'
+else:
+    DEFAULT_OPTLIB = 'random'
+    warnings.warn("Couldn't find `baytune (btb)`, `chocolate`, `skopt` or "
+                  "`nevergrad` so will use completely random sampling in place"
+                  " of hyper-optimization.")
+
+
+_PATH_FNS = {}
+_OPTLIB_FNS = {}
 _HYPER_SEARCH_SPACE = {}
+
+
+def get_hyper_space():
+    global _HYPER_SEARCH_SPACE
+    return _HYPER_SEARCH_SPACE
+
+
+def register_hyper_optlib(name, init_optimizers, get_setting, report_result):
+    global _OPTLIB_FNS
+    _OPTLIB_FNS[name] = (init_optimizers, get_setting, report_result)
 
 
 def register_hyper_function(name, ssa_func, space):
@@ -31,114 +57,111 @@ def register_hyper_function(name, ssa_func, space):
     name : str
         The name to call the method.
     ssa_func : callable
-        The raw ``opt_einsum`` style function that returns a 'ssa_path'.
+        The raw ``opt_einsum`` style function that returns a 'ContractionTree'.
     space : dict[str, dict]
         The space of hyper-parameters to search.
     """
-    global _OPT_FNS
+    global _PATH_FNS
     global _HYPER_SEARCH_SPACE
-    _OPT_FNS[name] = ssa_func
+    _PATH_FNS[name] = ssa_func
     _HYPER_SEARCH_SPACE[name] = space
 
 
 def list_hyper_functions():
     """Return a list of currently registered hyper contraction finders.
     """
-    global _OPT_FNS
-    return sorted(_OPT_FNS)
+    global _PATH_FNS
+    return sorted(_PATH_FNS)
 
 
-def find_path(method, *args, **kwargs):
-    return _OPT_FNS[method](*args, **kwargs)
-
-
-BTB_TYPE_TO_HYPERPARAM = {
-    'BOOL': 'BooleanHyperParam',
-    'INT': 'IntHyperParam',
-    'INT_CAT': 'CategoricalHyperParam',
-    'STRING': 'CategoricalHyperParam',
-    'FLOAT': 'FloatHyperParam',
-    'FLOAT_EXP': 'FloatHyperParam',  # no more EXP support in baytune?
-}
-
-
-def key_to_hyperparameter(method, name, k):
-    from btb.tuning import hyperparams
-
-    hp = getattr(hyperparams, BTB_TYPE_TO_HYPERPARAM[k['type']])
-
-    if k['type'] in ('BOOL',):
-        return hp()
-    elif k['type'] in ('INT_CAT', 'STRING'):
-        return hp(_HYPER_SEARCH_SPACE[method][name]['options'])
-    else:
-        return hp(_HYPER_SEARCH_SPACE[method][name]['min'],
-                  _HYPER_SEARCH_SPACE[method][name]['max'],
-                  include_min=True, include_max=True)
-
-
-def get_default_tuner_spaces(tuner='GP'):
-    import btb
-    from btb.tuning import Tunable
-
-    # for compatability
-    if 'Tuner' not in tuner:
-        tuner += 'Tuner'
-
-    tuner_fn = getattr(btb.tuning.tuners, tuner)
-
+def find_path(*args, **kwargs):
+    method = kwargs.pop('method')
+    tree = _PATH_FNS[method](*args, **kwargs)
     return {
-        method: tuner_fn(Tunable({
-            name: key_to_hyperparameter(method, name, k)
-            for name, k in _HYPER_SEARCH_SPACE[method].items()
-        }))
-        for method in _HYPER_SEARCH_SPACE
+        'tree': tree,
+        'flops': tree.total_flops(),
+        'write': tree.total_write(),
+        'size': tree.max_size(),
     }
-
-
-def score_flops(trial):
-    return log2(trial['flops']) + log2(trial['size']) / 1000
-
-
-def score_size(trial):
-    return log2(trial['flops']) / 1000 + log2(trial['size'])
-
-
-def score_combo(trial):
-    return log2(trial['flops']) + log2(trial['size'])
-
-
-_SCORE_FUNCTIONS = {
-    'flops': score_flops,
-    'size': score_size,
-    'combo': score_combo,
-}
 
 
 class SlicedTrialFn:
 
     def __init__(self, trial_fn, **opts):
         self.trial_fn = trial_fn
-
-        # perform very cheap, single, low temperature trial slicing
-        opts.setdefault('max_repeats', 1)
-        opts.setdefault('temperature', 0.0)
-
-        self.max_repeats = opts.pop('max_repeats')
         self.opts = opts
 
     def __call__(self, *args, **kwargs):
         trial = self.trial_fn(*args, **kwargs)
+        tree = trial['tree']
 
-        slicefinder = SliceFinder(trial['tree'], **self.opts)
-        sliced, costs = slicefinder.search(max_repeats=self.max_repeats)
+        trial.setdefault('original_flops', tree.total_flops())
+        trial.setdefault('original_write', tree.total_write())
+        trial.setdefault('original_size', tree.max_size())
 
-        trial['original_flops'] = trial['flops']
-        trial['original_size'] = trial['size']
-        trial['flops'] = costs.total_flops
-        trial['size'] = costs.size
-        trial['sliced'] = sliced
-        trial['nslices'] = costs.nslices
+        tree.slice_(**self.opts)
+
+        trial['flops'] = tree.total_flops()
+        trial['write'] = tree.total_write()
+        trial['size'] = tree.max_size()
+
+        return trial
+
+
+class ReconfTrialFn:
+
+    def __init__(self, trial_fn, forested=False, parallel=False, **opts):
+        self.trial_fn = trial_fn
+        self.forested = forested
+        self.parallel = parallel
+        self.opts = opts
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+        tree = trial['tree']
+
+        trial.setdefault('original_flops', tree.total_flops())
+        trial.setdefault('original_write', tree.total_write())
+        trial.setdefault('original_size', tree.max_size())
+
+        if self.forested:
+            tree.subtree_reconfigure_forest_(
+                parallel=self.parallel, **self.opts)
+        else:
+            tree.subtree_reconfigure_(**self.opts)
+
+        trial['flops'] = tree.total_flops()
+        trial['write'] = tree.total_write()
+        trial['size'] = tree.max_size()
+
+        return trial
+
+
+class SlicedReconfTrialFn:
+
+    def __init__(self, trial_fn, forested=False, parallel=False, **opts):
+        self.trial_fn = trial_fn
+        self.forested = forested
+        self.parallel = parallel
+        self.opts = opts
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+        tree = trial['tree']
+
+        trial.setdefault('original_flops', tree.total_flops())
+        trial.setdefault('original_write', tree.total_write())
+        trial.setdefault('original_size', tree.max_size())
+
+        if self.forested:
+            tree.slice_and_reconfigure_forest_(
+                parallel=self.parallel, **self.opts)
+        else:
+            tree.slice_and_reconfigure_(**self.opts)
+
+        trial['flops'] = tree.total_flops()
+        trial['write'] = tree.total_write()
+        trial['size'] = tree.max_size()
 
         return trial
 
@@ -148,7 +171,7 @@ def progress_description(best):
            f"log10[FLOPs]: {log10(best['flops']):.2f}")
 
 
-class HyperOptimizer(RandomOptimizer):
+class HyperOptimizer(PathOptimizer):
     """Users Bayesian optimization to hyper-optimizer the settings used to
     optimize the path.
 
@@ -156,52 +179,76 @@ class HyperOptimizer(RandomOptimizer):
     ----------
     methods : None or sequence[str] or str, optional
         Which method(s) to use from ``list_hyper_functions()``.
-    minimize : {'flops', 'size', 'combo' or callable}, optional
+    minimize : {'flops', 'write', 'size', 'combo' or callable}, optional
         How to score each trial, used to train the optimizer and rank the
         results. If a custom callable, it should take a ``trial`` dict as its
         argument and return a single float.
-    score_compression : float, optional
-        Raise scores to this power in order to compress or accentuate the
-        differences. The lower this is, the more the selector will sample from
-        various optimizers rather than quickly specializing.
+    max_repeats : int, optional
+        The maximum number of trial contraction trees to generate.
+        Default: 128.
+    max_time : None or float, optional
+        The maximum amount of time to run for. Use ``None`` for no limit.
+    parallel : 'auto', False, True, int, or distributed.Client
+        Whether to parallelize the search.
     slicing_opts : dict, optional
         If supplied, once a trial contraction path is found, try slicing with
         the given options, and then update the flops and size of the trial with
         the sliced versions.
-    tuner : str, optional
-        Which ``btb`` parameter fitter to use - default ``'GP'`` means gaussian
-        process. Other options include ``'Uniform'`` and ``'GPEi'``.
-        See https://hdi-project.github.io/BTB/api/btb.tuning.tuners.html.
-    selector : str, optional
-        Which ``btb`` selector to use - default 'UCB1'.
-        See https://hdi-project.github.io/BTB/api/btb.selection.html.
-    selector_opts : dict, optional
-        Options to supply to ``btb``.
+    slicing_reconf_opts : dict, optional
+        If supplied, once a trial contraction path is found, try slicing
+        interleaved with subtree reconfiguation with the given options, and
+        then update the flops and size of the trial with the sliced and
+        reconfigured versions.
+    reconf_opts : dict, optional
+        If supplied, once a trial contraction path is found, try subtree
+        reconfiguation with the given options, and then update the flops and
+        size of the trial with the reconfigured versions.
+    optlib : {'baytune', 'nevergrad', 'chocolate', 'skopt'}, optional
+        Which optimizer to sample and train with.
+    space : dict, optional
+        The hyper space to search, see ``get_hyper_space`` for the default.
+    score_compression : float, optional
+        Raise scores to this power in order to compress or accentuate the
+        differences. The lower this is, the more the selector will sample from
+        various optimizers rather than quickly specializing.
+    max_training_steps : int, optional
+        The maximum number of trials to train the optimizer with. Setting this
+        can be helpful when the optimizer itself becomes costly to train (e.g.
+        for Gaussian Processes).
     progbar : bool, optional
         Show live progress of the best contraction found so far.
-    kwargs
-        Supplied to :class:`opt_einsum.RandomOptimizer`, valid options include
-        ``max_repeats``, ``max_time`` and ``parallel``.
+    optlib_opts
+        Supplied to the hyper-optimizer library initialization.
     """
 
     def __init__(
         self,
         methods=None,
         minimize='flops',
-        score_compression=0.75,
+        max_repeats=128,
+        max_time=None,
+        parallel='auto',
         slicing_opts=None,
-        tuner='GP',
-        selector='UCB1',
-        selector_opts=None,
+        slicing_reconf_opts=None,
+        reconf_opts=None,
+        optlib=DEFAULT_OPTLIB,
+        space=None,
+        score_compression=0.75,
+        max_training_steps=None,
         progbar=False,
-        training_steps=1000,
-        **kwargs
+        **optlib_opts
     ):
-        import btb.selection
+        self.max_repeats = max_repeats
+        self._repeats_start = 0
+        self.max_time = max_time
+        self.parallel = parallel
 
         self.method_choices = []
         self.param_choices = []
         self.scores = []
+        self.costs_flops = []
+        self.costs_write = []
+        self.costs_size = []
 
         if methods is None:
             self._methods = DEFAULT_METHODS
@@ -210,41 +257,32 @@ class HyperOptimizer(RandomOptimizer):
         else:
             self._methods = list(methods)
 
-        selector_opts = {} if selector_opts is None else dict(selector_opts)
-        self._selector = getattr(btb.selection, selector)(self._methods,
-                                                          **selector_opts)
-        self._tuners = get_default_tuner_spaces(tuner)
-        self.training_steps = training_steps
-        self.best_compressed_score = float('inf')
-
-        kwargs.setdefault('max_repeats', 128)
-        kwargs.setdefault('parallel', True)
-
-        if (
-            not isinstance(kwargs['parallel'], bool) and
-            isinstance(kwargs['parallel'], int)
-        ):
-            nworkers = kwargs['parallel']
-        elif hasattr(kwargs['parallel'], '_max_workers'):
-            nworkers = kwargs['parallel']._max_workers
-        else:
-            import psutil
-            nworkers = psutil.cpu_count()
-
-        kwargs.setdefault('pre_dispatch', 2 * nworkers)
-
-        super().__init__(**kwargs)
-        self.minimize = minimize
         # which score to feed to the hyper optimizer
+        self.minimize = minimize
         self.score_compression = score_compression
+        self.best_score = float('inf')
+        self.max_training_steps = max_training_steps
+
         inf = float('inf')
         self.best = {'score': inf, 'size': inf, 'flops': inf}
-        self.best_size = {'size': inf, 'flops': inf}
-        self.best_flops = {'size': inf, 'flops': inf}
-        self.best_combo = {'size': inf, 'flops': inf}
 
-        self.slicing_opts = {} if slicing_opts is None else dict(slicing_opts)
+        self.slicing_opts = (None if slicing_opts is None
+                             else dict(slicing_opts))
+        self.reconf_opts = (None if reconf_opts is None
+                            else dict(reconf_opts))
+        self.slicing_reconf_opts = (None if slicing_reconf_opts is None
+                                    else dict(slicing_reconf_opts))
         self.progbar = progbar
+
+        if space is None:
+            space = get_hyper_space()
+
+        self._optimizer = dict(zip(
+            ['init', 'get_setting', 'report_result'],
+            _OPTLIB_FNS[optlib]
+        ))
+
+        self._optimizer['init'](self, self._methods, space, **optlib_opts)
 
     @property
     def minimize(self):
@@ -256,13 +294,43 @@ class HyperOptimizer(RandomOptimizer):
         if callable(minimize):
             self._score_fn = minimize
         else:
-            self._score_fn = _SCORE_FUNCTIONS[minimize]
+            self._score_fn = get_score_fn(minimize)
+
+    @property
+    def parallel(self):
+        return self._parallel
+
+    @parallel.setter
+    def parallel(self, parallel):
+        self._parallel = parallel
+        self._pool = parse_parallel_arg(parallel)
+        if self._pool is not None:
+            self._num_workers = get_n_workers(self._pool)
+            self.pre_dispatch = max(self._num_workers + 4,
+                                    int(1.2 * self._num_workers))
+
+    @property
+    def path(self):
+        return self.best['tree'].path()
 
     def setup(self, inputs, output, size_dict):
-        if self.slicing_opts:
-            trial_fn = SlicedTrialFn(find_path, **self.slicing_opts)
-        else:
-            trial_fn = find_path
+        trial_fn = find_path
+
+        if self.slicing_opts is not None:
+            self.slicing_opts.setdefault('minimize', self.minimize)
+            trial_fn = SlicedTrialFn(trial_fn, **self.slicing_opts)
+
+        if self.slicing_reconf_opts is not None:
+            self.slicing_reconf_opts.setdefault('minimize', self.minimize)
+            self.slicing_reconf_opts.setdefault('parallel', self.parallel)
+            trial_fn = SlicedReconfTrialFn(
+                trial_fn, **self.slicing_reconf_opts)
+
+        if self.reconf_opts is not None:
+            self.reconf_opts.setdefault('minimize', self.minimize)
+            self.reconf_opts.setdefault('parallel', self.parallel)
+            trial_fn = ReconfTrialFn(trial_fn, **self.reconf_opts)
+
         return trial_fn, (inputs, output, size_dict)
 
     def compute_score(self, trial):
@@ -270,91 +338,87 @@ class HyperOptimizer(RandomOptimizer):
         trial['score'] = self._score_fn(trial)**self.score_compression
 
         # random smudge is for baytune/scikit-learn nan/inf bug
-        return - trial['score'] * random.gauss(1.0, 1e-6)
+        return trial['score'] * random.gauss(1.0, 1e-3)
 
-    def get_setting(self):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", module='sklearn')
-            possible_methods = {
-                m: getattr(self._tuners[m], 'scores', ())
-                for m in self._methods
-            }
-            method = self._selector.select(possible_methods)
-            params = self._tuners[method].propose()
-            return method, params
+    def _maybe_cancel_futures(self):
+        if self._pool is not None:
+            while self._futures:
+                f = self._futures.pop()[-1]
+                f.cancel()
 
-    def report_result(self, method, params, trial):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", module='sklearn')
-            compressed_score = self.compute_score(trial)
+    def _maybe_report_result(self, setting, trial):
+        score = self.compute_score(trial)
 
-            # only fit tuners after the training epoch if the score is best
-            new_best = compressed_score < self.best_compressed_score
-            if new_best:
-                self.best_compress_score = compressed_score
+        new_best = score < self.best_score
+        if new_best:
+            self.best_score = score
 
-            if (len(self.scores) < self.training_steps) or new_best:
-                self._tuners[method].record(params, compressed_score)
+        # only fit optimizers after the training epoch if the score is best
+        if (
+            (self.max_training_steps is None) or
+            (len(self.scores) < self.max_training_steps) or
+            new_best
+        ):
+            self._optimizer['report_result'](self, setting, trial, score)
 
-            self.method_choices.append(method)
-            self.param_choices.append(params)
+        self.method_choices.append(setting['method'])
+        self.param_choices.append(setting['params'])
 
     def _gen_results(self, repeats, trial_fn, trial_args):
         for _ in repeats:
-            method, params = self.get_setting()
-            trial = trial_fn(method, *trial_args, **params)
-            self.report_result(method, params, trial)
+            setting = self._optimizer['get_setting'](self)
+
+            trial = trial_fn(
+                *trial_args, method=setting['method'], **setting['params'])
+
+            self._maybe_report_result(setting, trial)
+
             yield trial
 
-    def get_and_report_next_future(self):
+    def _get_and_report_next_future(self):
         # scan over the futures, yield whichever completes first
         while True:
             for i in range(len(self._futures)):
-                method, params, future = self._futures[i]
+                setting, future = self._futures[i]
                 if future.done():
                     del self._futures[i]
                     trial = future.result()
-                    self.report_result(method, params, trial)
+                    self._maybe_report_result(setting, trial)
                     return trial
-                time.sleep(0.01)
+            time.sleep(0.01)
 
     def _gen_results_parallel(self, repeats, trial_fn, trial_args):
         self._futures = []
 
         for _ in repeats:
-            method, params = self.get_setting()
-            future = self._executor.submit(
-                trial_fn, method, *trial_args, **params
-            )
-            self._futures.append((method, params, future))
+            setting = self._optimizer['get_setting'](self)
+
+            future = self._pool.submit(
+                trial_fn, *trial_args, method=setting['method'],
+                pure=False, **setting['params'])
+            self._futures.append((setting, future))
 
             if len(self._futures) >= self.pre_dispatch:
-                yield self.get_and_report_next_future()
+                yield self._get_and_report_next_future()
 
         while self._futures:
-            yield self.get_and_report_next_future()
-
-    def _maybe_cancel_futures(self):
-        if self._executor is not None:
-            while self._futures:
-                _, _, f = self._futures.pop()
-                f.cancel()
+            yield self._get_and_report_next_future()
 
     def __call__(self, inputs, output, size_dict, memory_limit):
+        self._check_args_against_first_call(inputs, output, size_dict)
+
         # start a timer?
         if self.max_time is not None:
             t0 = time.time()
 
         trial_fn, trial_args = self.setup(inputs, output, size_dict)
 
-        r_start = self._repeats_start + len(self.costs)
+        r_start = self._repeats_start + len(self.scores)
         r_stop = r_start + self.max_repeats
         repeats = range(r_start, r_stop)
 
         # create the trials lazily
-        if self._executor is not None:
+        if self._pool is not None:
             trials = self._gen_results_parallel(repeats, trial_fn, trial_args)
         else:
             trials = self._gen_results(repeats, trial_fn, trial_args)
@@ -369,8 +433,9 @@ class HyperOptimizer(RandomOptimizer):
         for trial in trials:
 
             # keep track of all costs and sizes
-            self.costs.append(trial['flops'])
-            self.sizes.append(trial['size'])
+            self.costs_flops.append(trial['flops'])
+            self.costs_write.append(trial['write'])
+            self.costs_size.append(trial['size'])
             self.scores.append(trial['score'])
 
             # check if we have found a new best
@@ -381,31 +446,6 @@ class HyperOptimizer(RandomOptimizer):
 
                 if self.progbar:
                     pbar.set_description(progress_description(self.best))
-
-            # keep track of the best size, flops and combo score trials
-            if (
-                (trial['size'], trial['flops']) <
-                (self.best_size['size'], self.best_size['flops'])
-            ):
-                self.best_size = trial
-                self.best_size['params'] = dict(self.param_choices[-1])
-                self.best_size['params']['method'] = self.method_choices[-1]
-
-            if (
-                (trial['flops'], trial['size']) <
-                (self.best_flops['flops'], self.best_flops['size'])
-            ):
-                self.best_flops = trial
-                self.best_flops['params'] = dict(self.param_choices[-1])
-                self.best_flops['params']['method'] = self.method_choices[-1]
-
-            if (
-                log2(trial['size']) + log2(trial['flops']) <
-                log2(self.best_combo['size']) + log2(self.best_combo['flops'])
-            ):
-                self.best_combo = trial
-                self.best_combo['params'] = dict(self.param_choices[-1])
-                self.best_combo['params']['method'] = self.method_choices[-1]
 
             # check if we have run out of time
             if (self.max_time is not None) and (time.time() > t0 +
@@ -419,85 +459,55 @@ class HyperOptimizer(RandomOptimizer):
         return tuple(self.path)
 
     def get_trials(self, sort=None):
-        trials = list(zip(self.method_choices, self.sizes,
-                          self.costs, self.param_choices))
+        trials = list(zip(self.method_choices, self.costs_size,
+                          self.costs_flops, self.costs_write,
+                          self.param_choices))
+
         if sort == 'method':
             trials.sort(key=lambda t: t[0])
         if sort == 'combo':
-            trials.sort(key=lambda t: log2(t[1]) + log2(t[2]))
+            trials.sort(
+                key=lambda t: log2(t[1]) / 1e3 + log2(t[2] + 500 * t[3]))
         if sort == 'size':
-            trials.sort(key=lambda t: log2(t[1]) + log2(t[2]) / 1000)
+            trials.sort(
+                key=lambda t: log2(t[1]) + log2(t[2]) / 1e3 + log2(t[3]) / 1e3)
         if sort == 'flops':
-            trials.sort(key=lambda t: log2(t[1]) / 1000 + log2(t[2]))
+            trials.sort(
+                key=lambda t: log2(t[1]) / 1e3 + log2(t[2]) + log2(t[3]) / 1e3)
+        if sort == 'write':
+            trials.sort(
+                key=lambda t: log2(t[1]) / 1e3 + log2(t[2]) / 1e3 + log2(t[3]))
+
         return trials
 
     def print_trials(self, sort=None):
         header = "{:>11} {:>11} {:>11}     {}"
-        print(header.format('METHOD', 'log2[SIZE]', 'log10[FLOPS]', 'PARAMS'))
-        row = "{:>11} {:>11.2f} {:>11.2f}    {}"
-        for choice, size, cost, params in self.get_trials(sort):
-            print(row.format(choice, log2(size), log10(cost), params))
+        print(header.format(
+            'METHOD', 'log2[SIZE]', 'log10[FLOPS]', 'log10[WRITE]', 'PARAMS'
+        ))
+        row = "{:>11} {:>11.2f} {:>11.2f} {:>11.2f}    {}"
+        for choice, size, flops, write, params in self.get_trials(sort):
+            print(row.format(
+                choice, log2(size), log10(flops), log10(write), params
+            ))
 
     def to_df(self):
         import pandas
 
         return pandas.DataFrame(
             data={
-                'run': list(range(len(self.sizes))),
+                'run': list(range(len(self.costs_size))),
                 'method': self.method_choices,
-                'size': list(map(log2, self.sizes)),
-                'flops': list(map(log10, self.costs)),
+                'size': list(map(log2, self.costs_size)),
+                'flops': list(map(log10, self.costs_flops)),
+                'write': list(map(log10, self.costs_write)),
                 'random_strength': [p.get('random_strength', 1e-6)
                                     for p in self.param_choices],
                 'score': self.scores,
             }
         ).sort_values(by='method')
 
-
-def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
-    optimizer = HyperOptimizer(**opts)
-    return optimizer(inputs, output, size_dict, memory_limit)
-
-
-# ------------------------------ GREEDY HYPER ------------------------------- #
-
-
-def cost_memory_removed_mod(size12, size1, size2, k12, k1, k2, costmod=1):
-    """The default heuristic cost, corresponding to the total reduction in
-    memory of performing a contraction.
-    """
-    return size12 - costmod * (size1 + size2)
-
-
-def trial_greedy(inputs, output, size_dict,
-                 random_strength=0.1,
-                 temperature=1.0,
-                 rel_temperature=True,
-                 costmod=1):
-
-    rand_size_dict = jitter_dict(size_dict, random_strength)
-
-    cost_fn = functools.partial(cost_memory_removed_mod, costmod=costmod)
-    choose_fn = functools.partial(thermal_chooser, temperature=temperature,
-                                  rel_temperature=rel_temperature)
-
-    ssa_path = ssa_greedy_optimize(inputs, output, rand_size_dict,
-                                   choose_fn=choose_fn, cost_fn=cost_fn)
-
-    ctree = ContractionTree.from_path(inputs, output, size_dict,
-                                      ssa_path=ssa_path)
-
-    return {'tree': ctree, 'ssa_path': ssa_path,
-            'flops': ctree.total_flops(), 'size': ctree.max_size()}
-
-
-register_hyper_function(
-    name='greedy',
-    ssa_func=trial_greedy,
-    space={
-        'random_strength': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
-        'temperature': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
-        'rel_temperature': {'type': 'BOOL'},
-        'costmod': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
-    },
-)
+    plot_trials = plot_trials
+    plot_trials_alt = plot_trials_alt
+    plot_scatter = plot_scatter
+    plot_scatter_alt = plot_scatter_alt
