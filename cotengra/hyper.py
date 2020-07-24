@@ -404,7 +404,7 @@ class HyperOptimizer(PathOptimizer):
         while self._futures:
             yield self._get_and_report_next_future()
 
-    def __call__(self, inputs, output, size_dict, memory_limit):
+    def __call__(self, inputs, output, size_dict, memory_limit=None):
         self._check_args_against_first_call(inputs, output, size_dict)
 
         # start a timer?
@@ -511,3 +511,30 @@ class HyperOptimizer(PathOptimizer):
     plot_trials_alt = plot_trials_alt
     plot_scatter = plot_scatter
     plot_scatter_alt = plot_scatter_alt
+
+
+class ReusableHyperOptimizer(PathOptimizer):
+    """Like ``HyperOptimizer`` but it will re-instantiate the optimizer
+    whenever a new contraction is detected, and also cache the paths found.
+    """
+
+    def __init__(self, *opt_args, **opt_kwargs):
+        self._opt_args = opt_args
+        self._opt_kwargs = opt_kwargs
+        self._cache = dict()
+
+    def hash_args(self, inputs, output, size_dict):
+        return hash((
+            tuple(map(frozenset, inputs)),
+            frozenset(output),
+            frozenset(size_dict.items())
+        ))
+
+    def __call__(self, inputs, output, size_dict, memory_limit=None):
+        h = self.hash_args(inputs, output, size_dict)
+
+        if h not in self._cache:
+            opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
+            self._cache[h] = opt(inputs, output, size_dict)
+
+        return self._cache[h]

@@ -1,5 +1,4 @@
 import functools
-import itertools
 
 from opt_einsum.paths import register_path_fn
 
@@ -20,7 +19,12 @@ from . import hyper_nevergrad
 from . import hyper_skopt
 from . import hyper_random
 
-from .hyper import list_hyper_functions, HyperOptimizer, get_hyper_space
+from .hyper import (
+    list_hyper_functions,
+    get_hyper_space,
+    HyperOptimizer,
+    ReusableHyperOptimizer,
+)
 
 
 from .plot import (
@@ -61,6 +65,7 @@ __all__ = (
     "hyper_random",
     "hyper_skopt",
     "HyperOptimizer",
+    "ReusableHyperOptimizer",
     "list_hyper_functions",
     "optimize_flowcutter",
     "optimize_quickbb",
@@ -92,44 +97,6 @@ __all__ = (
 def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
     optimizer = HyperOptimizer(**opts)
     return optimizer(inputs, output, size_dict, memory_limit)
-
-
-named_pars = ('', '-par', '-seq')
-named_meths = ('g', 'k', 'l', 'gk', 'gl')
-named_reps = (32, 64, 128, 256)
-named_reconfs = ('', '-rf', '-rw', '-rc')
-named_progbars = ('', '-v')
-
-for par, meths, rep, rec, progbar in itertools.product(
-    named_pars, named_meths, named_reps, named_reconfs, named_progbars
-):
-    methods = ()
-    if 'g' in meths:
-        methods += ('greedy',)
-    if 'k' in meths:
-        methods += ('kahypar',)
-    if 'l' in meths:
-        methods += ('labels',)
-
-    parallel = {'': 'auto', '-seq': False, '-par': True}[par]
-    reconf_opts = {
-        '': None,
-        '-rf': dict(minimize='flops'),
-        '-rw': dict(minimize='write'),
-        '-rc': dict(minimize='combo'),
-    }[rec]
-
-    register_path_fn(
-        f'hyp-{meths}{rec}{par}-{rep}{progbar}',
-        functools.partial(
-            hyper_optimize,
-            methods=methods,
-            parallel=parallel,
-            reconf_opts=reconf_opts,
-            max_repeats=rep,
-            progbar=bool(progbar),
-        )
-    )
 
 
 register_path_fn(
