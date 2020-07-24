@@ -1366,17 +1366,22 @@ class ContractionTree:
                     res = [{'tree': t, **_get_tree_info(t)} for t in forest]
 
                 else:
-                    forest_futures = [pool.submit(
-                        _slice_and_reconfigure_tree, pure=False, **s
-                    ) for s in saplings]
+                    forest_futures = [
+                        pool.submit(
+                            _slice_and_reconfigure_tree, pure=False, **s)
+                        for s in saplings
+                    ]
 
                     # compute scores remotely then gather
-                    forest_futures = [s['tree'] for s in saplings]
-                    res_futures = [pool.submit(_get_tree_info, t, pure=False)
-                                   for t in forest_futures]
-                    res = [{'tree': tree_future, **res_future.result()}
-                           for tree_future, res_future in
-                           zip(forest_futures, res_futures)]
+                    res_futures = [
+                        pool.submit(_get_tree_info, t, pure=False)
+                        for t in forest_futures
+                    ]
+                    res = [
+                        {'tree': tree_future, **res_future.result()}
+                        for tree_future, res_future in
+                        zip(forest_futures, res_futures)
+                    ]
 
                 # we want to sort by flops, but also favour sampling as
                 # many different sliced index combos as possible
