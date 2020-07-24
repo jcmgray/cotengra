@@ -37,7 +37,13 @@ def get_pool(n_workers=None, maybe_create=False):
     -------
     None or dask.distributed.Client
     """
-    from dask.distributed import get_client
+    try:
+        from dask.distributed import get_client
+    except ImportError:
+        if not maybe_create:
+            return None
+        else:
+            raise
 
     try:
         client = get_client()
@@ -926,7 +932,7 @@ class ContractionTree:
         if progbar:
             import tqdm
             pbar = tqdm.tqdm()
-            pbar.set_description(description(tree))
+            pbar.set_description(_describe_tree(tree))
 
         r = 0
         try:
@@ -990,7 +996,7 @@ class ContractionTree:
 
                 if progbar:
                     pbar.update()
-                    pbar.set_description(description(tree))
+                    pbar.set_description(_describe_tree(tree))
 
                 # if we have reconfigured simply re-add all candidates
                 candidates, weights = tree.calc_subtree_candidates(
@@ -1099,7 +1105,7 @@ class ContractionTree:
         if progbar:
             import tqdm
             pbar = tqdm.tqdm(total=num_restarts)
-            pbar.set_description(description(tree))
+            pbar.set_description(_describe_tree(tree))
 
         try:
             for _ in range(num_restarts):
@@ -1144,9 +1150,9 @@ class ContractionTree:
                 if progbar:
                     pbar.update()
                     if pool is None:
-                        d = description(forest[0])
+                        d = _describe_tree(forest[0])
                     else:
-                        d = pool.submit(description, forest[0]).result()
+                        d = pool.submit(_describe_tree, forest[0]).result()
                     pbar.set_description(d)
 
         finally:
@@ -1230,7 +1236,7 @@ class ContractionTree:
         if progbar:
             import tqdm
             pbar = tqdm.tqdm()
-            pbar.set_description(description(tree))
+            pbar.set_description(_describe_tree(tree))
 
         try:
             while tree.max_size() > target_size:
@@ -1246,7 +1252,7 @@ class ContractionTree:
 
                 if progbar:
                     pbar.update()
-                    pbar.set_description(description(tree))
+                    pbar.set_description(_describe_tree(tree))
         finally:
             if progbar:
                 pbar.close()
@@ -1333,7 +1339,7 @@ class ContractionTree:
         if progbar:
             import tqdm
             pbar = tqdm.tqdm()
-            pbar.set_description(description(tree))
+            pbar.set_description(_describe_tree(tree))
 
         next_size = tree.max_size()
 
@@ -1386,9 +1392,9 @@ class ContractionTree:
                 if progbar:
                     pbar.update()
                     if pool is None:
-                        d = description(forest[0])
+                        d = _describe_tree(forest[0])
                     else:
-                        d = pool.submit(description, forest[0]).result()
+                        d = pool.submit(_describe_tree, forest[0]).result()
                     pbar.set_description(d)
 
                 if res[0]['size'] <= target_size:
@@ -1558,7 +1564,7 @@ def _score_size(tree):
     return math.log2(tree.total_flops()) / 1000 + math.log2(tree.max_size())
 
 
-def description(tree):
+def _describe_tree(tree):
     return (
         f"log2[SIZE]: {math.log2(tree.max_size()):.2f} "
         f"log10[FLOPs]: {math.log10(tree.total_flops()):.2f}"
