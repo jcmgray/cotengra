@@ -378,8 +378,12 @@ class SliceFinder:
         while not already_satisfied:
             ix = max(
                 cost.size_dict, key=lambda ix:
+                # the base score
                 log(cost.score(ix, self.minimize)) -
-                temperature * log(-log(random.random()))
+                # a smudge that replicates boltzmann sampling
+                temperature * log(-log(random.random())) -
+                # penalize forbidden (outer) indices
+                (0 if ix not in self.forbidden else float('inf'))
             )
             next_ix_sl = ix_sl | frozenset([ix])
 
