@@ -494,14 +494,31 @@ should enable parallelism automatically where possible.
 If you've found `HyperOptimizer` settings you would like to re-use for many contractions then you can create a `ReusableHyperOptimizer` with the settings, e.g.
 
 ```python
-opt = ReusableHyperOptimizer(
-	max_repeats=16, parallel=True, reconf_opts={},
+opt = ctg.ReusableHyperOptimizer(
+    max_repeats=16, 
+    parallel=True, 
+    reconf_opts={},
     directory='ctg_path_cache',  # None for non-persistent caching
 )
 ```
 
 This creates a `HyperOptimizer` for each contraction it sees, finds a path, then caches the result so nothing needs to be done the next time the contraction is encountered. If you supply the `directory` option (and have `diskcache` installed), the cache can persist on-disk between sessions. 
 
+As an illustration in `quimb`:
+
+```python
+tn_a = qtn.TN_rand_reg(10, reg=3, D=2)
+tn_a.contract(all, optimize=opt)  # compute & cache new path
+# -32.96257452868642
+
+tn_a.randomize_()
+tn_a.contract(all, optimize=opt)  # same geometry -> no new optimization takes place
+# -112.77969089300865
+
+tn_b = qtn.TN_rand_reg(10, reg=3, D=2)
+tn_b.contract(all, optimize=opt)  # same optimizer but new geometry -> compute & cache new path
+# -17.977572836652946
+```
 
 
 ## Visualization
