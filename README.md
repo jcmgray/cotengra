@@ -12,6 +12,35 @@ This repository also contains a **tensor network slicing** implementation (for s
 
 
 
+* [Installation :hammer:](#installation-hammer)
+
+* [Basic usage :zap:](#basic-usage-zap)
+  
+  + [With `opt_einsum`](#with-opt-einsum-https-githubcom-dgasmith-opt-einsum)
+  + [With `quimb`](#with-quimb-https-githubcom-jcmgray-quimb)
+  + [Advanced Settings](#advanced-settings)
+  
+* [List of optimizer methods](#list-of-optimizer-methods)
+  
+  + [Adding your own :evergreen_tree:](#adding-your-own-evergreen_tree)
+  
+* [Tree Modifications](#tree-modifications)
+  
+  + [Basic Slicing :knife:](#basic-slicing-knife)
+  + [Subtree Reconfiguration :wrench:](#subtree-reconfiguration-wrench)
+  + [Sliced Subtree Reconfiguration](#sliced-subtree-reconfiguration)
+  + [Bayesian Sliced'n'Reconfed Searching :mag:](#bayesian-sliced-n-reconfed-searching-mag)
+  
+* [Parallelization](#parallelization)
+
+* [Reusing and Caching Paths :card_file_box:](#reusing-and-caching-paths-card_file_box)
+
+* [Visualization](#visualization)
+
+* [Possible ToDos](#possible-todos)
+
+    
+
 ## Installation :hammer:
 
 Basic requirements are ``opt_einsum`` and either `cytoolz` or `toolz`. Other than that the following python packages are recommended:
@@ -34,6 +63,10 @@ If you want to experiment with other algorithms then the following can be used:
 
 The latter two are both accessed simply using their command line interface and so the following executables should be placed on the path somewhere:
 [`quickbb_64`, `flow_cutter_pace17`].
+
+If you want to automatically cache paths to disk, you'll need:
+
+* [diskcache](http://www.grantjenks.com/docs/diskcache/index.html)
 
 ## Basic usage :zap:
 
@@ -455,6 +488,19 @@ client = Client()  # creates a dask-scheduler and dask-workers automatically
 ```
 
 should enable parallelism automatically where possible.
+
+## Reusing and Caching Paths :card_file_box:
+
+If you've found `HyperOptimizer` settings you would like to re-use for many contractions then you can create a `ReusableHyperOptimizer` with the settings, e.g.
+
+```python
+opt = ReusableHyperOptimizer(
+	max_repeats=16, parallel=True, reconf_opts={},
+    directory='ctg_path_cache',  # None for non-persistent caching
+)
+```
+
+This creates a `HyperOptimizer` for each contraction it sees, finds a path, then caches the result so nothing needs to be done the next time the contraction is encountered. If you supply the `directory` option (and have `diskcache` installed), the cache can persist on-disk between sessions. 
 
 
 

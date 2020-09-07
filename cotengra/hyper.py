@@ -513,28 +513,76 @@ class HyperOptimizer(PathOptimizer):
     plot_scatter_alt = plot_scatter_alt
 
 
+def sortedtuple(x):
+    return tuple(sorted(x))
+
+
 class ReusableHyperOptimizer(PathOptimizer):
     """Like ``HyperOptimizer`` but it will re-instantiate the optimizer
     whenever a new contraction is detected, and also cache the paths found.
+
+    Parameters
+    ----------
+    opt_args
+        Supplied to ``HyperOptimizer``.
+    directory : None or str, optional
+        If specified use this directory as a persisten cache (requires
+        ``diskcache``).
+    opt_kwargs
+        Supplied to ``HyperOptimizer``.
     """
 
-    def __init__(self, *opt_args, **opt_kwargs):
+    def __init__(self, *opt_args, directory=None, **opt_kwargs):
         self._opt_args = opt_args
         self._opt_kwargs = opt_kwargs
         self._cache = dict()
+        self._directory = directory
 
-    def hash_args(self, inputs, output, size_dict):
-        return hash((
-            tuple(map(frozenset, inputs)),
-            frozenset(output),
-            frozenset(size_dict.items())
-        ))
+        if self._directory is not None:
+            import diskcache
+            self._dcache = diskcache.Cache(self._directory)
+
+    def _hash_args(self, inputs, output, size_dict):
+        """For space's sake create a condensed hash key.
+        """
+        import pickle
+        import hashlib
+
+        # note frozenset is hashable but not consistent -> need sortedtuple
+        return hashlib.sha1(pickle.dumps((
+            tuple(map(sortedtuple, inputs)),
+            sortedtuple(output),
+            sortedtuple(size_dict.items())
+        ))).hexdigest()
+
+    def _compute_path(self, inputs, output, size_dict):
+        opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
+        path = opt(inputs, output, size_dict)
+        return path
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        h = self.hash_args(inputs, output, size_dict)
+        h = self._hash_args(inputs, output, size_dict)
 
+        # check the memory cache
         if h not in self._cache:
-            opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
-            self._cache[h] = opt(inputs, output, size_dict)
+
+            if self._directory is not None:
+                # check the disk cache
+                if h in self._dcache:
+                    path = self._dcache[h]
+                else:
+                    path = self._compute_path(inputs, output, size_dict)
+
+                    # write to disk cache
+                    self._dcache[h] = path
+            else:
+                path = self._compute_path(inputs, output, size_dict)
+
+            # write to memory cache
+            self._cache[h] = path
 
         return self._cache[h]
+
+    def __del__(self):
+        if self._directory is not None:
+            self._dcache.close()
