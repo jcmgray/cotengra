@@ -45,8 +45,8 @@ This repository also contains a **tensor network slicing** implementation (for s
 
 Basic requirements are ``opt_einsum`` and either `cytoolz` or `toolz`. Other than that the following python packages are recommended:
 
-* [kahypar](https://github.com/SebastianSchlag/kahypar) - **Karlsruhe Hypergraph Partitioning** for high quality divisive tree building
-* [tqdm]() - for showing live progress
+* [kahypar](https://github.com/SebastianSchlag/kahypar) - **Karlsruhe Hypergraph Partitioning** for high quality divisive tree building ([available via pip](https://pypi.org/project/kahypar/))
+* [tqdm]() - for showing live progress (available via [pip](https://pypi.org/project/tqdm/) or ``conda``)
 
 To perform the hyper-optimization (and not just randomly sample) one of the following libraries is needed:
 
