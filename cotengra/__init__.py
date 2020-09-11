@@ -37,6 +37,7 @@ from .plot import (
     plot_tree,
     plot_tree_ring,
     plot_tree_tent,
+    plot_tree_span,
     plot_trials,
     plot_trials_alt,
 )
@@ -82,6 +83,7 @@ __all__ = (
     "plot_tree",
     "plot_tree_ring",
     "plot_tree_tent",
+    "plot_tree_span",
     "plot_trials",
     "plot_trials_alt",
     "QuasiRandOptimizer",

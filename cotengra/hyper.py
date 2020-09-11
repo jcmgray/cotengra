@@ -467,7 +467,7 @@ class HyperOptimizer(PathOptimizer):
             trials.sort(key=lambda t: t[0])
         if sort == 'combo':
             trials.sort(
-                key=lambda t: log2(t[1]) / 1e3 + log2(t[2] + 500 * t[3]))
+                key=lambda t: log2(t[1]) / 1e3 + log2(t[2] + 256 * t[3]))
         if sort == 'size':
             trials.sort(
                 key=lambda t: log2(t[1]) + log2(t[2]) / 1e3 + log2(t[3]) / 1e3)
@@ -526,7 +526,7 @@ class ReusableHyperOptimizer(PathOptimizer):
     opt_args
         Supplied to ``HyperOptimizer``.
     directory : None or str, optional
-        If specified use this directory as a persisten cache (requires
+        If specified use this directory as a persistent cache (requires
         ``diskcache``).
     opt_kwargs
         Supplied to ``HyperOptimizer``.

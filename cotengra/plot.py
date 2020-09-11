@@ -32,9 +32,9 @@ def plot_trials(
         ylabel = 'log10[WRITE]'
     if y == 'combo':
         best_y = math.log2(self.best['flops']) + math.log2(self.best['size'])
-        ylabel = 'log2[FLOPS] + log2[WRITE]'
-        df['combo'] = [math.log2(f) + math.log2(m)
-                       for f, m in zip(self.costs_flops, self.WRITEe)]
+        ylabel = 'log10[FLOPS + 256 * WRITE]'
+        df['combo'] = [math.log10(f + 256 * m)
+                       for f, m in zip(self.costs_flops, self.costs_write)]
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     ax.axhline(best_y, color=(0, 0, 0, 0.1), linestyle=':')
@@ -236,6 +236,8 @@ def plot_tree(
     layout='ring',
     k=0.01,
     iterations=500,
+    span=None,
+    order=None,
     edge_scale=1.0,
     node_scale=1.0,
     highlight=(),
@@ -247,6 +249,8 @@ def plot_tree(
     tree_alpha=0.8,
     colorbars=True,
     plot_raw_graph=True,
+    plot_leaf_labels=False,
+    ax=None,
 ):
     """Plot a contraction tree using matplotlib.
     """
@@ -316,16 +320,46 @@ def plot_tree(
         pos = nx.spring_layout(G_tn, k=k, iterations=iterations, pos=pos)
         # 'flatten' a bit onto plane
         pos = {k: [v[0], v[1] / 2] for k, v in pos.items()}
-        # place the top of the tree
+
         xmin = min(v[0] for v in pos.values())
         xmax = max(v[0] for v in pos.values())
-        pos[tree.root] = (0, 1.0 * (xmax - xmin))
-        # layout the tree nodes between bottom and top
-        # first need to filter out TN nodes not appearing in tree
-        tree_pos = {k: v for k, v in pos.items() if k in G_tree.nodes}
-        pos.update(nx.spring_layout(
-            G_tree, fixed=tree_pos, pos=tree_pos, k=k, iterations=iterations
-        ))
+
+        if span is not None:
+            # place the intermediates vertically above the leaf nodes that they
+            # are mapped to in the span
+            ymax = max(v[1] for v in pos.values())
+            if span is True:
+                span = tree.get_spans()[0]
+            for node in G_tree.nodes:
+                if len(node) == 1:
+                    continue
+                raw_pos = pos[span[node]]
+                pos[node] = (raw_pos[0],
+                             ymax + len(node) * (xmax - xmin) / tree.N)
+
+        elif order is not None:
+            if order is True:
+                order = None
+            ymax = max(v[1] for v in pos.values())
+            for i, (p, _, _) in enumerate(tree.traverse(order)):
+                x_av, y_av = 0.0, 0.0
+                for ti in p:
+                    coo_i = pos[frozenset([ti])]
+                    x_av += coo_i[0] / len(p)
+                    y_av += coo_i[1] / len(p)
+                y_av = ymax + (i + 1) * (xmax - xmin) / tree.N
+                pos[p] = (x_av, y_av)
+
+        else:
+            # place the top of the tree
+            pos[tree.root] = (0, 1.0 * (xmax - xmin))
+            # layout the tree nodes between bottom and top
+            # first need to filter out TN nodes not appearing in tree
+            tree_pos = {k: v for k, v in pos.items() if k in G_tree.nodes}
+            pos.update(nx.spring_layout(
+                G_tree, fixed=tree_pos, pos=tree_pos,
+                k=k, iterations=iterations
+            ))
 
     elif layout == 'ring':
         # work out a layout based on leaves in circle
@@ -342,9 +376,19 @@ def plot_tree(
             pos.update(nx.spring_layout(G_tn, fixed=fixed_raw, pos=fixed_raw,
                                         k=k, iterations=iterations))
 
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-    ax.set_aspect('equal')
-    ax.axis('off')
+    elif layout == 'span':
+        # place raw graph first
+        pos = nx.kamada_kawai_layout(G_tn)
+        pos = nx.spring_layout(G_tn, k=k, iterations=iterations, pos=pos)
+        if span is None:
+            span = tree.get_spans()[0]
+        pos.update({node: pos[span[node]] for node in G_tree.nodes})
+
+    created_ax = (ax is None)
+    if created_ax:
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        ax.set_aspect('equal')
+        ax.axis('off')
 
     if plot_raw_graph:
         nx.draw_networkx_edges(
@@ -352,12 +396,19 @@ def plot_tree(
             width=edge_widths_raw,
             edge_color=edge_colors_raw)
 
+    if plot_leaf_labels:
+        nx.draw_networkx_labels(
+            G_tn, pos=pos, ax=ax, labels={
+                k: int(next(iter(k))) for k in G_tn.nodes
+            }
+        )
+
     nx.draw_networkx_edges(G_tree, pos=pos, ax=ax, width=edge_weights,
                            edge_color=edge_colors, alpha=tree_alpha)
     nx.draw_networkx_nodes(G_tree, pos=pos, ax=ax, node_size=node_weights,
                            node_color=node_colors, alpha=tree_alpha)
 
-    if colorbars:
+    if colorbars and created_ax:
         min_size = math.log2(min(tree.get_size(x) for x in tree.info))
         max_size = math.log2(max(tree.get_size(x) for x in tree.info))
         edge_norm = mpl.colors.Normalize(vmin=min_size, vmax=max_size)
@@ -400,6 +451,14 @@ def plot_tree_tent(tree, **kwargs):
     kwargs.setdefault('edge_scale', 1 / 2)
     kwargs.setdefault('node_scale', 1 / 3)
     return plot_tree(tree, 'tent', **kwargs)
+
+
+@functools.wraps(plot_tree)
+def plot_tree_span(tree, **kwargs):
+    kwargs.setdefault('edge_colormap', 'YlGnBu')
+    kwargs.setdefault('edge_scale', 2)
+    kwargs.setdefault('node_scale', 2)
+    return plot_tree(tree, 'span', **kwargs)
 
 
 def tree_to_df(tree):

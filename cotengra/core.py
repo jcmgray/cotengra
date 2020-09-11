@@ -699,31 +699,104 @@ class ContractionTree:
 
         return True
 
-    def traverse(self):
+    def traverse(self, order=None):
         """Generate, in order, all the node merges in this tree. Non-recursive!
+        This ensures children are always visited before their parent.
+
+        Parameters
+        ----------
+        order : None or callable
+            How to order the contractions within the tree. If a callable is
+            given (which should take a node as its argument), try to contract
+            nodes that maximize this function first.
 
         Returns
         -------
         generator[tuple[frozenset[frozenset[str]]]]
             The bottom up ordered sequence of tree merges, each a
             tuple of ``(parent, left_child, right_child)``.
+
+        See Also
+        --------
+        descend
         """
         queue = [self.root]
-        ready = {frozenset([i]) for i in range(self.N)}
+
+        if order is not None:
+            from bisect import bisect
+            scores = [order(self.root)]
+
+            def add_to_queue(node):
+                score = order(node)
+                i = bisect(scores, score)
+                scores.insert(i, score)
+                queue.insert(i, node)
+
+        else:
+            def add_to_queue(node):
+                queue.append(node)
+
+        ready = set(self.gen_leaves())
+        seen = set()
+        check = -1
 
         while queue:
-            node = queue[-1]
+            node = queue[check]
             l, r = self.children[node]
 
+            # both node's children are ready -> we can yield this contraction
             if (l in ready) and (r in ready):
-                ready.add(queue.pop())
+                queue.pop(check)
+                ready.add(node)
                 yield node, l, r
+                check = -1  # reset
                 continue
 
-            if r not in ready:
-                queue.append(r)
-            if l not in ready:
+            if node not in seen:
+                # add the node's children to the queue to be processed
+                if r not in ready:
+                    add_to_queue(r)
+                if l not in ready:
+                    add_to_queue(l)
+                seen.add(node)
+                check = -1  # reset
+                continue
+
+            # node is not ready and we have already added its children ->
+            #     move onto the next highest scoring node to check
+            check -= 1
+
+    def descend(self, mode='dfs'):
+        """Generate, from root to leaves, all the node merges in this tree.
+        Non-recursive! This ensures parents are visited before their children.
+
+        Parameters
+        ----------
+        mode : {'dfs', bfs}, optional
+            How expand from a parent.
+
+        Returns
+        -------
+        generator[tuple[frozenset[frozenset[str]]]]
+            The top down ordered sequence of tree merges, each a
+            tuple of ``(parent, left_child, right_child)``.
+
+        See Also
+        --------
+        traverse
+        """
+        queue = [self.root]
+        while queue:
+            if mode == 'dfs':
+                parent = queue.pop(-1)
+            elif mode == 'bfs':
+                parent = queue.pop(0)
+            l, r = self.children[parent]
+            yield parent, l, r
+            if len(l) > 1:
                 queue.append(l)
+            if len(r) > 1:
+                queue.append(r)
 
     def get_subtree(self, node, size, search='bfs'):
         """Get a subtree spanning down from ``node`` which will have ``size``
@@ -1373,7 +1446,7 @@ class ContractionTree:
     slice_and_reconfigure_forest_ = functools.partialmethod(
         slice_and_reconfigure_forest, inplace=True)
 
-    def flat_tree(self):
+    def flat_tree(self, order=None):
         """Create a nested tuple representation of the contraction tree like::
 
             ((0, (1, 2)), ((3, 4), ((5, (6, 7)), (8, 9))))
@@ -1391,7 +1464,7 @@ class ContractionTree:
         """
         tups = {frozenset([i]): i for i in range(self.N)}
 
-        for parent, l, r in self.traverse():
+        for parent, l, r in self.traverse(order=order):
             tups[parent] = tups[l], tups[r]
 
         return tups[self.root]
@@ -1411,13 +1484,13 @@ class ContractionTree:
             if len(nd) == 1
         )
 
-    def path(self):
+    def path(self, order=None):
         """Generate a standard path from the contraction tree.
         """
         path = []
         terms = list(self.gen_leaves())
 
-        for parent, l, r in self.traverse():
+        for parent, l, r in self.traverse(order=order):
             i, j = sorted((terms.index(l), terms.index(r)))
             terms.pop(j)
             terms.pop(i)
@@ -1426,13 +1499,13 @@ class ContractionTree:
 
         return tuple(path)
 
-    def ssa_path(self):
+    def ssa_path(self, order=None):
         """Generate a ssa path from the contraction tree.
         """
         ssa_path = []
         pos = {frozenset([i]): i for i in range(self.N)}
 
-        for parent, l, r in self.traverse():
+        for parent, l, r in self.traverse(order=order):
             i, j = sorted((pos[l], pos[r]))
             ssa_path.append((i, j))
             pos[parent] = len(ssa_path) + self.N - 1
@@ -1441,8 +1514,75 @@ class ContractionTree:
 
     plot_ring = plot_tree_ring
     plot_tent = plot_tree_tent
+    plot_span = plot_tree_span
     plot_contractions = plot_contractions
     plot_contractions_alt = plot_contractions_alt
+
+    def get_spans(self):
+        """Get all (which could mean none) potential embeddings of this
+        contraction tree into a spanning tree of the original graph.
+
+        Returns
+        -------
+        tuple[dict[frozenset[int], frozenset[int]]]
+        """
+        ind_to_term = collections.defaultdict(set)
+        for i, term in enumerate(self.inputs):
+            for ix in term:
+                ind_to_term[ix].add(i)
+
+        def boundary_pairs(node):
+            """Get nodes along the boundary of the bipartition represented by
+            ``node``.
+            """
+            pairs = set()
+            for ix in self.get_removed(node):
+                # for every index across the contraction
+                l1, l2 = ind_to_term[ix]
+
+                # can either span from left to right or right to left
+                pairs.add((l1, l2))
+                pairs.add((l2, l1))
+
+            return pairs
+
+        # first span choice is any nodes across the top level bipart
+        candidates = [
+            {
+                # which intermedate nodes map to which leaf nodes
+                'map': {self.root: frozenset([l2])},
+                # the leaf nodes in the spanning tree
+                'spine': {l1, l2},
+            }
+            for l1, l2 in boundary_pairs(self.root)
+        ]
+
+        for p, l, r in self.descend():
+            for child in (r, l):
+
+                # for each current candidate check all the possible extensions
+                for _ in range(len(candidates)):
+                    cand = candidates.pop(0)
+
+                    # don't need to do anything for
+                    if len(child) == 1:
+                        candidates.append({
+                            'map': {child: child, **cand['map']},
+                            'spine': cand['spine'].copy(),
+                        })
+
+                    for l1, l2 in boundary_pairs(child):
+                        if (l1 in cand['spine']) or (l2 not in cand['spine']):
+                            # pair does not merge inwards into spine
+                            continue
+
+                        # valid extension of spanning tree
+                        candidates.append({
+                            'map': {child: frozenset([l2]), **cand['map']},
+                            'spine': cand['spine'] | {l1, l2},
+                        })
+
+        return tuple(c['map'] for c in candidates)
 
     def __repr__(self):
         s = "<ContractionTree(N={}, branches={}, complete={})>"
@@ -1492,7 +1632,7 @@ def score_size(trial):
 
 def score_combo(trial):
     return (
-        math.log2(trial['flops'] + 500 * trial['write']) +
+        math.log2(trial['flops'] + 256 * trial['write']) +
         math.log2(trial['size']) / 1000
     )
 
