@@ -8,7 +8,7 @@ from opt_einsum import contract_expression, contract_path
 from opt_einsum.contract import PathInfo
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 
-from .core import MaxCounter
+from .utils import MaxCounter, oset
 from .plot import plot_slicings, plot_slicings_alt
 
 
@@ -117,8 +117,8 @@ class ContractionCosts:
         # add all the input 'contractions'
         for term in info.input_subscripts.split(','):
             cs.append({
-                'involved': set(),
-                'legs': set(term),
+                'involved': oset(),
+                'legs': oset(term),
                 'size': compute_size_by_dict(term, size_dict),
                 'flops': 0,
             })
@@ -126,8 +126,8 @@ class ContractionCosts:
         for c in info.contraction_list:
             eq = c[2]
             lhs, rhs = eq.split('->')
-            legs = set(rhs)
-            involved = set.union(*map(set, lhs.split(',')))
+            legs = oset(rhs)
+            involved = oset.union(*map(oset, lhs.split(',')))
 
             cs.append({
                 'involved': involved,
@@ -181,8 +181,7 @@ class ContractionCosts:
 
         d = cost.size_dict[ix]
         cost.nslices *= d
-        ix_s = {ix}
-        # modified = set()
+        ix_s = oset([ix])
 
         for i in cost._where[ix]:
             c = cost.contractions[i]

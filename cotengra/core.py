@@ -14,9 +14,11 @@ except ImportError:
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
 
+from .utils import MaxCounter, oset
 from .plot import (
     plot_tree_ring,
     plot_tree_tent,
+    plot_tree_span,
     plot_contractions,
     plot_contractions_alt,
 )
@@ -98,76 +100,6 @@ def parse_parallel_arg(parallel):
     return parallel
 
 
-class MaxCounter:
-    """Simple class to keep track of the maximum in a likely changing
-    sequence of elements.
-
-    Parameters
-    ----------
-    it : None or sequence of hashable, optional
-        The initial items to add.
-
-    Examples
-    --------
-
-        >>> mc = MaxCounter([1, 2, 3, 3])
-        >>> mc.max()
-        3
-
-        >>> mc.discard(3)
-        >>> mc.max()
-        3
-
-        >>> mc.discard(3)
-        >>> mc.max()
-        2
-
-        >>> mc.add(10)
-        >>> mc.max()
-        10
-
-    """
-
-    __slots__ = ('_c', '_max_element')
-
-    def __init__(self, it=None):
-        self._c = collections.Counter(it)
-        if it is None:
-            self._max_element = -float('inf')
-        else:
-            self._max_element = max(self._c)
-
-    def copy(self):
-        new = object.__new__(MaxCounter)
-        new._max_element = self._max_element
-        new._c = self._c.copy()
-        return new
-
-    def discard(self, x):
-        """Discard element ``x`` and possibly update the maximum.
-        """
-        cnt = self._c[x]
-        if cnt <= 1:
-            del self._c[x]
-            if x == self._max_element:
-                # only need to update the max if ``x``
-                # was the last maximum sized element
-                self._max_element = max(self._c)
-        else:
-            self._c[x] = cnt - 1
-
-    def add(self, x):
-        """Add element ``x`` and possibly update the maximum.
-        """
-        self._c[x] += 1
-        self._max_element = max(self._max_element, x)
-
-    def max(self):
-        """The maximum element in this list.
-        """
-        return self._max_element
-
-
 def is_valid_node(node):
     """Check ``node`` is of type frozenset[int].
     """
@@ -234,9 +166,10 @@ class ContractionTree:
         track_size=False,
     ):
 
-        self.inputs = tuple(map(set, inputs))
-        self.N = len(self.inputs)
+        self.inputs = tuple(map(oset, inputs))
+        self.output = oset(output)
         self.size_dict = size_dict
+        self.N = len(self.inputs)
 
         # mapping of parents to children - the core binary tree object
         self.children = {}
@@ -247,7 +180,6 @@ class ContractionTree:
         # ... which we can fill in already for final / top node i.e.
         # the collection of all nodes
         self.root = frozenset(range(self.N))
-        self.output = set(output)
         self.add_node(self.root)
         self.info[self.root]['legs'] = self.output
         self.info[self.root]['size'] = compute_size_by_dict(self.output,
@@ -324,6 +256,13 @@ class ContractionTree:
         """
         return map(self.inputs.__getitem__, node)
 
+    def gen_leaves(self):
+        """Generate the nodes representing leaves of the contraction tree, i.e.
+        of size 1 each corresponding to a single input tensor.
+        """
+        for i in range(self.N):
+            yield frozenset((i,))
+
     @classmethod
     def from_path(cls, inputs, output, size_dict, *,
                   path=None, ssa_path=None, check=False, **kwargs):
@@ -337,19 +276,17 @@ class ContractionTree:
         if ssa_path is not None:
             path = ssa_path
 
-        contree = cls(inputs, output, size_dict, **kwargs)
-
-        # the leaf nodes
-        terms = [frozenset([i]) for i in range(len(inputs))]
+        tree = cls(inputs, output, size_dict, **kwargs)
+        terms = list(tree.gen_leaves())
 
         for p in path:
             if ssa_path is not None:
                 merge = [terms[i] for i in p]
             else:
                 merge = [terms.pop(i) for i in sorted(p, reverse=True)]
-            terms.append(contree.contract(merge, check=check))
+            terms.append(tree.contract(merge, check=check))
 
-        return contree
+        return tree
 
     @classmethod
     def from_info(cls, info, **kwargs):
@@ -374,15 +311,15 @@ class ContractionTree:
                        check=False, **kwargs):
         """Create a ``ContractionTree`` from an edge elimination ordering.
         """
-        contree = cls(inputs, output, size_dict, **kwargs)
-        nodes = [frozenset([i]) for i in range(len(inputs))]
+        tree = cls(inputs, output, size_dict, **kwargs)
+        nodes = list(tree.gen_leaves())
 
         for e in edge_path:
 
             # filter out the subgraph induced by edge `e` (generally a pair)
             new_terms, merge = [], []
             for node in nodes:
-                term = set.union(*contree.node_to_terms(node))
+                term = oset.union(*tree.node_to_terms(node))
                 if e in term:
                     merge.append(node)
                 else:
@@ -390,7 +327,7 @@ class ContractionTree:
 
             # contract the subgraph
             if merge:
-                nodes = new_terms + [contree.contract(merge, check=check)]
+                nodes = new_terms + [tree.contract(merge, check=check)]
 
         # make sure we are generating a full contraction tree
         nt = len(nodes)
@@ -399,9 +336,9 @@ class ContractionTree:
             # scalar? Or disconnected subgraphs?
             warnings.warn(
                 f"Ended up with {nt} nodes - contracting all remaining.")
-            contree.contract(nodes, check=check)
+            tree.contract(nodes, check=check)
 
-        return contree
+        return tree
 
     def add_node(self, node, check=False):
         if check:
@@ -440,7 +377,7 @@ class ContractionTree:
         except KeyError:
             nodes_above = self.root - node
             terms_above = self.node_to_terms(nodes_above)
-            keep = set.union(self.output, *terms_above)
+            keep = oset.union(self.output, *terms_above)
             self.info[node]['keep'] = keep
         return keep
 
@@ -457,7 +394,7 @@ class ContractionTree:
                 try:
                     involved = self.get_involved(node)
                 except KeyError:
-                    involved = set.union(*self.node_to_terms(node))
+                    involved = oset.union(*self.node_to_terms(node))
                 keep = self.get_keep(node)
                 legs = involved & keep
             self.info[node]['legs'] = legs
@@ -470,10 +407,10 @@ class ContractionTree:
             involved = self.info[node]['involved']
         except KeyError:
             if len(node) == 1:
-                involved = set()
+                involved = oset()
             else:
                 sub_legs = map(self.get_legs, self.children[node])
-                involved = set.union(*sub_legs)
+                involved = oset.union(*sub_legs)
             self.info[node]['involved'] = involved
         return involved
 
@@ -564,6 +501,20 @@ class ContractionTree:
         self._track_size = True
         return self._sizes.max()
 
+    def peak_size(self, order=None):
+        """Get the peak concurrent size of tensors needed - this depends on the
+        traversal order, i.e. the exact contraction path, not just the
+        contraction tree.
+        """
+        tot_size = sum(self.get_size(node) for node in self.gen_leaves())
+        peak = tot_size
+        for p, l, r in self.traverse(order=order):
+            tot_size -= self.get_size(l)
+            tot_size -= self.get_size(r)
+            tot_size += self.get_size(p)
+            peak = max(peak, tot_size)
+        return peak
+
     def arithmetic_intensity(self):
         """The ratio of total flops to total write - the higher the better for
         extracting good computational performance.
@@ -578,7 +529,7 @@ class ContractionTree:
         tree.max_size()
 
         d = tree.size_dict[ind]
-        s_ind = {ind}
+        s_ind = oset([ind])
 
         for node, node_info in tree.info.items():
 
@@ -699,8 +650,8 @@ class ContractionTree:
         #   /  \    /   / \
         #  N0  N1  N2  N3  N4    <- ``nodes``, or, subgraphs
         #  /    \  /   /    \
-        path_inputs = [set(self.get_legs(x)) for x in nodes]
-        path_output = set(self.get_legs(grandparent))
+        path_inputs = [oset(self.get_legs(x)) for x in nodes]
+        path_output = oset(self.get_legs(grandparent))
 
         if isinstance(optimize, str):
             path_fn = get_path_fn(optimize)
@@ -1464,7 +1415,7 @@ class ContractionTree:
         """Generate a standard path from the contraction tree.
         """
         path = []
-        terms = [frozenset([i]) for i in range(self.N)]
+        terms = list(self.gen_leaves())
 
         for parent, l, r in self.traverse():
             i, j = sorted((terms.index(l), terms.index(r)))
@@ -1765,7 +1716,7 @@ class LineGraph:
 
     def __init__(self, inputs, output):
         self.inputs = inputs
-        self.nodes = tuple(set.union(*inputs))
+        self.nodes = tuple(oset.union(*inputs))
         self.nodemap = {ix: i for i, ix in enumerate(self.nodes)}
 
         # num nodes in dual = num edges in real graph

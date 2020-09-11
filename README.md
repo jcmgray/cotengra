@@ -541,7 +541,7 @@ These are all illustrated in the example notebook [`examples/Quantum Circuit Exa
 * [ ] tree fusing
 * [ ] early pruning with the `'Uniform'` optimizers
 * [ ] investigate different KaHyPar profiles and partitioners
-* [ ] compute more relevant peak memory of contraction, not just 'width', W
+* [x] ~~compute more relevant peak memory of contraction, not just 'width', W~~
 * [x] ~~further improve `ContractionTree` efficiency (move to `opt_einsum`?) with index counting~~
 * [x] ~~subtree reconfiguration~~
 * [x] ~~improve slicing performance (`numpy` or `cython`?)~~
