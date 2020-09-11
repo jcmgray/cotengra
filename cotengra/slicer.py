@@ -264,7 +264,7 @@ class SliceFinder:
         target_slices=None,
         temperature=0.01,
         minimize='flops',
-        allow_outer=False,
+        allow_outer=True,
     ):
         if all(
             t is None for t in (target_size, target_overhead, target_slices)
@@ -530,11 +530,13 @@ class SlicedContractor:
         size_dict=None,
     ):
         # basic info
-        self.inputs = eq.split('->')[0].split(',')
+        lhs, self.output = eq.split('->')
+        self.inputs = lhs.split(',')
         self.arrays = tuple(arrays)
         self.sliced = tuple(sorted(sliced, key=eq.index))
         if size_dict is None:
             size_dict = create_size_dict(self.inputs, self.arrays)
+        self.size_dict = size_dict
 
         # find which arrays are going to be sliced or not
         self.constant, self.changing = [], []
@@ -546,10 +548,10 @@ class SlicedContractor:
 
         # information about the contraction of a single slice
         self.eq_sliced = "".join(c for c in eq if c not in sliced)
-        self.sliced_sizes = tuple(size_dict[i] for i in self.sliced)
-        self.nslices = compute_size_by_dict(self.sliced, size_dict)
+        self.sliced_sizes = tuple(self.size_dict[i] for i in self.sliced)
+        self.nslices = compute_size_by_dict(self.sliced, self.size_dict)
         self.shapes_sliced = tuple(
-            tuple(size_dict[i] for i in term)
+            tuple(self.size_dict[i] for i in term)
             for term in self.eq_sliced.split('->')[0].split(',')
         )
         self.path, self.info_sliced = contract_path(
@@ -614,11 +616,47 @@ class SlicedContractor:
         arrays = self.get_sliced_arrays(i)
         return self._expr(*arrays, **kwargs)
 
+    def gather_slices(self, slices):
+        """Gather all the output contracted slices into the single full result.
+        """
+        output_pos = {ix: i for i, ix in enumerate(self.output)
+                      if ix in self.sliced}
+
+        if not output_pos:
+            # we can just sum everything
+            return functools.reduce(operator.add, slices)
+
+        # else we need to do a multidimensional stack of all the results
+        from autoray import do
+
+        sliced_pos = {ix: i for i, ix in enumerate(self.sliced)
+                      if ix in self.output}
+
+        # first we sum over non-output sliced indices
+        chunks = {}
+        for i, s in enumerate(slices):
+            loc = dynary(i, self.sliced_sizes)
+            key = tuple(loc[sliced_pos[ix]] for ix in output_pos)
+            try:
+                chunks[key] = chunks[key] + s
+            except KeyError:
+                chunks[key] = s
+
+        # then we stack these summed chunks over output sliced indices
+        def recursively_stack_chunks(loc, rem):
+            if not rem:
+                return chunks[loc]
+            return do('stack',
+                      [recursively_stack_chunks(loc + (d,), rem[1:])
+                       for d in range(self.size_dict[rem[0]])],
+                      axis=output_pos[rem[0]] - len(loc), like=s)
+
+        return recursively_stack_chunks((), tuple(output_pos))
+
     def contract_all(self, **kwargs):
         """Contract (and sum) all slices at once.
         """
-        return functools.reduce(
-            operator.add,
+        return self.gather_slices(
             (self.contract_slice(i, **kwargs) for i in range(self.nslices))
         )
 
