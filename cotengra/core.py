@@ -457,12 +457,8 @@ class ContractionTree:
             return self.multiplicity * self._flops
 
         self._flops = 0
-        queue = [self.root]
-        while queue:
-            node = queue.pop()
+        for node, _, _ in self.traverse():
             self._flops += self.get_flops(node)
-            if len(node) > 1:
-                queue.extend(self.children[node])
 
         self._track_flops = True
         return self.multiplicity * self._flops
@@ -474,12 +470,8 @@ class ContractionTree:
             return self.multiplicity * self._write
 
         self._write = 0
-        queue = [self.root]
-        while queue:
-            node = queue.pop()
+        for node, _, _ in self.traverse():
             self._write += self.get_size(node)
-            if len(node) > 1:
-                queue.extend(self.children[node])
 
         self._track_write = True
         return self.multiplicity * self._write
@@ -491,12 +483,8 @@ class ContractionTree:
             return self._sizes.max()
 
         self._sizes = MaxCounter()
-        queue = [self.root]
-        while queue:
-            node = queue.pop()
+        for node, _, _ in self.traverse():
             self._sizes.add(self.get_size(node))
-            if len(node) > 1:
-                queue.extend(self.children[node])
 
         self._track_size = True
         return self._sizes.max()
@@ -1001,7 +989,7 @@ class ContractionTree:
                         current_cost += tree.get_size(node)
                     elif minimize == 'size':
                         current_cost = max(
-                            current_cost, tree.get_size(sub_root))
+                            current_cost, tree.get_size(node))
                     elif minimize == 'combo':
                         current_cost += (
                             tree.get_flops(node) // 2 +
