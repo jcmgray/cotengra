@@ -71,7 +71,7 @@ def baytune_init_optimizers(
             name: convert_param_to_baytune(param)
             for name, param in space[method].items()
         }))
-        for method in space
+        for method in methods
     }
 
 
