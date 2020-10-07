@@ -54,14 +54,23 @@ def get_pool(n_workers=None, maybe_create=False):
             return None
 
         from dask.distributed import LocalCluster, Client
+        import tempfile
+        import shutil
+        import atexit
 
-        lc = LocalCluster(n_workers=n_workers, threads_per_worker=1)
+        local_directory = tempfile.mkdtemp()
+        lc = LocalCluster(n_workers=n_workers, threads_per_worker=1,
+                          local_directory=local_directory)
         client = Client(lc)
 
         warnings.warn(
             "Parallel specified but no existing global dask client found... "
             "created one (with {} workers)."
             .format(len(client.scheduler_info()['workers'])))
+
+        @atexit.register
+        def delete_local_dask_directory():
+            shutil.rmtree(local_directory, ignore_errors=True)
 
     if n_workers is not None:
         current_n_workers = len(client.scheduler_info()['workers'])

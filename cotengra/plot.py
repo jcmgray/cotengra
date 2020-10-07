@@ -2,6 +2,8 @@ import math
 import functools
 import collections
 
+import numpy as np
+
 
 def plot_trials(
     self,
@@ -231,6 +233,42 @@ def tree_to_networkx(tree):
     return G
 
 
+def rotate(xy, theta):
+    """Return a rotated set of points.
+    """
+    s = np.sin(theta)
+    c = np.cos(theta)
+
+    xyr = np.empty_like(xy)
+    xyr[:, 0] = c * xy[:, 0] - s *  xy[:, 1]
+    xyr[:, 1] = s * xy[:, 0] + c *  xy[:, 1]
+
+    return xyr
+
+
+def span(xy):
+    """Return the vertical span of the points.
+    """
+    return xy[:, 1].max() - xy[:, 1].min()
+
+
+def massage_pos(pos, nangles=12, flatten=False):
+    """Rotate a position dict's points to cover a small vertical span
+    """
+    xy = np.empty((len(pos), 2))
+    for i, (x, y) in enumerate(pos.values()):
+        xy[i, 0] = x
+        xy[i, 1] = y
+    thetas = np.linspace(0, 2 * np.pi, nangles, endpoint=False)
+    rxys = (rotate(xy, theta) for theta in thetas)
+    rxy0 = min(rxys, key=lambda rxy: span(rxy))
+
+    if flatten:
+        rxy0[:, 1] /=2
+
+    return dict(zip(pos, rxy0))
+
+
 def plot_tree(
     tree,
     layout='ring',
@@ -317,9 +355,8 @@ def plot_tree(
     if layout == 'tent':
         # place raw graph first
         pos = nx.kamada_kawai_layout(G_tn)
-        pos = nx.spring_layout(G_tn, k=k, iterations=iterations, pos=pos)
-        # 'flatten' a bit onto plane
-        pos = {k: [v[0], v[1] / 2] for k, v in pos.items()}
+        pos = nx.spring_layout(G_tn, k=k, iterations=0, pos=pos)
+        pos = massage_pos(pos, flatten=True)
 
         xmin = min(v[0] for v in pos.values())
         xmax = max(v[0] for v in pos.values())
@@ -380,6 +417,7 @@ def plot_tree(
         # place raw graph first
         pos = nx.kamada_kawai_layout(G_tn)
         pos = nx.spring_layout(G_tn, k=k, iterations=iterations, pos=pos)
+        pos = massage_pos(pos, flatten=False)
         if span is None:
             span = tree.get_spans()[0]
         pos.update({node: pos[span[node]] for node in G_tree.nodes})
