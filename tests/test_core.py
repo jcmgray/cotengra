@@ -54,6 +54,13 @@ def test_reconfigure(forested, parallel, requires):
     assert tree_gr.total_flops() == info_tsr.opt_cost
 
 
+def test_reconfigure_with_n_smaller_than_subtree_size():
+    eq, shapes = oe.helpers.rand_equation(10, 3)
+    path, info = oe.contract_path(eq, *shapes, shapes=True)
+    tree = ContractionTree.from_info(info)
+    tree.subtree_reconfigure(12)
+
+
 @pytest.mark.parametrize(('forested', 'parallel', 'requires'), [
     (False, False, ''),
     (True, False, ''),
