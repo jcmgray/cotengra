@@ -172,7 +172,10 @@ class MaxCounter:
             if x == self._max_element:
                 # only need to update the max if ``x``
                 # was the last maximum sized element
-                self._max_element = max(self._c)
+                try:
+                    self._max_element = max(self._c)
+                except ValueError:
+                    self._max_element = -float('inf')
         else:
             self._c[x] = cnt - 1
 
