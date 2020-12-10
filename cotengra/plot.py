@@ -310,15 +310,17 @@ def plot_tree(
     # tree edge colors
     ew_range = min(edge_weights), max(edge_weights)
     enorm = mpl.colors.Normalize(*ew_range, clip=True)
-    edge_cm = getattr(mpl.cm, edge_colormap)
-    emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_cm)
+    if not isinstance(edge_colormap, mpl.colors.Colormap):
+        edge_colormap = getattr(mpl.cm, edge_colormap)
+    emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_colormap)
     edge_colors = [emapper.to_rgba(x) for x in edge_weights]
 
     # tree node colors
     nw_range = min(node_weights), max(node_weights)
     nnorm = mpl.colors.Normalize(*nw_range, clip=True)
-    node_cm = getattr(mpl.cm, node_colormap)
-    nmapper = mpl.cm.ScalarMappable(norm=nnorm, cmap=node_cm)
+    if not isinstance(node_colormap, mpl.colors.Colormap):
+        node_colormap = getattr(mpl.cm, node_colormap)
+    nmapper = mpl.cm.ScalarMappable(norm=nnorm, cmap=node_colormap)
     node_colors = [nmapper.to_rgba(x) for x in node_weights]
 
     # plot the raw connectivity of the underlying graph
@@ -451,7 +453,7 @@ def plot_tree(
         max_size = math.log2(max(tree.get_size(x) for x in tree.info))
         edge_norm = mpl.colors.Normalize(vmin=min_size, vmax=max_size)
         ax_l = fig.add_axes([-0.02, 0.25, 0.02, 0.5])
-        cb_l = mpl.colorbar.ColorbarBase(ax_l, cmap=edge_cm, norm=edge_norm)
+        cb_l = mpl.colorbar.ColorbarBase(ax_l, cmap=edge_colormap, norm=edge_norm)
         cb_l.outline.set_visible(False)
         ax_l.yaxis.tick_left()
         ax_l.set(title='log2[SIZE]')
@@ -462,7 +464,7 @@ def plot_tree(
                                    for x in tree.info))
         node_norm = mpl.colors.Normalize(vmin=min_flops, vmax=max_flops)
         ax_r = fig.add_axes([1.0, 0.25, 0.02, 0.5])
-        cb_r = mpl.colorbar.ColorbarBase(ax_r, cmap=node_cm, norm=node_norm)
+        cb_r = mpl.colorbar.ColorbarBase(ax_r, cmap=node_colormap, norm=node_norm)
         cb_r.outline.set_visible(False)
         ax_r.yaxis.tick_right()
         ax_r.set(title='log10[FLOPS]')
@@ -570,8 +572,9 @@ def plot_contractions(
 
     ax_cb = fig.add_axes([1.02, 0.25, 0.02, 0.55])
     ax_cb.set(title='Stage')
-    cm = getattr(mpl.cm, color_scheme)
-    cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=cm)
+    if not isinstance(color_scheme, mpl.colors.Colormap):
+        color_scheme = getattr(mpl.cm, color_scheme)
+    cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=color_scheme)
     cb.outline.set_visible(False)
 
     with warnings.catch_warnings():
@@ -673,8 +676,9 @@ def plot_slicings(
     ax_cb = fig.add_axes([1.02, 0.25, 0.02, 0.55])
     nm = mpl.colors.Normalize(vmin=df['log2[NSLICES]'].min(),
                               vmax=df['log2[NSLICES]'].max())
-    cm = getattr(mpl.cm, color_scheme)
-    cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=cm, norm=nm)
+    if not isinstance(color_scheme, mpl.colors.Colormap):
+        color_scheme = getattr(mpl.cm, color_scheme)
+    cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=color_scheme, norm=nm)
     cb.outline.set_visible(False)
 
     with warnings.catch_warnings():
