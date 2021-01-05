@@ -61,7 +61,7 @@ def get_pool(n_workers=None, maybe_create=False):
 
         local_directory = tempfile.mkdtemp()
         lc = LocalCluster(n_workers=n_workers, threads_per_worker=1,
-                          local_directory=local_directory)
+                          local_directory=local_directory, memory_limit=0)
         client = Client(lc)
 
         warnings.warn(
@@ -1181,7 +1181,8 @@ class ContractionTree:
                     if pool is None:
                         d = _describe_tree(forest[0])
                     else:
-                        d = pool.submit(_describe_tree, forest[0]).result()
+                        d = pool.submit(_describe_tree, forest[0],
+                                        pure=False).result()
                     pbar.set_description(d)
 
         finally:
@@ -1428,7 +1429,8 @@ class ContractionTree:
                     if pool is None:
                         d = _describe_tree(forest[0])
                     else:
-                        d = pool.submit(_describe_tree, forest[0]).result()
+                        d = pool.submit(_describe_tree, forest[0],
+                                        pure=False).result()
                     pbar.set_description(d)
 
                 if res[0]['size'] <= target_size:
