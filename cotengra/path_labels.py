@@ -50,25 +50,26 @@ def labels_partition(
     final_sweep
     """
 
-    G = HyperGraph(
+    H = HyperGraph(
         inputs, output, size_dict,
         weight_nodes=weight_nodes, weight_edges=weight_edges,
         fuse_output_inds=fuse_output_inds
     )
-    N = G.num_vertices
+    N = H.num_nodes
+    H._compute_weights()
 
-    sites = list(range(len(G.nodes)))
+    sites = list(range(len(H.nodes)))
     neighbs = collections.defaultdict(set)
-    max_edge_weight = max(G.edge_weights)
+    max_edge_weight = max(H.edge_weights)
     weights = {}
 
     # populate neighbor list and weights by edge weight
     for i in sites:
-        for e in G.nodes[i]:
-            for j in G.edgemap[e]:
+        for e in H.nodes[i]:
+            for j in H.indmap[e]:
                 if j != i:
                     neighbs[i].add(j)
-                    weights[i, j] = G.edge_weight_map[e] / max_edge_weight
+                    weights[i, j] = H.edge_weight_map[e] / max_edge_weight
 
     # weight by mutual connectivity
     for i, j in weights:

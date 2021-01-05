@@ -21,6 +21,7 @@ from .plot import (
     plot_tree_span,
     plot_contractions,
     plot_contractions_alt,
+    plot_hypergraph,
 )
 
 
@@ -458,6 +459,13 @@ class ContractionTree:
                 flops = flop_count(involved, removed, 2, self.size_dict)
             self.info[node]['flops'] = flops
         return flops
+
+    def get_centrality(self, node):
+        try:
+            return self.info[node]['centrality']
+        except KeyError:
+            self.compute_centralities()
+            return self.info[node]['centrality']
 
     def total_flops(self):
         """Sum the flops contribution from every node in the tree.
@@ -1509,11 +1517,14 @@ class ContractionTree:
 
         return tuple(ssa_path)
 
-    plot_ring = plot_tree_ring
-    plot_tent = plot_tree_tent
-    plot_span = plot_tree_span
-    plot_contractions = plot_contractions
-    plot_contractions_alt = plot_contractions_alt
+    def surface_order(self, node):
+        return (len(node), -self.get_centrality(node))
+
+    def path_surface(self):
+        return self.path(order=self.surface_order)
+
+    def ssa_path_surface(self):
+        return self.ssa_path(order=self.surface_order)
 
     def get_spans(self):
         """Get all (which could mean none) potential embeddings of this
@@ -1580,6 +1591,53 @@ class ContractionTree:
                         })
 
         return tuple(c['map'] for c in candidates)
+
+    def compute_centralities(self, combine='mean'):
+        """Compute a centrality for every node in this contraction tree.
+        """
+        H = self.get_hypergraph()
+        Cs = H.simple_centrality()
+
+        for i, leaf in enumerate(self.gen_leaves()):
+            self.info[leaf]['centrality'] = Cs[i]
+
+        if combine == 'mean':
+            def combine(x, y):
+                return (x + y) / 2
+
+        elif combine == 'sum':
+            def combine(x, y):
+                return (x + y)
+
+        elif combine == 'max':
+            def combine(x, y):
+                return max(x, y)
+
+        elif combine == 'min':
+            def combine(x, y):
+                return min(x, y)
+
+        for p, l, r in self.traverse():
+            self.info[p]['centrality'] = combine(
+                self.info[l]['centrality'],
+                self.info[r]['centrality'])
+
+    def get_hypergraph(self):
+        if not hasattr(self, '_hypergraph'):
+            self._hypergraph = HyperGraph(
+                self.inputs, self.output, self.size_dict)
+        return self._hypergraph
+
+    plot_ring = plot_tree_ring
+    plot_tent = plot_tree_tent
+    plot_span = plot_tree_span
+    plot_contractions = plot_contractions
+    plot_contractions_alt = plot_contractions_alt
+
+    @functools.wraps(plot_hypergraph)
+    def plot_hypergraph(self, **kwargs):
+        H = self.get_hypergraph()
+        H.plot(**kwargs)
 
     def __repr__(self):
         s = "<ContractionTree(N={}, branches={}, complete={})>"
@@ -1684,7 +1742,7 @@ class PartitionTreeBuilder:
         self.partition_fn = partition_fn
 
     def __call__(self, inputs, output, size_dict, random_strength=0.01,
-                 weight_nodes='constant', weight_edges='log',
+                 weight_nodes='const', weight_edges='log',
                  cutoff=10, parts=2, parts_decay=0.5,
                  sub_optimize='auto', super_optimize='auto-hq',
                  check=False, **kwargs):
@@ -1890,40 +1948,85 @@ class LineGraph:
             f.write(contents)
 
 
+try:
+    from gmpy2 import popcount
+
+except ImportError:
+
+    def popcount(x):
+        return bin(x).count('1')
+
+
+def dict_affine_renorm(d):
+    dmax = max(d.values())
+    dmin = min(d.values())
+    if dmax == dmin:
+        dmin = 0
+    return {k: (v - dmin) / (dmax - dmin) for k, v in d.items()}
+
+
 class HyperGraph:
-    """Simple hypergraph builder and writer. For compatibility with KaHyPar
-    vertices are enumerated from 1.
+    """Simple hypergraph builder and writer.
     """
 
-    def __init__(self, inputs, output, size_dict,
-                 weight_edges='log', weight_nodes='constant',
-                 fuse_output_inds=False):
-
-        self.node_weights = []
-        self.edgemap = collections.defaultdict(list)
+    def __init__(
+        self,
+        inputs,
+        output=(),
+        size_dict=None,
+        weight_edges='const',
+        weight_nodes='const',
+        fuse_output_inds=False,
+    ):
+        self.inputs = inputs
+        self.output = output
+        self.size_dict = dict() if size_dict is None else size_dict
 
         if output and fuse_output_inds:
-            self.nodes = tuple(itertools.chain(inputs, [output]))
+            self.nodes = (tuple(itertools.chain(inputs, [output])))
         else:
             self.nodes = tuple(inputs)
 
+        self.fuse_output_inds = fuse_output_inds
+
+        self.indmap = collections.defaultdict(list)
         for i, term in enumerate(self.nodes):
             for ix in term:
-                self.edgemap[ix].append(i)
-            self.node_weights.append(
-                calc_node_weight(term, size_dict, weight_nodes))
+                self.indmap[ix].append(i)
 
-        self.edge_list = tuple(self.edgemap)
+        self.num_nodes = len(self.nodes)
+        self.num_edges = len(self.indmap)
+
+        self.weight_nodes = weight_nodes
+        self.weight_edges = weight_edges
+
+        # compute these lazily
+        self.node_weights = None
+        self.edge_list = None
+        self.edge_weight_map = None
+        self.edge_weights = None
+        self.has_edge_weights = None
+        self.has_node_weights = None
+        self.fmt = None
+
+    def _compute_weights(self):
+        if self.node_weights is not None:
+            # only compute once
+            return
+
+        self.node_weights = [
+            calc_node_weight(term, self.size_dict, self.weight_nodes)
+            for term in self.nodes
+        ]
+
+        self.edge_list = tuple(self.indmap)
         self.edge_weight_map = {
-            e: calc_edge_weight(e, size_dict, weight_edges)
+            e: calc_edge_weight(e, self.size_dict, self.weight_edges)
             for e in self.edge_list}
         self.edge_weights = [self.edge_weight_map[e] for e in self.edge_list]
 
-        self.num_vertices = len(self.node_weights)
-        self.num_edges = len(self.edge_list)
-
-        self.has_edge_weights = weight_edges in ('log', 'linear')
-        self.has_node_weights = weight_nodes in ('log', 'linear')
+        self.has_edge_weights = self.weight_edges in ('log', 'linear')
+        self.has_node_weights = self.weight_nodes in ('log', 'linear')
         self.fmt = {
             (False, False): "",
             (False, True): "10",
@@ -1931,11 +2034,185 @@ class HyperGraph:
             (True, True): "11",
         }[self.has_edge_weights, self.has_node_weights]
 
+    def __len__(self):
+        return self.num_nodes
+
+    def neighbors(self, i):
+        """Get the neighbors of node ``i``.
+        """
+        return oset(j for ix in self.nodes[i]
+                    for j in self.indmap[ix] if j != i)
+
+    def simple_closeness(self, p=0.75, mu=0.5):
+        """Compute a rough hypergraph 'closeness'.
+
+        Parameters
+        ----------
+        p : float, optional
+            Once any node has had ``H.num_nodes**p`` visitors terminate. Set
+            greater than 1.0 for no limit (slower).
+        mu : float, optional
+            Let the visitor score decay with this power. The higher this is,
+            the more local connectivity is favored.
+
+        Returns
+        -------
+        scores : dict[int, float]
+            The simple hypergraph closenesses - higher being more central.
+        """
+        sz_stop = self.num_nodes**p
+        should_stop = False
+
+        # which nodes have reached which other nodes (bitmap set)
+        visitors = {i: 1 << i for i in range(self.num_nodes)}
+
+        # store the number of unique visitors - the change is this each step
+        #    is the number of new shortest paths of length ``d``
+        num_visitors = {i: 1 for i in range(self.num_nodes)}
+
+        # the total weighted score - combining num visitors and their distance
+        scores = {i: 0.0 for i in range(self.num_nodes)}
+
+        # at each iteration expand all nodes visitors to their neighbors
+        for d in range(self.num_nodes):
+
+            # do a parallel update
+            previous_visitors = visitors.copy()
+
+            for i in range(self.num_nodes):
+                for j in self.neighbors(i):
+                    visitors[i] |= previous_visitors[j]
+
+                # visitors are worth less the further they've come from
+                new_nv = popcount(visitors[i])
+                scores[i] += (new_nv - num_visitors[i]) / (d + 1)**mu
+                num_visitors[i] = new_nv
+
+                # once any node has reached a certain number of visitors stop
+                should_stop |= (new_nv >= sz_stop)
+
+            if should_stop:
+                break
+
+        # finally rescale the values between 0.0 and 1.0
+        return dict_affine_renorm(scores)
+
+    def simple_centrality(self, r=None, smoothness=2, **closeness_opts):
+        """A simple algorithm for large hypergraph centrality. First we find
+        a rough closeness centrality, then relax / smooth this by nodes
+        iteratively radiating their centrality to their neighbors.
+
+        Parameters
+        ----------
+        r : None or int, optional
+            Number of iterations. Defaults to
+            ``max(10, int(self.num_nodes**0.5))``.
+        smoothness : float, optional
+            The smoothness. In conjunction with a high value of ``r`` this will
+            create a smooth gradient from one of the hypergraph to the other.
+        closeness_opts
+            Supplied to ``HyperGraph.simple_closeness`` as the starting point.
+
+        Returns
+        -------
+        dict[int, float]
+        """
+        # take a rough closeness as the starting point
+        c = self.simple_closeness(**closeness_opts)
+
+        if r is None:
+            # take the propagation time as sqrt hypergraph size
+            r = max(10, int(self.num_nodes**0.5))
+
+        for _ in range(r):
+            # do a parallel update
+            previous_c = c.copy()
+
+            # spread the centrality of each node into its neighbors
+            for i in range(self.num_nodes):
+                ci = previous_c[i]
+                for j in self.neighbors(i):
+                    c[j] += smoothness * ci / r
+
+            # then rescale all the values between 0.0 and 1.0
+            c = dict_affine_renorm(c)
+
+        return c
+
+    def get_laplacian(self):
+        """Get the graph Laplacian.
+        """
+        import numpy as np
+
+        L = np.zeros((self.num_nodes, self.num_nodes))
+
+        for i, term in enumerate(self.nodes):
+            L[i, i] = len(term)
+
+        for i, j in self.indmap.values():
+            L[i, j] = L[j, i] = -1
+
+        return L
+
+    def get_resistance_distances(self):
+        """Get the resistance distance between all nodes of the raw graph.
+        """
+        import numpy as np
+
+        L = self.get_laplacian()
+        L += (1 / self.num_nodes)
+        L = np.linalg.inv(L)
+        d = np.array(np.diag(L))  # needs to be copy
+        L *= -2
+        L += d.reshape(1, -1)
+        L += d.reshape(-1, 1)
+
+        return L
+
+    def resistance_centrality(self, rescale=True):
+        """Compute the centrality in terms of the total resistance distance
+        to all other nodes.
+        """
+        L = self.get_resistance_distances()
+
+        Cs = dict(enumerate(-L.sum(axis=1)))
+
+        if rescale:
+            Cs = dict_affine_renorm(Cs)
+
+        return Cs
+
+    def to_networkx(H):
+        """Convert to a networkx Graph, with hyperedges represented as nodes.
+        """
+        import networkx as nx
+
+        G = nx.Graph(any_hyper=False)
+        for ix, nodes in H.indmap.items():
+            if len(nodes) == 2:
+                # regular edge
+                G.add_edge(*nodes, ind=ix, hyperedge=False)
+            else:
+                # hyperedge
+                G.graph['any_hyper'] = True
+                G.add_node(ix, hyperedge=True)
+                for nd in nodes:
+                    G.add_edge(ix, nd, ind=ix, hyperedge=True)
+
+        for nd in G.nodes:
+            G.nodes[nd].setdefault('hyperedge', False)
+
+        return G
+
     def to_hmetis_str(self):
-        lns = [f"{self.num_edges} {self.num_vertices} {self.fmt}"]
+        """Note that vertices are enumerated from 1 not 0.
+        """
+        self._compute_weights()
+
+        lns = [f"{self.num_edges} {self.num_nodes} {self.fmt}"]
 
         for e in self.edge_list:
-            ln = " ".join(str(v + 1) for v in self.edgemap[e])
+            ln = " ".join(str(v + 1) for v in self.indmap[e])
             if self.has_edge_weights:
                 ln = f"{self.edge_weight_map[e]} {ln}"
             lns.append(ln)
@@ -1951,13 +2228,17 @@ class HyperGraph:
             f.write(self.to_hmetis_str())
 
     def to_sparse(self):
+        self._compute_weights()
+
         hyperedge_indices = []
         hyperedges = []
         for e in self.edge_list:
             hyperedge_indices.append(len(hyperedges))
-            hyperedges.extend(self.edgemap[e])
+            hyperedges.extend(self.indmap[e])
         hyperedge_indices.append(len(hyperedges))
         return hyperedge_indices, hyperedges
 
+    plot = plot_hypergraph
+
     def __repr__(self):
-        return f"<HyperGraph(|V|={self.num_vertices}, |E|={self.num_edges})>"
+        return f"<HyperGraph(|V|={self.num_nodes}, |E|={self.num_edges})>"

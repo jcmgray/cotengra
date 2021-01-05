@@ -2,7 +2,7 @@ import functools
 
 from opt_einsum.paths import register_path_fn
 
-from .core import ContractionTree
+from .core import ContractionTree, HyperGraph
 from .slicer import SliceFinder, SlicedContractor
 
 from . import path_greedy
@@ -57,6 +57,7 @@ more 'even' way than purely random - requires ``chocolate``.
 
 __all__ = (
     "ContractionTree",
+    "HyperGraph",
     "FlowCutterOptimizer",
     "get_hyper_space",
     "hyper_baytune",

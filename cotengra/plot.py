@@ -240,8 +240,8 @@ def rotate(xy, theta):
     c = np.cos(theta)
 
     xyr = np.empty_like(xy)
-    xyr[:, 0] = c * xy[:, 0] - s *  xy[:, 1]
-    xyr[:, 1] = s * xy[:, 0] + c *  xy[:, 1]
+    xyr[:, 0] = c * xy[:, 0] - s * xy[:, 1]
+    xyr[:, 1] = s * xy[:, 0] + c * xy[:, 1]
 
     return xyr
 
@@ -264,7 +264,7 @@ def massage_pos(pos, nangles=12, flatten=False):
     rxy0 = min(rxys, key=lambda rxy: span(rxy))
 
     if flatten:
-        rxy0[:, 1] /=2
+        rxy0[:, 1] /= 2
 
     return dict(zip(pos, rxy0))
 
@@ -335,24 +335,21 @@ def plot_tree(
         G_tn = nx.Graph()
         any_hyper = False
         for ix, nodes in ind_map.items():
-            width = math.log2(tree.size_dict[ix])
+            width = math.log2(tree.size_dict.get(ix, 2))
+            color = (
+                (0., 0., 0., raw_edge_alpha)
+                if ix not in highlight else
+                (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
+            )
             # regular edge
             if len(nodes) == 2:
-                G_tn.add_edge(*nodes, ind=ix, width=width)
+                G_tn.add_edge(*nodes, ind=ix, width=width, color=color)
             # hyperedge
             else:
                 any_hyper = True
                 G_tn.add_node(ix)
                 for nd in nodes:
-                    G_tn.add_edge(ix, nd, ind=ix, width=width)
-
-        edge_widths_raw = [G_tn.edges[e]['width'] for e in G_tn.edges]
-        edge_colors_raw = [
-            (0., 0., 0., raw_edge_alpha)
-            if G_tn.edges[e]['ind'] not in highlight
-            else (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
-            for e in G_tn.edges
-        ]
+                    G_tn.add_edge(ix, nd, ind=ix, width=width, color=color)
 
     if layout == 'tent':
         # place raw graph first
@@ -433,8 +430,8 @@ def plot_tree(
     if plot_raw_graph:
         nx.draw_networkx_edges(
             G_tn, pos=pos, ax=ax,
-            width=edge_widths_raw,
-            edge_color=edge_colors_raw)
+            width=[G_tn.edges[e]['width'] for e in G_tn.edges],
+            edge_color=[G_tn.edges[e]['color'] for e in G_tn.edges])
 
     if plot_leaf_labels:
         nx.draw_networkx_labels(
@@ -711,3 +708,156 @@ def plot_slicings_alt(
                         sort='descending'),
         tooltip=list(df.columns)
     ).configure_axis(gridColor='rgb(248,248,248)').interactive()
+
+
+def hypergraph_compute_plot_info_G(
+    H,
+    G,
+    highlight=(),
+    node_color=(.5, .5, .5, 1.0),
+    edge_alpha=1 / 3,
+    colormap='Spectral_r',
+    centrality=False,
+):
+    """Imbue the networkx representation, ``G``, of hypergraph, ``H`` with
+    relevant plot information.
+    """
+    import matplotlib.cm
+
+    for e in G.edges:
+        ix = G.edges[e]['ind']
+        width = math.log2(H.size_dict.get(ix, 2))
+        color = (
+            (0., 0., 0., edge_alpha)
+            if ix not in highlight else
+            (1.0, 0.0, 1.0, edge_alpha**0.5)
+        )
+        label = (ix if not G.edges[e]['hyperedge'] else '')
+
+        G.edges[e]['color'] = color
+        G.edges[e]['width'] = width
+        G.edges[e]['label'] = label
+
+    if centrality:
+        if centrality == 'resistance':
+            Cs = H.resistance_centrality()
+        else:
+            Cs = H.simple_centrality()
+        cmap = getattr(matplotlib.cm, colormap)
+
+    for nd in G.nodes:
+        if G.nodes[nd]['hyperedge']:
+            color = (0., 0., 0., 0.)
+            label = str(nd)
+        else:
+            if centrality:
+                c = Cs[nd]
+                G.nodes[nd]['centrality'] = c
+                color = cmap(c)
+            else:
+                color = node_color
+            label = ''  # H.inputs[nd]
+
+        G.nodes[nd]['color'] = color
+        G.nodes[nd]['label'] = label
+
+
+def plot_hypergraph(
+    H,
+    *,
+    highlight=(),
+    centrality=True,
+    colormap='plasma',
+    layout=None,
+    node_size=None,
+    node_color=(.5, .5, .5, 1.0),
+    edge_alpha=1 / 3,
+    edge_style='solid',
+    hyperedge_style='dashed',
+    draw_edge_labels=None,
+    edge_labels_font_size=8,
+    edge_labels_font_family='monospace',
+    iterations=500,
+    ax=None,
+    figsize=(5, 5)
+):
+    from matplotlib import pyplot as plt
+    import networkx as nx
+
+    # set the size of the nodes
+    if node_size is None:
+        node_size = 1000 / len(H)**0.7
+    node_outline_size = min(3, node_size**0.5 / 5)
+
+    G = H.to_networkx()
+    hypergraph_compute_plot_info_G(
+        H=H,
+        G=G,
+        highlight=highlight,
+        node_color=node_color,
+        edge_alpha=edge_alpha,
+        colormap=colormap,
+        centrality=centrality,
+    )
+
+    if layout is None:
+        try:
+            from fa2 import ForceAtlas2
+            pos = ForceAtlas2(verbose=False).forceatlas2_networkx_layout(
+                G, iterations=iterations)
+        except ImportError:
+            pos = nx.layout.kamada_kawai_layout(G)
+    else:
+        pos = getattr(nx.layout, layout + '_layout')(G)
+
+    # rotate for max width
+    pos = massage_pos(pos)
+
+    created_ax = (ax is None)
+    if created_ax:
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+    nx.draw_networkx_nodes(
+        G, pos=pos, ax=ax,
+        node_size=node_size,
+        node_color=[G.nodes[nd]['color'] for nd in G.nodes],
+        edgecolors=[
+            tuple((1.0 if i == 3 else 0.8) * c
+                  for i, c in enumerate(G.nodes[nd]['color']))
+            for nd in G.nodes
+        ],
+        linewidths=node_outline_size,
+    )
+    nx.draw_networkx_edges(
+        G, pos=pos, ax=ax,
+        width=[G.edges[e]['width'] for e in G.edges],
+        edge_color=[G.edges[e]['color'] for e in G.edges],
+        style=[
+            hyperedge_style if G.edges[e]['hyperedge'] else
+            edge_style
+            for e in G.edges
+        ]
+    )
+
+    if draw_edge_labels is None:
+        draw_edge_labels = (len(H) <= 20)
+
+    if draw_edge_labels:
+        nx.draw_networkx_labels(
+            G, pos=pos, ax=ax,
+            labels=dict(zip(
+                G.nodes, (G.nodes[nd]['label'] for nd in G.nodes)
+            )),
+            font_size=edge_labels_font_size,
+            font_family=edge_labels_font_family,
+        )
+        nx.draw_networkx_edge_labels(
+            G, pos=pos, ax=ax,
+            edge_labels=dict(zip(
+                G.edges, (G.edges[e]['label'] for e in G.edges)
+            )),
+            font_size=edge_labels_font_size,
+            font_family=edge_labels_font_family,
+        )
