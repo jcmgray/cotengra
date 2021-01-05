@@ -8,7 +8,7 @@ from .hyper import register_hyper_function
 
 
 def oe_to_igraph(inputs, output, size_dict,
-                 weight_nodes='constant', weight_edges='log'):
+                 weight_nodes='const', weight_edges='log'):
     """Convert opt_einsum format to igraph graph incl. weights.
     """
     import igraph as ig
@@ -41,7 +41,7 @@ def igraph_subgraph_find_membership(
     inputs,
     output,
     size_dict,
-    weight_nodes='constant',
+    weight_nodes='const',
     weight_edges='log',
     method='spinglass',
     parts=2,
@@ -87,7 +87,7 @@ trial_igraph_partition = igraph_to_tree.trial_fn
 
 
 def trial_igraph_dendrogram(
-    inputs, output, size_dict, weight_nodes='constant',
+    inputs, output, size_dict, weight_nodes='const',
     weight_edges='log', random_strength=0.1,
     method='betweenness', **kwargs
 ):

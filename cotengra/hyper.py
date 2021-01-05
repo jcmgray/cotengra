@@ -37,6 +37,7 @@ else:
 _PATH_FNS = {}
 _OPTLIB_FNS = {}
 _HYPER_SEARCH_SPACE = {}
+_HYPER_CONSTANTS = {}
 
 
 def get_hyper_space():
@@ -44,12 +45,17 @@ def get_hyper_space():
     return _HYPER_SEARCH_SPACE
 
 
+def get_hyper_constants():
+    global _HYPER_CONSTANTS
+    return _HYPER_CONSTANTS
+
+
 def register_hyper_optlib(name, init_optimizers, get_setting, report_result):
     global _OPTLIB_FNS
     _OPTLIB_FNS[name] = (init_optimizers, get_setting, report_result)
 
 
-def register_hyper_function(name, ssa_func, space):
+def register_hyper_function(name, ssa_func, space, constants=None):
     """Register a contraction path finder to be used by the hyper-optimizer.
 
     Parameters
@@ -63,8 +69,14 @@ def register_hyper_function(name, ssa_func, space):
     """
     global _PATH_FNS
     global _HYPER_SEARCH_SPACE
+    global _HYPER_CONSTANTS
+
+    if constants is None:
+        constants = {}
+
     _PATH_FNS[name] = ssa_func
     _HYPER_SEARCH_SPACE[name] = space
+    _HYPER_CONSTANTS[name] = constants
 
 
 def list_hyper_functions():
@@ -365,11 +377,14 @@ class HyperOptimizer(PathOptimizer):
         self.param_choices.append(setting['params'])
 
     def _gen_results(self, repeats, trial_fn, trial_args):
+        constants = get_hyper_constants()
+
         for _ in repeats:
             setting = self._optimizer['get_setting'](self)
+            method = setting['method']
 
-            trial = trial_fn(
-                *trial_args, method=setting['method'], **setting['params'])
+            trial = trial_fn(*trial_args, method=method,
+                             **setting['params'], **constants[method])
 
             self._maybe_report_result(setting, trial)
 
@@ -385,17 +400,19 @@ class HyperOptimizer(PathOptimizer):
                     trial = future.result()
                     self._maybe_report_result(setting, trial)
                     return trial
-            time.sleep(0.01)
+            time.sleep(1e-9)
 
     def _gen_results_parallel(self, repeats, trial_fn, trial_args):
+        constants = get_hyper_constants()
         self._futures = []
 
         for _ in repeats:
             setting = self._optimizer['get_setting'](self)
+            method = setting['method']
 
             future = self._pool.submit(
-                trial_fn, *trial_args, method=setting['method'],
-                pure=False, **setting['params'])
+                trial_fn, *trial_args, method=method, pure=False,
+                **setting['params'], **constants[method])
             self._futures.append((setting, future))
 
             if len(self._futures) >= self.pre_dispatch:

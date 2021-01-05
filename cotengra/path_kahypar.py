@@ -13,7 +13,7 @@ def kahypar_subgraph_find_membership(
     inputs,
     output,
     size_dict,
-    weight_nodes='constant',
+    weight_nodes='const',
     weight_edges='log',
     fuse_output_inds=False,
     parts=2,
@@ -40,7 +40,7 @@ def kahypar_subgraph_find_membership(
     hyperedge_indices, hyperedges = HG.to_sparse()
 
     hypergraph_kwargs = {
-        'num_nodes': HG.num_vertices,
+        'num_nodes': HG.num_nodes,
         'num_edges': HG.num_edges,
         'index_vector': hyperedge_indices,
         'edge_vector': hyperedges,
@@ -93,4 +93,21 @@ register_hyper_function(
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
     },
+)
+
+register_hyper_function(
+    name='kahypar-balanced',
+    ssa_func=trial_kahypar,
+    space={
+        'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
+        'cutoff': {'type': 'INT', 'min': 2, 'max': 4},
+        'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.01},
+        'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
+        'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
+    },
+    constants={
+        'random_strength': 0.0,
+        'imbalance_decay': 0.0,
+        'parts': 2,
+    }
 )
