@@ -13,22 +13,29 @@ from .hyper import register_hyper_function
 # ------------------------------ GREEDY HYPER ------------------------------- #
 
 
-def cost_memory_removed_mod(size12, size1, size2, k12, k1, k2, costmod=1):
+def cost_memory_removed_mod(
+    size12, size1, size2, k12, k1, k2,
+    costmod=1, usesizes=True,
+    ):
     """The default heuristic cost, corresponding to the total reduction in
     memory of performing a contraction.
     """
-    return size12 - costmod * (size1 + size2)
+    if usesizes:
+        return size12 - costmod * (size1 + size2)
+    return len(k12) - costmod * max(len(k1), len(k2))
 
 
 def trial_greedy(inputs, output, size_dict,
                  random_strength=0.1,
                  temperature=1.0,
                  rel_temperature=True,
-                 costmod=1):
+                 costmod=1,
+                 usesizes=True):
 
     rand_size_dict = jitter_dict(size_dict, random_strength)
 
-    cost_fn = functools.partial(cost_memory_removed_mod, costmod=costmod)
+    cost_fn = functools.partial(cost_memory_removed_mod,
+                                costmod=costmod, usesizes=usesizes)
     choose_fn = functools.partial(thermal_chooser, temperature=temperature,
                                   rel_temperature=rel_temperature)
 
@@ -47,6 +54,7 @@ register_hyper_function(
         'temperature': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
         'rel_temperature': {'type': 'BOOL'},
         'costmod': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
+        'usesizes': {'type': 'BOOL'},
     },
 )
 
