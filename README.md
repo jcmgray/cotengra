@@ -68,6 +68,11 @@ If you want to automatically cache paths to disk, you'll need:
 
 * [diskcache](http://www.grantjenks.com/docs/diskcache/index.html)
 
+And finally, if you want to install this package from source
+```
+pip install . 
+```
+
 ## Basic usage :zap:
 
 All the [optimizers are `opt_einsum.PathOptimizer` instances](https://optimized-einsum.readthedocs.io/en/stable/custom_paths.html) which can be supplied as the `optimize=` kwarg to either `opt_einsum` or `quimb`:
