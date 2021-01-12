@@ -704,16 +704,46 @@ class ContractionTree:
 
         return True
 
+    def _traverse_ordered(self, order):
+        """Traverse the tree in the order that minimizes ``order(node)``, but
+        still contrained to produce children before parents.
+        """
+        from bisect import bisect
+
+        seen = set()
+        queue = [self.root]
+        scores = [order(self.root)]
+
+        while len(seen) != len(self.children):
+            i = 0
+            while i < len(queue):
+                node = queue[i]
+                if node not in seen:
+                    for child in self.children[node]:
+                        if len(child) > 1:
+                            # insert child into queue by score + before parent
+                            score = order(child)
+                            ci = bisect(scores[:i], score)
+                            scores.insert(ci, score)
+                            queue.insert(ci, child)
+                            # parent moves extra place to right
+                            i += 1
+                    seen.add(node)
+                i += 1
+
+        for node in queue:
+            yield (node, *self.children[node])
+
     def traverse(self, order=None):
         """Generate, in order, all the node merges in this tree. Non-recursive!
         This ensures children are always visited before their parent.
 
         Parameters
         ----------
-        order : None or callable
+        order : None or callable, optional
             How to order the contractions within the tree. If a callable is
             given (which should take a node as its argument), try to contract
-            nodes that maximize this function first.
+            nodes that minimize this function first.
 
         Returns
         -------
@@ -725,51 +755,27 @@ class ContractionTree:
         --------
         descend
         """
-        queue = [self.root]
-
         if order is not None:
-            from bisect import bisect
-            scores = [order(self.root)]
-
-            def add_to_queue(node):
-                score = order(node)
-                i = bisect(scores, score)
-                scores.insert(i, score)
-                queue.insert(i, node)
-
-        else:
-            def add_to_queue(node):
-                queue.append(node)
+            yield from self._traverse_ordered(order=order)
+            return
 
         ready = set(self.gen_leaves())
-        seen = set()
-        check = -1
+        queue = [self.root]
 
         while queue:
-            node = queue[check]
+            node = queue[-1]
             l, r = self.children[node]
 
             # both node's children are ready -> we can yield this contraction
             if (l in ready) and (r in ready):
-                queue.pop(check)
-                ready.add(node)
+                ready.add(queue.pop())
                 yield node, l, r
-                check = -1  # reset
                 continue
 
-            if node not in seen:
-                # add the node's children to the queue to be processed
-                if r not in ready:
-                    add_to_queue(r)
-                if l not in ready:
-                    add_to_queue(l)
-                seen.add(node)
-                check = -1  # reset
-                continue
-
-            # node is not ready and we have already added its children ->
-            #     move onto the next highest scoring node to check
-            check -= 1
+            if r not in ready:
+                queue.append(r)
+            if l not in ready:
+                queue.append(l)
 
     def descend(self, mode='dfs'):
         """Generate, from root to leaves, all the node merges in this tree.
@@ -1520,7 +1526,7 @@ class ContractionTree:
         return tuple(ssa_path)
 
     def surface_order(self, node):
-        return (len(node), -self.get_centrality(node))
+        return (len(node), self.get_centrality(node))
 
     def path_surface(self):
         return self.path(order=self.surface_order)

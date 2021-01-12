@@ -68,9 +68,13 @@ If you want to automatically cache paths to disk, you'll need:
 
 * [diskcache](http://www.grantjenks.com/docs/diskcache/index.html)
 
-And finally, if you want to install this package from source
+And finally, if you want to install this package from source, you will need to clone it locally, navigate into the source directory and then call:
 ```
 pip install . 
+```
+or should you want to edit the source:
+```
+pip install --no-deps -U -e .
 ```
 
 ## Basic usage :zap:
@@ -273,10 +277,17 @@ results = [
 Which can obviously be embarrassingly parallelized as well.
 Moreover, a single [`ContractionExpression`](https://optimized-einsum.readthedocs.io/en/stable/autosummary/opt_einsum.contract.ContractExpression.html#opt_einsum.contract.ContractExpression) is generated to perform each sliced contraction, and supplying a [backend](https://optimized-einsum.readthedocs.io/en/stable/backends.html) kwarg like ``sc.contract_slice(i, backend='jax')`` will result in the same compiled expression being used for every slice.
 
-The sum of all of these is the result of the full contraction:
+The sum of all of these is generally the result of the full contraction:
 
 ```python
 >>> sum(results)
+1.069624485044523e+23
+```
+
+but if you are slicing output indices then the result is a slightly more complicated mixed sum and concatenate, which ``cotengra`` can perform for you with:
+
+```python
+>>> sc.gather_slices(results)
 1.069624485044523e+23
 ```
 
