@@ -55,7 +55,6 @@ def plot_trials(
     ax.set_axisbelow(True)
 
     handles, labels = ax.get_legend_handles_labels()
-    handles, labels = handles[1:], labels[1:]
     ax.legend(
         handles=handles,
         labels=labels,
@@ -281,9 +280,12 @@ def plot_tree(
     highlight=(),
     edge_colormap='GnBu',
     node_colormap='YlOrRd',
+    edge_max_width=None,
+    node_max_size=None,
     figsize=(5, 5),
     return_fig=False,
-    raw_edge_alpha=0.05,
+    raw_edge_color=None,
+    raw_edge_alpha=None,
     tree_alpha=0.8,
     colorbars=True,
     plot_raw_graph=True,
@@ -296,6 +298,13 @@ def plot_tree(
     import networkx as nx
     import matplotlib as mpl
     from matplotlib import pyplot as plt
+    from matplotlib.colors import to_rgb
+
+    isdark = sum(to_rgb(mpl.rcParams['figure.facecolor'])) / 3 < 0.5
+    if raw_edge_color is None:
+        raw_edge_color = (1.0, 1.0, 1.0) if isdark else (0.0, 0.0, 0.0)
+    if raw_edge_alpha is None:
+        raw_edge_alpha = 0.2 if isdark else 0.05
 
     # draw the contraction tree
     G_tree = tree_to_networkx(tree)
@@ -337,7 +346,7 @@ def plot_tree(
         for ix, nodes in ind_map.items():
             width = math.log2(tree.size_dict.get(ix, 2))
             color = (
-                (0., 0., 0., raw_edge_alpha)
+                (*raw_edge_color[:3], raw_edge_alpha)
                 if ix not in highlight else
                 (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
             )
@@ -440,6 +449,11 @@ def plot_tree(
             }
         )
 
+    if edge_max_width is not None:
+        edge_weights = [min(e, edge_max_width) for e in edge_weights]
+    if node_max_size is not None:
+        node_weights = [min(n, node_max_size) for n in node_weights]
+
     nx.draw_networkx_edges(G_tree, pos=pos, ax=ax, width=edge_weights,
                            edge_color=edge_colors, alpha=tree_alpha)
     nx.draw_networkx_nodes(G_tree, pos=pos, ax=ax, node_size=node_weights,
@@ -450,7 +464,8 @@ def plot_tree(
         max_size = math.log2(max(tree.get_size(x) for x in tree.info))
         edge_norm = mpl.colors.Normalize(vmin=min_size, vmax=max_size)
         ax_l = fig.add_axes([-0.02, 0.25, 0.02, 0.5])
-        cb_l = mpl.colorbar.ColorbarBase(ax_l, cmap=edge_colormap, norm=edge_norm)
+        cb_l = mpl.colorbar.ColorbarBase(
+            ax_l, cmap=edge_colormap, norm=edge_norm)
         cb_l.outline.set_visible(False)
         ax_l.yaxis.tick_left()
         ax_l.set(title='log2[SIZE]')
@@ -461,7 +476,8 @@ def plot_tree(
                                    for x in tree.info))
         node_norm = mpl.colors.Normalize(vmin=min_flops, vmax=max_flops)
         ax_r = fig.add_axes([1.0, 0.25, 0.02, 0.5])
-        cb_r = mpl.colorbar.ColorbarBase(ax_r, cmap=node_colormap, norm=node_norm)
+        cb_r = mpl.colorbar.ColorbarBase(
+            ax_r, cmap=node_colormap, norm=node_norm)
         cb_r.outline.set_visible(False)
         ax_r.yaxis.tick_right()
         ax_r.set(title='log10[FLOPS]')
@@ -715,6 +731,7 @@ def hypergraph_compute_plot_info_G(
     G,
     highlight=(),
     node_color=(.5, .5, .5, 1.0),
+    edge_color=(0.0, 0.0, 0.0),
     edge_alpha=1 / 3,
     colormap='Spectral_r',
     centrality=False,
@@ -722,13 +739,14 @@ def hypergraph_compute_plot_info_G(
     """Imbue the networkx representation, ``G``, of hypergraph, ``H`` with
     relevant plot information.
     """
+    import matplotlib as mpl
     import matplotlib.cm
 
     for e in G.edges:
         ix = G.edges[e]['ind']
         width = math.log2(H.size_dict.get(ix, 2))
         color = (
-            (0., 0., 0., edge_alpha)
+            (*edge_color[:3], edge_alpha)
             if ix not in highlight else
             (1.0, 0.0, 1.0, edge_alpha**0.5)
         )
@@ -743,7 +761,11 @@ def hypergraph_compute_plot_info_G(
             Cs = H.resistance_centrality()
         else:
             Cs = H.simple_centrality()
-        cmap = getattr(matplotlib.cm, colormap)
+
+        if isinstance(colormap, mpl.colors.Colormap):
+            cmap = colormap
+        else:
+            cmap = getattr(matplotlib.cm, colormap)
 
     for nd in G.nodes:
         if G.nodes[nd]['hyperedge']:
@@ -779,10 +801,19 @@ def plot_hypergraph(
     edge_labels_font_family='monospace',
     iterations=500,
     ax=None,
-    figsize=(5, 5)
+    figsize=(5, 5),
+    return_fig=False,
 ):
-    from matplotlib import pyplot as plt
     import networkx as nx
+    import matplotlib as mpl
+    from matplotlib import pyplot as plt
+    from matplotlib.colors import to_rgb
+
+    isdark = sum(to_rgb(mpl.rcParams['figure.facecolor'])) / 3 < 0.5
+    if isdark:
+        font_color = edge_color = (1.0, 1.0, 1.0, 1.0)
+    else:
+        font_color = edge_color = (0.0, 0.0, 0.0, 1.0)
 
     # set the size of the nodes
     if node_size is None:
@@ -795,6 +826,7 @@ def plot_hypergraph(
         G=G,
         highlight=highlight,
         node_color=node_color,
+        edge_color=edge_color,
         edge_alpha=edge_alpha,
         colormap=colormap,
         centrality=centrality,
@@ -851,7 +883,9 @@ def plot_hypergraph(
                 G.nodes, (G.nodes[nd]['label'] for nd in G.nodes)
             )),
             font_size=edge_labels_font_size,
+            font_color=font_color,
             font_family=edge_labels_font_family,
+            bbox={'color': to_rgb(mpl.rcParams['figure.facecolor'])},
         )
         nx.draw_networkx_edge_labels(
             G, pos=pos, ax=ax,
@@ -859,5 +893,13 @@ def plot_hypergraph(
                 G.edges, (G.edges[e]['label'] for e in G.edges)
             )),
             font_size=edge_labels_font_size,
+            font_color=font_color,
             font_family=edge_labels_font_family,
+            bbox={'color': to_rgb(mpl.rcParams['figure.facecolor'])},
         )
+
+    if return_fig:
+        return fig
+    else:
+        plt.show()
+        plt.close(fig)
