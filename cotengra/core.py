@@ -1,6 +1,5 @@
 import math
 import random
-import numbers
 import warnings
 import itertools
 import functools
@@ -15,6 +14,9 @@ from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
 
 from .utils import MaxCounter, oset
+from .parallel import (
+    parse_parallel_arg,
+)
 from .plot import (
     plot_tree_ring,
     plot_tree_tent,
@@ -23,91 +25,6 @@ from .plot import (
     plot_contractions_alt,
     plot_hypergraph,
 )
-
-
-def get_pool(n_workers=None, maybe_create=False):
-    """Maybe get an existing or create a new dask.distrbuted client.
-
-    Parameters
-    ----------
-    n_workers : None or int, optional
-        The number of workers to request if creating a new client.
-    maybe_create : bool, optional
-        Whether to create an new local cluster and client if no existing client
-        is found.
-
-    Returns
-    -------
-    None or dask.distributed.Client
-    """
-    try:
-        from dask.distributed import get_client
-    except ImportError:
-        if not maybe_create:
-            return None
-        else:
-            raise
-
-    try:
-        client = get_client()
-    except ValueError:
-        if not maybe_create:
-            return None
-
-        from dask.distributed import LocalCluster, Client
-        import tempfile
-        import shutil
-        import atexit
-
-        local_directory = tempfile.mkdtemp()
-        lc = LocalCluster(n_workers=n_workers, threads_per_worker=1,
-                          local_directory=local_directory, memory_limit=0)
-        client = Client(lc)
-
-        warnings.warn(
-            "Parallel specified but no existing global dask client found... "
-            "created one (with {} workers)."
-            .format(len(client.scheduler_info()['workers'])))
-
-        @atexit.register
-        def delete_local_dask_directory():
-            shutil.rmtree(local_directory, ignore_errors=True)
-
-    if n_workers is not None:
-        current_n_workers = len(client.scheduler_info()['workers'])
-        if n_workers != current_n_workers:
-            warnings.warn(
-                "Found existing client (with {} workers which) doesn't match "
-                "the requested {}... using it instead."
-                .format(current_n_workers, n_workers))
-
-    return client
-
-
-def get_n_workers(pool=None):
-    """
-    """
-    if pool is None:
-        pool = get_pool()
-    return len(pool.scheduler_info()['workers'])
-
-
-def parse_parallel_arg(parallel):
-    """
-    """
-    if parallel == 'auto':
-        return get_pool(maybe_create=False)
-
-    if parallel is False:
-        return None
-
-    if parallel is True:
-        return get_pool(maybe_create=True)
-
-    if isinstance(parallel, numbers.Integral):
-        return get_pool(n_workers=parallel, maybe_create=True)
-
-    return parallel
 
 
 def is_valid_node(node):
