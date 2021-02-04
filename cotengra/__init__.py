@@ -150,6 +150,7 @@ register_path_fn(
         minimize='compressed-rank',
         path_order='surface',
         methods=('greedy-span', 'greedy-compressed', 'kahypar-agglom'),
+    )
 )
 register_path_fn(
     'hyper-spinglass',
