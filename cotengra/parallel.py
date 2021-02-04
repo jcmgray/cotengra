@@ -169,7 +169,7 @@ class RayExecutor:
         if not ray.is_initialized():
             ray.init(*args, **kwargs)
 
-    def submit(self, fn, /, *args, pure=False, **kwargs):
+    def submit(self, fn, *args, pure=False, **kwargs):
         # want to pass futures by reference
         args = tuple(map(_unpack_futures, args))
         kwargs = {k: _unpack_futures(v) for k, v in kwargs.items()}

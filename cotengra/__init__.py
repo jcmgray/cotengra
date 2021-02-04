@@ -17,6 +17,7 @@ from . import hyper_baytune
 from . import hyper_choco
 from . import hyper_nevergrad
 from . import hyper_skopt
+from . import hyper_optuna
 from . import hyper_random
 
 from .hyper import (

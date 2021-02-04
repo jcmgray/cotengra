@@ -141,8 +141,8 @@ opt = ctg.HyperOptimizer(
 Options for `optlib` are (if you have them installed):
 
 * `'random'` - a pure python random sampler (aliased to `ctg.UniformOptimizer`)
-
 * `'baytune'` - by default configured to use **Gaussian Processes**
+* `'optuna'` - by defualt configured to use **Tree of Parzen Estimators**
 * `'chocolate'` - by default configured to use **CMAES**
 * `'skopt'` - by default configured to use **Extra Trees**
 * `'nevergrad'` - by default configured to use **Test-Based Population Size Adaptation**

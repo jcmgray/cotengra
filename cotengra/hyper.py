@@ -19,19 +19,21 @@ else:
                   "hyper optimizer and using basic `labels` method instead.")
 
 
-if importlib.util.find_spec('btb'):
+if importlib.util.find_spec('optuna'):
+    DEFAULT_OPTLIB = 'optuna'
+elif importlib.util.find_spec('btb'):
     DEFAULT_OPTLIB = 'baytune'
 elif importlib.util.find_spec('chocolate'):
     DEFAULT_OPTLIB = 'chocolate'
-elif importlib.util.find_spec('skopt'):
-    DEFAULT_OPTLIB = 'skopt'
 elif importlib.util.find_spec('nevergrad'):
     DEFAULT_OPTLIB = 'nevergrad'
+elif importlib.util.find_spec('skopt'):
+    DEFAULT_OPTLIB = 'skopt'
 else:
     DEFAULT_OPTLIB = 'random'
-    warnings.warn("Couldn't find `baytune (btb)`, `chocolate`, `skopt` or "
-                  "`nevergrad` so will use completely random sampling in place"
-                  " of hyper-optimization.")
+    warnings.warn("Couldn't find `optuna`, `baytune (btb)`, `chocolate`, "
+                  "`nevergrad` or `skopt` so will use completely random "
+                  "sampling in place of hyper-optimization.")
 
 
 _PATH_FNS = {}

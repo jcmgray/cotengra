@@ -5,6 +5,15 @@ import collections
 import numpy as np
 
 
+def _return_or_close_fig(fig, return_fig):
+    from matplotlib import pyplot as plt
+    if return_fig:
+        return fig
+    else:
+        plt.show()
+        plt.close(fig)
+
+
 def plot_trials(
     self,
     y='score',
@@ -39,7 +48,7 @@ def plot_trials(
                        for f, m in zip(self.costs_flops, self.costs_write)]
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
-    ax.axhline(best_y, color=(0, 0, 0, 0.1), linestyle=':')
+    ax.axhline(best_y, color=(0, 0, 1, 0.1), linestyle=':')
     sns.scatterplot(
         y=y,
         x='run',
@@ -66,8 +75,7 @@ def plot_trials(
         frameon=False,
     )
 
-    if return_fig:
-        return fig
+    return _return_or_close_fig(fig, return_fig)
 
 
 def plot_trials_alt(self, y=None, width=800, height=300):
@@ -168,8 +176,7 @@ def plot_scatter(
         frameon=False,
     )
 
-    if return_fig:
-        return fig
+    return _return_or_close_fig(fig, return_fig)
 
 
 def plot_scatter_alt(
@@ -486,8 +493,7 @@ def plot_tree(
         warnings.simplefilter('ignore', UserWarning)
         plt.tight_layout()
 
-    if return_fig:
-        return fig
+    return _return_or_close_fig(fig, return_fig)
 
 
 @functools.wraps(plot_tree)
@@ -594,8 +600,7 @@ def plot_contractions(
         warnings.simplefilter('ignore', UserWarning)
         plt.tight_layout()
 
-    if return_fig:
-        return fig
+    return _return_or_close_fig(fig, return_fig)
 
 
 def plot_contractions_alt(
@@ -698,8 +703,7 @@ def plot_slicings(
         warnings.simplefilter('ignore', UserWarning)
         plt.tight_layout()
 
-    if return_fig:
-        return fig
+    return _return_or_close_fig(fig, return_fig)
 
 
 def plot_slicings_alt(
@@ -898,8 +902,4 @@ def plot_hypergraph(
             bbox={'color': to_rgb(mpl.rcParams['figure.facecolor'])},
         )
 
-    if return_fig:
-        return fig
-    else:
-        plt.show()
-        plt.close(fig)
+    return _return_or_close_fig(fig, return_fig)
