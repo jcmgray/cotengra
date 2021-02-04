@@ -104,10 +104,28 @@ register_hyper_function(
         'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.01},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
+        'fuse_output_inds': {'type': 'BOOL'},
     },
     constants={
         'random_strength': 0.0,
         'imbalance_decay': 0.0,
         'parts': 2,
+    }
+)
+
+
+register_hyper_function(
+    name='kahypar-agglom',
+    ssa_func=kahypar_to_tree.trial_fn_agglom,
+    space={
+        'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
+        'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.01},
+        'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
+        'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
+        'groupsize': {'type': 'INT', 'min': 2, 'max': 4},
+        'fuse_output_inds': {'type': 'BOOL'},
+    },
+    constants={
+        'random_strength': 0.0,
     }
 )

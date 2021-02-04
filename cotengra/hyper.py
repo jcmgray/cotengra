@@ -6,7 +6,8 @@ from math import log2, log10
 
 from opt_einsum.paths import PathOptimizer
 
-from .core import parse_parallel_arg, get_n_workers, get_score_fn
+from .core import get_score_fn
+from .parallel import parse_parallel_arg, get_n_workers
 from .plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 
 
@@ -88,7 +89,7 @@ def list_hyper_functions():
     return sorted(_PATH_FNS)
 
 
-def find_path(*args, **kwargs):
+def find_tree(*args, **kwargs):
     method = kwargs.pop('method')
     tree = _PATH_FNS[method](*args, **kwargs)
     return {
@@ -245,6 +246,7 @@ class HyperOptimizer(PathOptimizer):
         slicing_opts=None,
         slicing_reconf_opts=None,
         reconf_opts=None,
+        path_order=None,
         optlib=DEFAULT_OPTLIB,
         space=None,
         score_compression=0.75,
@@ -273,6 +275,7 @@ class HyperOptimizer(PathOptimizer):
 
         # which score to feed to the hyper optimizer
         self.minimize = minimize
+        self.path_order = path_order
         self.score_compression = score_compression
         self.best_score = float('inf')
         self.max_training_steps = max_training_steps
@@ -325,10 +328,12 @@ class HyperOptimizer(PathOptimizer):
 
     @property
     def path(self):
+        if self.path_order == 'surface':
+            return self.best['tree'].path_surface()
         return self.best['tree'].path()
 
     def setup(self, inputs, output, size_dict):
-        trial_fn = find_path
+        trial_fn = find_tree
 
         if self.slicing_opts is not None:
             self.slicing_opts.setdefault('minimize', self.minimize)

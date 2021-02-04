@@ -4,6 +4,7 @@ import warnings
 import itertools
 import functools
 import collections
+from decimal import Decimal
 
 try:
     from cytoolz import groupby, interleave
@@ -302,7 +303,7 @@ class ContractionTree:
         try:
             keep = self.info[node]['keep']
         except KeyError:
-            nodes_above = self.root - node
+            nodes_above = self.root.difference(node)
             terms_above = self.node_to_terms(nodes_above)
             keep = oset.union(self.output, *terms_above)
             self.info[node]['keep'] = keep
@@ -323,7 +324,7 @@ class ContractionTree:
                 except KeyError:
                     involved = oset.union(*self.node_to_terms(node))
                 keep = self.get_keep(node)
-                legs = involved & keep
+                legs = involved.intersection(keep)
             self.info[node]['legs'] = legs
         return legs
 
@@ -347,7 +348,7 @@ class ContractionTree:
         try:
             removed = self.info[node]['removed']
         except KeyError:
-            removed = self.get_involved(node) - self.get_legs(node)
+            removed = self.get_involved(node).difference(self.get_legs(node))
             self.info[node]['removed'] = removed
         return removed
 
@@ -443,6 +444,88 @@ class ContractionTree:
         """
         return self.total_flops() / self.total_write()
 
+    def compressed_rank(self, order='surface_order', multibond_factor=2):
+        """
+        """
+        if order == 'surface_order':
+            order = self.surface_order
+
+        indmap = collections.defaultdict(oset)
+
+        # track indices that are compressed into others, and how many
+        compressed_away = set()
+        compressed_size = collections.defaultdict(lambda: 1)
+
+        # track the effective
+        clegs = {}
+        for node in self.gen_leaves():
+            inds = set(self.get_legs(node))
+            clegs[node] = inds
+            for ix in inds:
+                indmap[ix].add(node)
+
+        if any(len(nodes) > 2 for nodes in indmap.values()):
+            raise ValueError("Can't compute compressed rank for "
+                             "a hyper tensor network.")
+
+        def _compessed_result(p, ln, rn):
+            inds = (
+                clegs[ln]
+                .symmetric_difference(clegs[rn])
+                .difference(compressed_away)
+            )
+            clegs[p] = inds
+            return inds
+
+        def _add_connections(node):
+            for ix in clegs[node]:
+                indmap[ix].add(node)
+
+        def _remove_connections(node):
+            for ix in clegs[node]:
+                indmap[ix].discard(node)
+                if not indmap[ix]:
+                    del indmap[ix]
+
+        def _effective_rank(legs):
+            return sum(map(compressed_size.__getitem__, legs))
+
+        # total number of indices on any compressed intermediate
+        max_rank = max(map(len, self.inputs))
+
+        for p, l, r in self.traverse(order):
+
+            # get exact legs, minus indices compressed away in previous steps
+            compressed_legs = _compessed_result(p, l, r)
+
+            # check rank (pre compression)
+            max_rank = max(max_rank, _effective_rank(compressed_legs))
+
+            # merge children into parent
+            _remove_connections(l)
+            _remove_connections(r)
+            _add_connections(p)
+
+            # look for compressible indices -> those that join
+            # the same set of intermediate tensors
+            incidences = collections.defaultdict(list)
+            for ind in compressed_legs:
+                nodes = frozenset(indmap[ind])
+                incidences[nodes].append(ind)
+
+            for nodes, (ind0, *inds) in incidences.items():
+                for ind in inds:
+                    # compress multi-bonds, if any, into first ind, allowing it
+                    #     to grow up to size `multibond_factor`
+                    compressed_size[ind0] = min(
+                        multibond_factor,
+                        compressed_size[ind0] + compressed_size[ind],
+                    )
+                    compressed_away.add(ind)
+                    del indmap[ind]
+
+        return max_rank
+
     def remove_ind(self, ind, inplace=False):
         tree = self if inplace else self.copy()
 
@@ -465,11 +548,11 @@ class ContractionTree:
                 continue
 
             # else update all the relevant information about this node
-            node_info['involved'] = involved - s_ind
+            node_info['involved'] = involved.difference(s_ind)
             removed = tree.get_removed(node)
 
             if ind in legs:
-                node_info['legs'] = legs - s_ind
+                node_info['legs'] = legs.difference(s_ind)
 
                 old_size = tree.get_size(node)
                 tree._sizes.discard(old_size)
@@ -479,11 +562,11 @@ class ContractionTree:
                 tree._write += (-old_size + new_size)
 
                 # modifying keep not stricly necessarily as its only called as
-                #     ``legs = keep & involved`` ?
+                #     ``legs = keep.intersection(involved)`` ?
                 keep = tree.get_keep(node)
-                node_info['keep'] = keep - s_ind
+                node_info['keep'] = keep.difference(s_ind)
             else:
-                node_info['removed'] = removed - s_ind
+                node_info['removed'] = removed.difference(s_ind)
 
             old_flops = tree.get_flops(node)
             new_flops = old_flops // d
@@ -495,7 +578,7 @@ class ContractionTree:
 
         def term_without(t):
             if ind in t:
-                return t - s_ind
+                return t.difference(s_ind)
             return t
 
         tree.output = term_without(tree.output)
@@ -514,7 +597,7 @@ class ContractionTree:
         """Contract node ``x`` with node ``y`` in the tree to create a new
         parent node.
         """
-        parent = x | y
+        parent = x.union(y)
 
         # make sure info entries exist for all (default dict)
         for node in (x, y, parent):
@@ -1445,6 +1528,20 @@ class ContractionTree:
     def surface_order(self, node):
         return (len(node), self.get_centrality(node))
 
+    def set_surface_order_from_path(self, ssa_path):
+        o = {}
+        nodes = list(self.gen_leaves())
+        for j, p in enumerate(ssa_path):
+            l, r = (nodes[i] for i in p)
+            p = l.union(r)
+            nodes.append(p)
+            o[p] = j
+
+        def order(node):
+            return o.get(node, float('inf'))
+
+        self.surface_order = order
+
     def path_surface(self):
         return self.path(order=self.surface_order)
 
@@ -1617,6 +1714,17 @@ def score_combo(trial):
     )
 
 
+def score_compressed_rank(trial, multibond_factor=2):
+    tree = trial['tree']
+    cr = (
+        tree.compressed_rank(multibond_factor=multibond_factor) +
+        math.log2(tree.max_size()) / 1000
+    )
+    # overwrite the effective max size
+    trial['size'] = 2**Decimal(cr)
+    return cr
+
+
 def get_score_fn(minimize):
     if minimize == 'flops':
         return score_flops
@@ -1626,6 +1734,16 @@ def get_score_fn(minimize):
         return score_size
     if minimize == 'combo':
         return score_combo
+    if minimize == 'compressed-rank':
+        return score_compressed_rank
+    if minimize == 'compressed-rank-1':
+        return functools.partial(score_compressed_rank, multibond_factor=1)
+    if minimize == 'compressed-rank-2':
+        return functools.partial(score_compressed_rank, multibond_factor=2)
+    if minimize == 'compressed-rank-3':
+        return functools.partial(score_compressed_rank, multibond_factor=3)
+    if minimize == 'compressed-rank-4':
+        return functools.partial(score_compressed_rank, multibond_factor=4)
 
 
 def _score_flops(tree):
@@ -1666,24 +1784,29 @@ class PartitionTreeBuilder:
     def __init__(self, partition_fn):
         self.partition_fn = partition_fn
 
-    def __call__(self, inputs, output, size_dict, random_strength=0.01,
-                 weight_nodes='const', weight_edges='log',
-                 cutoff=10, parts=2, parts_decay=0.5,
-                 sub_optimize='auto', super_optimize='auto-hq',
-                 check=False, **kwargs):
-
+    def build_divide(
+        self, inputs, output, size_dict,
+        random_strength=0.01,
+        cutoff=10,
+        parts=2,
+        parts_decay=0.5,
+        sub_optimize='auto',
+        super_optimize='auto-hq',
+        check=False,
+        **partition_opts
+    ):
         tree = ContractionTree(inputs, output, size_dict,
                                track_flops=True,
                                track_childless=True)
         rand_size_dict = jitter_dict(size_dict, random_strength)
 
         dynamic_imbalance = (
-            ('imbalance' in kwargs) and ('imbalance_decay' in kwargs)
+            ('imbalance' in partition_opts) and
+            ('imbalance_decay' in partition_opts)
         )
-
         if dynamic_imbalance:
-            imbalance = kwargs.pop('imbalance')
-            imbalance_decay = kwargs.pop('imbalance_decay')
+            imbalance = partition_opts.pop('imbalance')
+            imbalance_decay = partition_opts.pop('imbalance_decay')
 
         while tree.childless:
             tree_node = next(iter(tree.childless))
@@ -1708,7 +1831,7 @@ class PartitionTreeBuilder:
                     imbalance_s = s ** imbalance_decay * imbalance
                 else:
                     imbalance_s = 1 - s ** -imbalance_decay * (1 - imbalance)
-                kwargs['imbalance'] = imbalance_s
+                partition_opts['imbalance'] = imbalance_s
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
@@ -1716,8 +1839,7 @@ class PartitionTreeBuilder:
             output = tree.get_legs(tree_node)
             membership = self.partition_fn(
                 inputs, output, rand_size_dict,
-                weight_nodes=weight_nodes, weight_edges=weight_edges,
-                parts=parts_s, **kwargs,
+                parts=parts_s, **partition_opts,
             )
 
             # divide subgraph up e.g. if we enumerate the subgraph index sets
@@ -1738,8 +1860,47 @@ class PartitionTreeBuilder:
 
         return tree
 
-    def trial_fn(self, inputs, output, size_dict, **kwargs):
-        return self(inputs, output, size_dict, **kwargs)
+    def build_agglom(
+        self, inputs, output, size_dict,
+        random_strength=0.01,
+        groupsize=4,
+        check=True,
+        **partition_opts
+    ):
+        tree = ContractionTree(inputs, output, size_dict,
+                               track_flops=True,
+                               track_childless=True)
+        rand_size_dict = jitter_dict(size_dict, random_strength)
+        leaves = tuple(tree.gen_leaves())
+        for node in leaves:
+            tree.add_node(node)
+        output = tree.output
+
+        while len(leaves) > groupsize:
+            parts = max(2, len(leaves) // groupsize)
+
+            inputs = [tree.get_legs(node) for node in leaves]
+            membership = self.partition_fn(
+                inputs, output, rand_size_dict, parts=parts, **partition_opts,
+            )
+            leaves = [
+                tree.contract(group, check=check)
+                for group in separate(leaves, membership)
+            ]
+
+        if len(leaves) > 1:
+            tree.contract(leaves, check=check)
+
+        if check:
+            assert tree.is_complete()
+
+        return tree
+
+    def trial_fn(self, inputs, output, size_dict, **partition_opts):
+        return self.build_divide(inputs, output, size_dict, **partition_opts)
+
+    def trial_fn_agglom(self, inputs, output, size_dict, **partition_opts):
+        return self.build_agglom(inputs, output, size_dict, **partition_opts)
 
 
 def calc_edge_weight(ix, size_dict, scale='log'):
@@ -1939,16 +2100,18 @@ class HyperGraph:
             # only compute once
             return
 
-        self.node_weights = [
+        self.node_weights = tuple(
             calc_node_weight(term, self.size_dict, self.weight_nodes)
             for term in self.nodes
-        ]
+        )
 
         self.edge_list = tuple(self.indmap)
         self.edge_weight_map = {
             e: calc_edge_weight(e, self.size_dict, self.weight_edges)
             for e in self.edge_list}
-        self.edge_weights = [self.edge_weight_map[e] for e in self.edge_list]
+        self.edge_weights = tuple(
+            self.edge_weight_map[e] for e in self.edge_list
+        )
 
         self.has_edge_weights = self.weight_edges in ('log', 'linear')
         self.has_node_weights = self.weight_nodes in ('log', 'linear')

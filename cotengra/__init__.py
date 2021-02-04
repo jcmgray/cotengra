@@ -56,6 +56,19 @@ more 'even' way than purely random - requires ``chocolate``.
 """
 
 
+def HyperCompressedOptimizer(
+    methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
+    minimize='compressed-rank',
+    path_order='surface',
+    **kwargs,
+):
+    """Instantiates a HyperOptimizer but with default arguments applicable to
+    compressed path finding.
+    """
+    return HyperOptimizer(methods=methods, path_order=path_order,
+                          minimize=minimize, **kwargs)
+
+
 __all__ = (
     "ContractionTree",
     "HyperGraph",
@@ -67,7 +80,9 @@ __all__ = (
     "hyper_optimize",
     "hyper_random",
     "hyper_skopt",
+    "hyper_optuna",
     "HyperOptimizer",
+    "HyperCompressedOptimizer",
     "ReusableHyperOptimizer",
     "list_hyper_functions",
     "optimize_flowcutter",
@@ -122,6 +137,19 @@ register_path_fn(
 register_path_fn(
     'hyper-kahypar',
     functools.partial(hyper_optimize, methods=['kahypar']),
+)
+register_path_fn(
+    'hyper-balanced',
+    functools.partial(hyper_optimize, methods=['kahypar-balanced'],
+                      max_repeats=16),
+)
+register_path_fn(
+    'hyper-compressed',
+    functools.partial(
+        hyper_optimize,
+        minimize='compressed-rank',
+        path_order='surface',
+        methods=('greedy-span', 'greedy-compressed', 'kahypar-agglom'),
 )
 register_path_fn(
     'hyper-spinglass',

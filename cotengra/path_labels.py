@@ -132,12 +132,11 @@ def labels_partition(
 
 
 labels_to_tree = PartitionTreeBuilder(labels_partition)
-trial_labels = labels_to_tree.trial_fn
 
 
 register_hyper_function(
     name='labels',
-    ssa_func=trial_labels,
+    ssa_func=labels_to_tree.trial_fn,
     space={
         'random_strength': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 1.},
         'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
@@ -150,4 +149,23 @@ register_hyper_function(
         'con_pow': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
         'final_sweep': {'type': 'BOOL'},
     },
+)
+
+
+register_hyper_function(
+    name='labels-agglom',
+    ssa_func=labels_to_tree.trial_fn_agglom,
+    space={
+        'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
+        'memory': {'type': 'INT', 'min': -2, 'max': 1},
+        'pop_small_bias': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
+        'pop_big_bias': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
+        'pop_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
+        'con_pow': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
+        'final_sweep': {'type': 'BOOL'},
+        'fuse_output_inds': {'type': 'BOOL'},
+    },
+    constants={
+        'random_strength': 0.0,
+    }
 )
