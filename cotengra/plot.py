@@ -275,6 +275,24 @@ def massage_pos(pos, nangles=12, flatten=False):
     return dict(zip(pos, rxy0))
 
 
+def get_nice_pos(G, k=0.01, iterations=500, layout=None, flatten=False):
+    import networkx as nx
+
+    if layout is None:
+        try:
+            from fa2 import ForceAtlas2
+            pos = ForceAtlas2(verbose=False).forceatlas2_networkx_layout(
+                G, iterations=iterations)
+            return massage_pos(pos, flatten=flatten)
+
+        except ImportError:
+            layout = 'kamada_kawai'
+
+    pos = getattr(nx.layout, layout + '_layout')(G)
+    pos = nx.spring_layout(G, k=k, iterations=0, pos=pos)
+    return massage_pos(pos, flatten=flatten)
+
+
 def plot_tree(
     tree,
     layout='ring',
@@ -369,9 +387,7 @@ def plot_tree(
 
     if layout == 'tent':
         # place raw graph first
-        pos = nx.kamada_kawai_layout(G_tn)
-        pos = nx.spring_layout(G_tn, k=k, iterations=0, pos=pos)
-        pos = massage_pos(pos, flatten=True)
+        pos = get_nice_pos(G_tn, k=k, iterations=iterations, flatten=True)
 
         xmin = min(v[0] for v in pos.values())
         xmax = max(v[0] for v in pos.values())
@@ -430,9 +446,7 @@ def plot_tree(
 
     elif layout == 'span':
         # place raw graph first
-        pos = nx.kamada_kawai_layout(G_tn)
-        pos = nx.spring_layout(G_tn, k=k, iterations=iterations, pos=pos)
-        pos = massage_pos(pos, flatten=False)
+        pos = get_nice_pos(G_tn, k=k, iterations=iterations, flatten=False)
         if span is None:
             span = tree.get_spans()[0]
         pos.update({node: pos[span[node]] for node in G_tree.nodes})
@@ -836,18 +850,7 @@ def plot_hypergraph(
         centrality=centrality,
     )
 
-    if layout is None:
-        try:
-            from fa2 import ForceAtlas2
-            pos = ForceAtlas2(verbose=False).forceatlas2_networkx_layout(
-                G, iterations=iterations)
-        except ImportError:
-            pos = nx.layout.kamada_kawai_layout(G)
-    else:
-        pos = getattr(nx.layout, layout + '_layout')(G)
-
-    # rotate for max width
-    pos = massage_pos(pos)
+    pos = get_nice_pos(G, layout=layout, iterations=iterations)
 
     created_ax = (ax is None)
     if created_ax:
