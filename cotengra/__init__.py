@@ -184,3 +184,11 @@ register_path_fn(
     'quickbb-60',
     functools.partial(optimize_quickbb, max_time=60),
 )
+register_path_fn(
+    'greedy-compressed',
+    path_greedy.greedy_compressed,
+)
+register_path_fn(
+    'greedy-span',
+    path_greedy.greedy_span,
+)

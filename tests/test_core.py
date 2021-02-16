@@ -1,3 +1,4 @@
+import math
 import pytest
 import opt_einsum as oe
 from cotengra.core import ContractionTree
@@ -28,6 +29,7 @@ def test_contraction_tree_equivalency():
     (False, False, ''),
     (True, False, ''),
     (True, True, 'distributed'),
+    (True, 'ray', 'ray'),
 ])
 def test_reconfigure(forested, parallel, requires):
     if requires:
@@ -108,3 +110,11 @@ def test_plot_alt():
     tree = ContractionTree.from_info(info)
 
     tree.plot_contractions_alt()
+
+
+def test_compressed_rank():
+    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
+    info = oe.contract_path(eq, *shapes, shapes=True,
+                            optimize='greedy-compressed')[1]
+    tree = ContractionTree.from_info(info)
+    assert tree.compressed_rank(1) < math.log2(tree.max_size())

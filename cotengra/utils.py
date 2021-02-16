@@ -1,4 +1,13 @@
+import itertools
 import collections
+
+try:
+    from cytoolz import groupby, interleave, unique
+except ImportError:
+    from toolz import groupby, interleave, unique
+
+
+__all__ = ('groupby', 'interleave')
 
 
 class oset:
@@ -78,6 +87,12 @@ class oset:
         else:
             su = others[0]._d
         return oset._from_dict({k: None for k in self._d if k not in su})
+
+    def symmetric_difference(self, other):
+        return oset._from_dict({
+            k: None for k in itertools.chain(self._d, other._d)
+            if (k not in self._d) or (k not in other)
+        })
 
     def __eq__(self, other):
         if isinstance(other, oset):
@@ -189,3 +204,140 @@ class MaxCounter:
         """The maximum element in this list.
         """
         return self._max_element
+
+
+class BitSet:
+
+    __slots__ = ('members', 'map', 'size', 'infimum', 'supremum')
+
+    def __init__(self, it):
+        self.members = tuple(unique(it))
+        self.map = {m: i for i, m in enumerate(self.members)}
+        self.size = len(self.members)
+        self.supremum = self.fromint(2**self.size - 1)
+        self.infimum = self.fromint(0)
+
+    def asint(self, elem):
+        return 1 << self.map[elem]
+
+    def fromint(self, n):
+        return BitMembers.fromint(self, n)
+
+    def frommembers(self, it=()):
+        return BitMembers.frommembers(self, it)
+
+    __call__ = frommembers
+
+
+class BitMembers:
+
+    __slots__ = ('i', 'bitset')
+
+    @classmethod
+    def fromint(cls, bitset, n):
+        self = object.__new__(cls)
+        self.bitset = bitset
+        self.i = n
+        return self
+
+    @classmethod
+    def frommembers(cls, bitset, it=()):
+        self = object.__new__(cls)
+        self.bitset = bitset
+        self.i = sum(map(self.bitset.asint, it))
+        return self
+
+    def __int__(self):
+        return self.i
+
+    __hash__ = __int__
+
+    def __len__(self):
+        return f"{self.i:b}".count("1")
+
+    def __iter__(self):
+        return (
+            x for b, x in zip(bin(self.i)[:1:-1], self.bitset.members)
+            if b == "1"
+        )
+
+    def add(self, elem):
+        self.i |= self.bitset.asint(elem)
+
+    def clear(self):
+        self.i = 0
+
+    def copy(self):
+        return self.bitset.fromint(self.i)
+
+    def __bool__(self):
+        return self.i != 0
+
+    def __contains__(self, elem):
+        return self.i & self.bitset.asint(elem)
+
+    def discard(self, elem):
+        self.i &= self.bitset.supremum.i - self.bitset.asint(elem)
+
+    def remove(self, elem):
+        if elem not in self:
+            raise KeyError
+        self.discard(elem)
+
+    def difference_update(self, *others):
+        for other in others:
+            self.i &= ~other.i
+
+    __isub__ = difference_update
+
+    def difference(self, *others):
+        bm = self.copy()
+        bm.difference_update(*others)
+        return bm
+
+    __sub__ = difference
+
+    def intersection_update(self, *others):
+        for other in others:
+            self.i &= other.i
+
+    __iand__ = intersection_update
+
+    def intersection(self, *others):
+        bm = self.copy()
+        bm.intersection_update(*others)
+        return bm
+
+    __and__ = intersection
+
+    def isdisjoint(self, other):
+        return not self.i & other.i
+
+    def issubset(self, other):
+        return self.i & other.i == self.i
+
+    def issuperset(self, other):
+        return self.i | other.i == self.i
+
+    def symmetric_difference_update(self, other):
+        self.i ^= other.i
+
+    __ixor__ = symmetric_difference_update
+
+    def symmetric_difference(self, other):
+        return self.bitset.fromint(self.i ^ other.i)
+
+    __xor__ = symmetric_difference
+
+    def update(self, *others):
+        for other in others:
+            self.i |= other.i
+
+    __ior__ = update
+
+    def union(self, *others):
+        bm = self.copy()
+        bm.update(*others)
+        return bm
+
+    __or__ = union

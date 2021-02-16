@@ -3,7 +3,7 @@ import functools
 from collections import defaultdict
 
 from .core import (calc_edge_weight_float, calc_node_weight_float, jitter_dict,
-                   ContractionTree, PartitionTreeBuilder)
+                   ContractionTree, PartitionTreeBuilder, oset)
 from .hyper import register_hyper_function
 
 
@@ -19,12 +19,12 @@ def oe_to_igraph(inputs, output, size_dict,
     ind2terms = defaultdict(list)
     for i, term in enumerate(inputs):
         nweight = calc_node_weight_float(term, size_dict, weight_nodes)
-        G.add_vertex(str(i), inds=term - output, weight=nweight)
+        G.add_vertex(str(i), inds=term.difference(output), weight=nweight)
         for ix in term:
             if ix not in output:
                 ind2terms[ix].append(str(i))
 
-    all_inds = tuple(inputs[0].union(*inputs[1:]) - output)
+    all_inds = oset.union(*inputs).difference(output)
 
     for ix in all_inds:
         enodes = ind2terms[ix]

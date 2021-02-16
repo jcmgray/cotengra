@@ -59,7 +59,7 @@ class ContractionCosts:
             self._flops += c['flops']
             self._sizes.add(c['size'])
 
-            for ix in c['involved'] | c['legs']:
+            for ix in c['involved'].union(c['legs']):
                 d = self.size_dict[ix]
                 self._flop_reductions[ix] += int((1 - 1 / d) * c['flops'])
                 self._where[ix].add(i)
@@ -145,8 +145,8 @@ class ContractionCosts:
         """
         size_dict = contraction_tree.size_dict
         cs = ({
-            'involved': contraction_tree.get_involved(node),
-            'legs': contraction_tree.get_legs(node),
+            'involved': oset(contraction_tree.get_involved(node)),
+            'legs': oset(contraction_tree.get_legs(node)),
             'size': contraction_tree.get_size(node),
             'flops': contraction_tree.get_flops(node),
         } for node in contraction_tree.info)
@@ -197,7 +197,7 @@ class ContractionCosts:
             new_flops = old_flops // d
             cost._flops += (new_flops - old_flops)
             c['flops'] = new_flops
-            c['involved'] = c['involved'] - ix_s
+            c['involved'] = c['involved'].difference(ix_s)
 
             # update the tensor sizes
             if ix in c['legs']:
@@ -213,7 +213,7 @@ class ContractionCosts:
                 cost._sizes.discard(old_size)
                 cost._sizes.add(new_size)
                 c['size'] = new_size
-                c['legs'] = c['legs'] - ix_s
+                c['legs'] = c['legs'].difference(ix_s)
 
         del cost.size_dict[ix]
         del cost._flop_reductions[ix]

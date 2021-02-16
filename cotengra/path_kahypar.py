@@ -122,7 +122,7 @@ register_hyper_function(
         'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.01},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
-        'groupsize': {'type': 'INT', 'min': 2, 'max': 4},
+        'groupsize': {'type': 'INT', 'min': 2, 'max': 8},
         'fuse_output_inds': {'type': 'BOOL'},
     },
     constants={

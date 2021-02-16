@@ -6,15 +6,10 @@ import functools
 import collections
 from decimal import Decimal
 
-try:
-    from cytoolz import groupby, interleave
-except ImportError:
-    from toolz import groupby, interleave
-
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
 
-from .utils import MaxCounter, oset
+from .utils import MaxCounter, oset, groupby, interleave, BitSet
 from .parallel import (
     parse_parallel_arg,
 )
@@ -40,6 +35,15 @@ def is_valid_node(node):
         return True
     except TypeError:
         return False
+
+
+def to_ind_bitset(inds):
+    return BitSet(inds)
+
+
+def inds_union(terms):
+    t0, *ts = terms
+    return t0.union(*ts)
 
 
 class ContractionTree:
@@ -93,9 +97,9 @@ class ContractionTree:
         track_write=False,
         track_size=False,
     ):
-
-        self.inputs = tuple(map(oset, inputs))
-        self.output = oset(output)
+        self.bitset = to_ind_bitset(size_dict.keys())
+        self.inputs = tuple(map(self.bitset, inputs))
+        self.output = self.bitset.frommembers(output)
         self.size_dict = size_dict
         self.N = len(self.inputs)
 
@@ -143,7 +147,7 @@ class ContractionTree:
         """
         # immutable properties
         for attr in ('inputs', 'N', 'root', 'output',
-                     'multiplicity', 'sliced_inds'):
+                     'multiplicity', 'sliced_inds', 'bitset'):
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
@@ -247,7 +251,7 @@ class ContractionTree:
             # filter out the subgraph induced by edge `e` (generally a pair)
             new_terms, merge = [], []
             for node in nodes:
-                term = oset.union(*tree.node_to_terms(node))
+                term = inds_union(tree.node_to_terms(node))
                 if e in term:
                     merge.append(node)
                 else:
@@ -305,7 +309,7 @@ class ContractionTree:
         except KeyError:
             nodes_above = self.root.difference(node)
             terms_above = self.node_to_terms(nodes_above)
-            keep = oset.union(self.output, *terms_above)
+            keep = inds_union((self.output, *terms_above))
             self.info[node]['keep'] = keep
         return keep
 
@@ -322,7 +326,7 @@ class ContractionTree:
                 try:
                     involved = self.get_involved(node)
                 except KeyError:
-                    involved = oset.union(*self.node_to_terms(node))
+                    involved = inds_union(self.node_to_terms(node))
                 keep = self.get_keep(node)
                 legs = involved.intersection(keep)
             self.info[node]['legs'] = legs
@@ -335,10 +339,10 @@ class ContractionTree:
             involved = self.info[node]['involved']
         except KeyError:
             if len(node) == 1:
-                involved = oset()
+                involved = self.bitset.infimum
             else:
                 sub_legs = map(self.get_legs, self.children[node])
-                involved = oset.union(*sub_legs)
+                involved = inds_union(sub_legs)
             self.info[node]['involved'] = involved
         return involved
 
@@ -444,7 +448,7 @@ class ContractionTree:
         """
         return self.total_flops() / self.total_write()
 
-    def compressed_rank(self, order='surface_order', multibond_factor=2):
+    def compressed_rank(self, multibond_factor=2, order='surface_order'):
         """
         """
         if order == 'surface_order':
@@ -453,7 +457,7 @@ class ContractionTree:
         indmap = collections.defaultdict(oset)
 
         # track indices that are compressed into others, and how many
-        compressed_away = set()
+        compressed_away = oset(())
         compressed_size = collections.defaultdict(lambda: 1)
 
         # track the effective
@@ -534,7 +538,7 @@ class ContractionTree:
         tree.max_size()
 
         d = tree.size_dict[ind]
-        s_ind = oset([ind])
+        s_ind = self.bitset.frommembers((ind,))
 
         for node, node_info in tree.info.items():
 
@@ -1718,7 +1722,7 @@ def score_compressed_rank(trial, multibond_factor=2):
     tree = trial['tree']
     cr = (
         tree.compressed_rank(multibond_factor=multibond_factor) +
-        math.log2(tree.max_size()) / 1000
+        math.log2(tree.max_size())**0.5 / 1000
     )
     # overwrite the effective max size
     trial['size'] = 2**Decimal(cr)
@@ -1744,6 +1748,7 @@ def get_score_fn(minimize):
         return functools.partial(score_compressed_rank, multibond_factor=3)
     if minimize == 'compressed-rank-4':
         return functools.partial(score_compressed_rank, multibond_factor=4)
+    raise ValueError(f"No score function '{minimize}' found.")
 
 
 def _score_flops(tree):
@@ -1835,8 +1840,8 @@ class PartitionTreeBuilder:
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
-            inputs = tuple(tree.node_to_terms(subgraph))
-            output = tree.get_legs(tree_node)
+            inputs = tuple(map(oset, tree.node_to_terms(subgraph)))
+            output = oset(tree.get_legs(tree_node))
             membership = self.partition_fn(
                 inputs, output, rand_size_dict,
                 parts=parts_s, **partition_opts,
@@ -1864,7 +1869,8 @@ class PartitionTreeBuilder:
         self, inputs, output, size_dict,
         random_strength=0.01,
         groupsize=4,
-        check=True,
+        check=False,
+        sub_optimize='greedy',
         **partition_opts
     ):
         tree = ContractionTree(inputs, output, size_dict,
@@ -1874,22 +1880,22 @@ class PartitionTreeBuilder:
         leaves = tuple(tree.gen_leaves())
         for node in leaves:
             tree.add_node(node)
-        output = tree.output
+        output = oset(tree.output)
 
         while len(leaves) > groupsize:
             parts = max(2, len(leaves) // groupsize)
 
-            inputs = [tree.get_legs(node) for node in leaves]
+            inputs = [oset(tree.get_legs(node)) for node in leaves]
             membership = self.partition_fn(
                 inputs, output, rand_size_dict, parts=parts, **partition_opts,
             )
             leaves = [
-                tree.contract(group, check=check)
+                tree.contract(group, check=check, optimize=sub_optimize)
                 for group in separate(leaves, membership)
             ]
 
         if len(leaves) > 1:
-            tree.contract(leaves, check=check)
+            tree.contract(leaves, check=check, optimize=sub_optimize)
 
         if check:
             assert tree.is_complete()
@@ -1997,7 +2003,7 @@ class LineGraph:
 
     def __init__(self, inputs, output):
         self.inputs = inputs
-        self.nodes = tuple(oset.union(*inputs))
+        self.nodes = tuple(set.union(*inputs))
         self.nodemap = {ix: i for i, ix in enumerate(self.nodes)}
 
         # num nodes in dual = num edges in real graph
@@ -2048,6 +2054,8 @@ def dict_affine_renorm(d):
     dmin = min(d.values())
     if dmax == dmin:
         dmin = 0
+        if dmax == 0.0:
+            dmax = 1.0
     return {k: (v - dmin) / (dmax - dmin) for k, v in d.items()}
 
 

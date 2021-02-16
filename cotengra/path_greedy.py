@@ -192,6 +192,7 @@ class GreedyCompressed:
         'sgsizes',
         'compressed_sizes',
         'compressed_rank',
+        'score_perm',
     )
 
     def __init__(
@@ -206,7 +207,8 @@ class GreedyCompressed:
         centrality_combine='max',
         score_centrality='diff',
         multibond_factor=2,
-        temperature=0.01,
+        temperature=0.0,
+        score_perm='',
     ):
         self.coeff_rank_compressed = coeff_rank_compressed
         self.coeff_rank = coeff_rank
@@ -219,6 +221,7 @@ class GreedyCompressed:
         self.score_centrality = score_centrality
         self.multibond_factor = multibond_factor
         self.temperature = temperature
+        self.score_perm = score_perm
 
     def _add_node(self, t):
         self.ssamap[self.ssa] = t
@@ -253,7 +256,7 @@ class GreedyCompressed:
             incidences[contracted_neighbs].append(ind)
 
         new_sizes = dict()
-        removable = set()
+        removable = oset()
         for ind0, *inds in incidences.values():
             # if several edges are incident to same set of nodes - can compress
             new_sizes[ind0] = self.compressed_sizes[ind0]
@@ -321,29 +324,33 @@ class GreedyCompressed:
             poss_sizes[ind] for ind in t12 if ind not in removable
         )
 
-        return (
-            self.coeff_rank_compressed * new_effective_rank +
-            self.coeff_rank * old_effective_rank +
+        scores = {
+            'R': self.coeff_rank_compressed * new_effective_rank,
+            'O': self.coeff_rank * old_effective_rank,
             # weight some combination of the inputs ranks
-            self.coeff_rank_inputs * _binary_combine(
+            'I': self.coeff_rank_inputs * _binary_combine(
                 self.score_rank_inputs, len(t1), len(t2)
-            ) +
+            ),
             # weight some combination of the inputs subgraph sizes
-            self.coeff_subgraph_size * _binary_combine(
-                self.score_subgraph_size, self.sgsizes[i1], self.sgsizes[i2]
-            ) +
+            'S': self.coeff_subgraph_size * _binary_combine(
+                self.score_subgraph_size,
+                math.log(self.sgsizes[i1]), math.log(self.sgsizes[i2]),
+            ),
             # weight some combination of the inputs centralities
-            self.coeff_centrality * _binary_combine(
+            'L': self.coeff_centrality * _binary_combine(
                 self.score_centrality, self.sgcents[i1], self.sgcents[i2]
-            ) -
+            ),
             # randomize using boltzmann sampling trick
-            self.temperature * gumbel()
-        )
+            'T': max(0.0, self.temperature) * gumbel(),
+        }
+        if self.score_perm == '':
+            return sum(scores.values())
+        return tuple(scores[p] for p in self.score_perm)
 
     def ssa_path(self, inputs, output, size_dict):
         self.ssa = 0
         self.ssamap = {}
-        self.indmap = collections.defaultdict(set)
+        self.indmap = collections.defaultdict(oset)
         self.candidates = []
         self.compressed_sizes = collections.defaultdict(lambda: 1)
         self.ssapath = []
@@ -396,6 +403,10 @@ class GreedyCompressed:
         return ssa_to_linear(self.ssa_path(inputs, output, size_dict))
 
 
+def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
+    return GreedyCompressed(**kwargs)(inputs, output, size_dict)
+
+
 def trial_greedy_compressed(inputs, output, size_dict, **kwargs):
     opt = GreedyCompressed(**kwargs)
     ssa_path = opt.ssa_path(inputs, output, size_dict)
@@ -409,13 +420,13 @@ register_hyper_function(
     name='greedy-compressed',
     ssa_func=trial_greedy_compressed,
     space={
-        'coeff_rank_compressed': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
+        'coeff_rank_compressed': {'type': 'FLOAT', 'min': 0.2, 'max': 2.0},
         'coeff_rank': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
         'coeff_rank_inputs': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
         'score_rank_inputs': {
             'type': 'STRING',
             'options': ['min', 'max', 'mean', 'sum', 'diff']},
-        'coeff_subgraph_size': {'type': 'FLOAT', 'min': -0.1, 'max': 0.1},
+        'coeff_subgraph_size': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
         'score_subgraph_size': {
             'type': 'STRING',
             'options': ['min', 'max', 'mean', 'sum', 'diff']},
@@ -426,7 +437,7 @@ register_hyper_function(
         'score_centrality': {
             'type': 'STRING',
             'options': ['min', 'max', 'mean', 'diff']},
-        'temperature': {'type': 'FLOAT', 'min': 0.0, 'max': 0.01},
+        'temperature': {'type': 'FLOAT', 'min': -0.1, 'max': 1.0},
         'multibond_factor': {'type': 'INT', 'min': 1, 'max': 4},
     },
 )
@@ -452,7 +463,7 @@ class GreedySpan:
     coeff_distance : float, optional
         When considering adding nodes to the span, how to weight the nodes
         distance to the starting point.
-    coeff_centrality : float, optional
+    coeff_next_centrality : float, optional
         When considering adding nodes to the span, how to weight the nodes
         centrality.
     temperature : float, optional
@@ -464,10 +475,11 @@ class GreedySpan:
         'coeff_connectivity',
         'coeff_ndim',
         'coeff_distance',
-        'coeff_centrality',
+        'coeff_next_centrality',
         'temperature',
         'H',
         'cents',
+        'score_perm',
     )
 
     def __init__(
@@ -476,15 +488,17 @@ class GreedySpan:
         coeff_connectivity=1.0,
         coeff_ndim=1.0,
         coeff_distance=-1.0,
-        coeff_centrality=0.0,
+        coeff_next_centrality=0.0,
         temperature=0.0,
+        score_perm='CNDLTI',
     ):
         self.start = start
         self.coeff_connectivity = coeff_connectivity
         self.coeff_ndim = coeff_ndim
         self.coeff_distance = coeff_distance
-        self.coeff_centrality = coeff_centrality
+        self.coeff_next_centrality = coeff_next_centrality
         self.temperature = temperature
+        self.score_perm = score_perm
 
     def ssa_path(self, inputs, output, size_dict):
         self.H = HyperGraph(inputs, output, size_dict)
@@ -520,42 +534,47 @@ class GreedySpan:
                 o_nodes.append(o_nodes[pj])
             seq.reverse()
 
-        def _check_candidate(i1, i2):
-            if (i2 in region):
+        def _check_candidate(i_surface, i_neighbor):
+            if (i_neighbor in region):
                 return
 
-            new_d = distances[i1] + 1
-            if i2 in distances:
-                if new_d < distances[i2]:
-                    merges[i2] = i1
-                    distances[i2] = new_d
+            new_d = distances[i_surface] + 1
+            if i_neighbor in distances:
+                if new_d < distances[i_neighbor]:
+                    merges[i_neighbor] = i_surface
+                    distances[i_neighbor] = new_d
             else:
-                merges[i2] = i1
-                distances[i2] = new_d
-                candidates.append(i2)
+                merges[i_neighbor] = i_surface
+                distances[i_neighbor] = new_d
+                candidates.append(i_neighbor)
 
-            connectivity[i2] += 1
+            connectivity[i_neighbor] += 1
+
+        def _sorter(i):
+            scores = {
+                'C': self.coeff_connectivity * connectivity[i],
+                'N': self.coeff_ndim * len(inputs[i]),
+                'D': self.coeff_distance * math.log(distances[i]),
+                'L': self.coeff_next_centrality * self.cents[i],
+                'T': max(0.0, self.temperature) * gumbel(),
+                'I': -i,
+            }
+            if self.score_perm == '':
+                return sum(scores[o] for o in 'CNDLT')
+            c = tuple(scores[o] for o in self.score_perm)
+            return c
 
         for i in region:
             for j in self.H.neighbors(i):
                 _check_candidate(i, j)
 
-        def _sorter(i):
-            return (
-                self.coeff_connectivity * connectivity[i] +
-                self.coeff_ndim * len(inputs[i]) +
-                self.coeff_distance * distances[i] +
-                self.coeff_centrality * self.cents[i] -
-                self.temperature * gumbel()
-            )
-
         while candidates:
             candidates.sort(key=_sorter)
-            i = candidates.pop()
-            region.add(i)
-            for j in self.H.neighbors(i):
-                _check_candidate(i, j)
-            seq.append((i, merges[i]))
+            i_surface = candidates.pop()
+            region.add(i_surface)
+            for i_next in self.H.neighbors(i_surface):
+                _check_candidate(i_surface, i_next)
+            seq.append((i_surface, merges[i_surface]))
         seq.reverse()
 
         ssapath = []
@@ -572,6 +591,10 @@ class GreedySpan:
         return ssa_to_linear(self.ssa_path(inputs, output, size_dict))
 
 
+def greedy_span(inputs, output, size_dict, memory_limit=None, **kwargs):
+    return GreedySpan(**kwargs)(inputs, output, size_dict)
+
+
 def trial_greedy_span(inputs, output, size_dict, **kwargs):
     opt = GreedySpan(**kwargs)
     ssa_path = opt.ssa_path(inputs, output, size_dict)
@@ -581,15 +604,21 @@ def trial_greedy_span(inputs, output, size_dict, **kwargs):
     return tree
 
 
+_allowed_perms = tuple(
+    "C" + "".join(p) + "T" for p in itertools.permutations('NDLI')
+)
+
+
 register_hyper_function(
     name='greedy-span',
     ssa_func=trial_greedy_span,
     space={
-        'coeff_connectivity': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
-        'coeff_ndim': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'coeff_distance': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'coeff_centrality': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
         'start': {'type': 'STRING', 'options': ['min', 'max']},
-        'temperature': {'type': 'FLOAT', 'min': 0.0, 'max': 0.01},
+        'score_perm': {'type': 'STRING', 'options': _allowed_perms},
+        'coeff_connectivity': {'type': 'INT', 'min': 0, 'max': 1},
+        'coeff_ndim': {'type': 'INT', 'min': -1, 'max': 1},
+        'coeff_distance': {'type': 'INT', 'min': -1, 'max': 1},
+        'coeff_next_centrality': {'type': 'FLOAT', 'min': -1, 'max': 1},
+        'temperature': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
     },
 )

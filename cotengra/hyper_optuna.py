@@ -53,6 +53,7 @@ def optuna_init_optimizers(
     **create_study_opts,
 ):
     import optuna
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     self._study = optuna.create_study(**create_study_opts)
     self._retrieve_params = make_retriever(methods, space)
 
