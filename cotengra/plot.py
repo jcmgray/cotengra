@@ -296,6 +296,7 @@ def get_nice_pos(G, k=0.01, iterations=500, layout=None, flatten=False):
 def plot_tree(
     tree,
     layout='ring',
+    layout_hypergraph=None,
     k=0.01,
     iterations=500,
     span=None,
@@ -387,7 +388,8 @@ def plot_tree(
 
     if layout == 'tent':
         # place raw graph first
-        pos = get_nice_pos(G_tn, k=k, iterations=iterations, flatten=True)
+        pos = get_nice_pos(G_tn, k=k, iterations=iterations, flatten=True,
+                           layout=layout_hypergraph)
 
         xmin = min(v[0] for v in pos.values())
         xmax = max(v[0] for v in pos.values())
@@ -446,7 +448,8 @@ def plot_tree(
 
     elif layout == 'span':
         # place raw graph first
-        pos = get_nice_pos(G_tn, k=k, iterations=iterations, flatten=False)
+        pos = get_nice_pos(G_tn, k=k, iterations=iterations, flatten=False,
+                           layout=layout_hypergraph)
         if span is None:
             span = tree.get_spans()[0]
         pos.update({node: pos[span[node]] for node in G_tree.nodes})
@@ -777,8 +780,10 @@ def hypergraph_compute_plot_info_G(
     if centrality:
         if centrality == 'resistance':
             Cs = H.resistance_centrality()
-        else:
+        elif centrality == 'simple':
             Cs = H.simple_centrality()
+        else:
+            Cs = centrality
 
         if isinstance(colormap, mpl.colors.Colormap):
             cmap = colormap
@@ -806,7 +811,7 @@ def plot_hypergraph(
     H,
     *,
     highlight=(),
-    centrality=True,
+    centrality='simple',
     colormap='plasma',
     layout=None,
     node_size=None,

@@ -171,30 +171,6 @@ class GreedyCompressed:
         A noise level to apply to the scores when choosing nodes to expand to.
     """
 
-    __slots__ = (
-        'coeff_rank_compressed',
-        'coeff_rank',
-        'coeff_rank_inputs',
-        'score_rank_inputs',
-        'coeff_subgraph_size',
-        'score_subgraph_size',
-        'coeff_centrality',
-        'centrality_combine',
-        'score_centrality',
-        'multibond_factor',
-        'temperature',
-        'candidates',
-        'ssapath',
-        'ssamap',
-        'indmap',
-        'ssa',
-        'sgcents',
-        'sgsizes',
-        'compressed_sizes',
-        'compressed_rank',
-        'score_perm',
-    )
-
     def __init__(
         self,
         coeff_rank_compressed=1.0,
@@ -357,9 +333,9 @@ class GreedyCompressed:
         self.compressed_rank = 0
 
         # compute hypergraph centralities to use heuristically
-        H = HyperGraph(inputs, output, size_dict)
-        self.sgcents = H.simple_centrality()
-        self.sgsizes = {i: 1 for i in range(H.num_nodes)}
+        hg = HyperGraph(inputs, output, size_dict)
+        self.sgcents = hg.simple_centrality()
+        self.sgsizes = {i: 1 for i in range(hg.num_nodes)}
 
         # populate initial scores with contractions among leaves
         for t in inputs:
@@ -372,7 +348,7 @@ class GreedyCompressed:
 
         while len(self.ssamap) > 2:
             # get the next best score contraction
-            score, i1, i2 = heapq.heappop(self.candidates)
+            _, i1, i2 = heapq.heappop(self.candidates)
 
             if (i1 not in self.ssamap) or (i2 not in self.ssamap):
                 # invalid - either node already contracted
@@ -470,18 +446,6 @@ class GreedySpan:
         A noise level to apply to the scores when choosing nodes to expand to.
     """
 
-    __slots__ = (
-        'start',
-        'coeff_connectivity',
-        'coeff_ndim',
-        'coeff_distance',
-        'coeff_next_centrality',
-        'temperature',
-        'H',
-        'cents',
-        'score_perm',
-    )
-
     def __init__(
         self,
         start='max',
@@ -491,6 +455,8 @@ class GreedySpan:
         coeff_next_centrality=0.0,
         temperature=0.0,
         score_perm='CNDLTI',
+        distance_p=1,
+        distance_steal='abs',
     ):
         self.start = start
         self.coeff_connectivity = coeff_connectivity
@@ -499,6 +465,8 @@ class GreedySpan:
         self.coeff_next_centrality = coeff_next_centrality
         self.temperature = temperature
         self.score_perm = score_perm
+        self.distance_p = distance_p
+        self.distance_steal = distance_steal
 
     def ssa_path(self, inputs, output, size_dict):
         self.H = HyperGraph(inputs, output, size_dict)
@@ -512,10 +480,12 @@ class GreedySpan:
             region = oset([max(self.cents.keys(), key=self.cents.__getitem__)])
         elif self.start == 'min':
             region = oset([min(self.cents.keys(), key=self.cents.__getitem__)])
+        else:
+            region = oset(self.start)
 
         candidates = []
         merges = {}
-        distances = {i: 0 for i in region}
+        distances = self.H.simple_distance(region, p=self.distance_p)
         connectivity = collections.defaultdict(lambda: 0)
 
         if len(region) == 1:
@@ -538,14 +508,22 @@ class GreedySpan:
             if (i_neighbor in region):
                 return
 
-            new_d = distances[i_surface] + 1
-            if i_neighbor in distances:
-                if new_d < distances[i_neighbor]:
-                    merges[i_neighbor] = i_surface
-                    distances[i_neighbor] = new_d
+            if i_neighbor in merges:
+                i_current = merges[i_neighbor]
+
+                if self.distance_steal == "abs":
+                    if distances[i_surface] < distances[i_current]:
+                        merges[i_neighbor] = i_surface
+
+                elif self.distance_steal == 'rel':
+                    old_diff = abs(distances[i_current] -
+                                   distances[i_neighbor])
+                    new_diff = abs(distances[i_surface] -
+                                   distances[i_neighbor])
+                    if new_diff > old_diff:
+                        merges[i_neighbor] = i_surface
             else:
                 merges[i_neighbor] = i_surface
-                distances[i_neighbor] = new_d
                 candidates.append(i_neighbor)
 
             connectivity[i_neighbor] += 1
@@ -554,7 +532,7 @@ class GreedySpan:
             scores = {
                 'C': self.coeff_connectivity * connectivity[i],
                 'N': self.coeff_ndim * len(inputs[i]),
-                'D': self.coeff_distance * math.log(distances[i]),
+                'D': self.coeff_distance * distances[i],
                 'L': self.coeff_next_centrality * self.cents[i],
                 'T': max(0.0, self.temperature) * gumbel(),
                 'I': -i,
@@ -620,5 +598,7 @@ register_hyper_function(
         'coeff_distance': {'type': 'INT', 'min': -1, 'max': 1},
         'coeff_next_centrality': {'type': 'FLOAT', 'min': -1, 'max': 1},
         'temperature': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
+        'distance_p': {'type': 'FLOAT', 'min': -5.0, 'max': 5.0},
+        'distance_steal': {'type': 'STRING', 'options': ['', 'abs', 'rel']},
     },
 )

@@ -1621,27 +1621,18 @@ class ContractionTree:
     def compute_centralities(self, combine='mean'):
         """Compute a centrality for every node in this contraction tree.
         """
-        H = self.get_hypergraph()
-        Cs = H.simple_centrality()
+        hg = self.get_hypergraph()
+        cents = hg.simple_centrality()
 
         for i, leaf in enumerate(self.gen_leaves()):
-            self.info[leaf]['centrality'] = Cs[i]
+            self.info[leaf]['centrality'] = cents[i]
 
-        if combine == 'mean':
-            def combine(x, y):
-                return (x + y) / 2
-
-        elif combine == 'sum':
-            def combine(x, y):
-                return (x + y)
-
-        elif combine == 'max':
-            def combine(x, y):
-                return max(x, y)
-
-        elif combine == 'min':
-            def combine(x, y):
-                return min(x, y)
+        combine = {
+            'mean': lambda x, y: (x + y) / 2,
+            'sum': lambda x, y: (x + y),
+            'max': max,
+            'min': min,
+        }.get(combine, combine)
 
         for p, l, r in self.traverse():
             self.info[p]['centrality'] = combine(
@@ -1662,8 +1653,8 @@ class ContractionTree:
 
     @functools.wraps(plot_hypergraph)
     def plot_hypergraph(self, **kwargs):
-        H = self.get_hypergraph()
-        H.plot(**kwargs)
+        hg = self.get_hypergraph()
+        hg.plot(**kwargs)
 
     def __repr__(self):
         s = "<ContractionTree(N={}, branches={}, complete={})>"
@@ -2103,33 +2094,6 @@ class HyperGraph:
         self.has_node_weights = None
         self.fmt = None
 
-    def _compute_weights(self):
-        if self.node_weights is not None:
-            # only compute once
-            return
-
-        self.node_weights = tuple(
-            calc_node_weight(term, self.size_dict, self.weight_nodes)
-            for term in self.nodes
-        )
-
-        self.edge_list = tuple(self.indmap)
-        self.edge_weight_map = {
-            e: calc_edge_weight(e, self.size_dict, self.weight_edges)
-            for e in self.edge_list}
-        self.edge_weights = tuple(
-            self.edge_weight_map[e] for e in self.edge_list
-        )
-
-        self.has_edge_weights = self.weight_edges in ('log', 'linear')
-        self.has_node_weights = self.weight_nodes in ('log', 'linear')
-        self.fmt = {
-            (False, False): "",
-            (False, True): "10",
-            (True, False): "1",
-            (True, True): "11",
-        }[self.has_edge_weights, self.has_node_weights]
-
     def __len__(self):
         return self.num_nodes
 
@@ -2138,6 +2102,35 @@ class HyperGraph:
         """
         return oset(j for ix in self.nodes[i]
                     for j in self.indmap[ix] if j != i)
+
+    def simple_distance(self, region, p=2):
+        """Compute a simple distance metric from nodes in ``region`` to all
+        others. Unlike graph distance, relative connectedness is taken into
+        account.
+        """
+        region = set(region)
+        distances = {i: 0 for i in region}
+        queue = list(region)
+        surface = collections.defaultdict(lambda: 0)
+
+        for d in itertools.count(1):
+            surface.clear()
+
+            while queue:
+                i = queue.pop()
+                for j in self.neighbors(i):
+                    if j not in region:
+                        surface[j] += 1
+
+            for j, c in surface.items():
+                region.add(j)
+                queue.append(j)
+                distances[j] = d + (1 / c)**p
+
+            if not queue:
+                break
+
+        return dict_affine_renorm(distances)
 
     def simple_closeness(self, p=0.75, mu=0.5):
         """Compute a rough hypergraph 'closeness'.
@@ -2240,43 +2233,40 @@ class HyperGraph:
         """
         import numpy as np
 
-        L = np.zeros((self.num_nodes, self.num_nodes))
+        lp = np.zeros((self.num_nodes, self.num_nodes))
 
         for i, term in enumerate(self.nodes):
-            L[i, i] = len(term)
+            lp[i, i] = len(term)
 
         for i, j in self.indmap.values():
-            L[i, j] = L[j, i] = -1
+            lp[i, j] = lp[j, i] = -1
 
-        return L
+        return lp
 
     def get_resistance_distances(self):
         """Get the resistance distance between all nodes of the raw graph.
         """
         import numpy as np
 
-        L = self.get_laplacian()
-        L += (1 / self.num_nodes)
-        L = np.linalg.inv(L)
-        d = np.array(np.diag(L))  # needs to be copy
-        L *= -2
-        L += d.reshape(1, -1)
-        L += d.reshape(-1, 1)
+        lp = self.get_laplacian()
+        lp += (1 / self.num_nodes)
+        lp = np.linalg.inv(lp)
+        d = np.array(np.diag(lp))  # needs to be copy
+        lp *= -2
+        lp += d.reshape(1, -1)
+        lp += d.reshape(-1, 1)
 
-        return L
+        return lp
 
     def resistance_centrality(self, rescale=True):
         """Compute the centrality in terms of the total resistance distance
         to all other nodes.
         """
-        L = self.get_resistance_distances()
-
-        Cs = dict(enumerate(-L.sum(axis=1)))
-
+        rd = self.get_resistance_distances()
+        cents = dict(enumerate(-rd.sum(axis=1)))
         if rescale:
-            Cs = dict_affine_renorm(Cs)
-
-        return Cs
+            cents = dict_affine_renorm(cents)
+        return cents
 
     def to_networkx(H):
         """Convert to a networkx Graph, with hyperedges represented as nodes.
@@ -2299,6 +2289,33 @@ class HyperGraph:
             G.nodes[nd].setdefault('hyperedge', False)
 
         return G
+
+    def _compute_weights(self):
+        if self.node_weights is not None:
+            # only compute once
+            return
+
+        self.node_weights = tuple(
+            calc_node_weight(term, self.size_dict, self.weight_nodes)
+            for term in self.nodes
+        )
+
+        self.edge_list = tuple(self.indmap)
+        self.edge_weight_map = {
+            e: calc_edge_weight(e, self.size_dict, self.weight_edges)
+            for e in self.edge_list}
+        self.edge_weights = tuple(
+            self.edge_weight_map[e] for e in self.edge_list
+        )
+
+        self.has_edge_weights = self.weight_edges in ('log', 'linear')
+        self.has_node_weights = self.weight_nodes in ('log', 'linear')
+        self.fmt = {
+            (False, False): "",
+            (False, True): "10",
+            (True, False): "1",
+            (True, True): "11",
+        }[self.has_edge_weights, self.has_node_weights]
 
     def to_hmetis_str(self):
         """Note that vertices are enumerated from 1 not 0.

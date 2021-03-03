@@ -407,7 +407,7 @@ class HyperOptimizer(PathOptimizer):
                     trial = future.result()
                     self._maybe_report_result(setting, trial)
                     return trial
-            time.sleep(1e-9)
+            time.sleep(1e-6)
 
     def _gen_results_parallel(self, repeats, trial_fn, trial_args):
         constants = get_hyper_constants()

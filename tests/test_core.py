@@ -112,9 +112,9 @@ def test_plot_alt():
     tree.plot_contractions_alt()
 
 
-def test_compressed_rank():
+@pytest.mark.parametrize("optimize", ["greedy-compressed", "greedy-span"])
+def test_compressed_rank(optimize):
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info = oe.contract_path(eq, *shapes, shapes=True,
-                            optimize='greedy-compressed')[1]
+    info = oe.contract_path(eq, *shapes, shapes=True, optimize=optimize)[1]
     tree = ContractionTree.from_info(info)
     assert tree.compressed_rank(1) < math.log2(tree.max_size())

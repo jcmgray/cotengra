@@ -1,3 +1,5 @@
+import operator
+import functools
 import itertools
 import collections
 
@@ -244,7 +246,7 @@ class BitMembers:
     def frommembers(cls, bitset, it=()):
         self = object.__new__(cls)
         self.bitset = bitset
-        self.i = sum(map(self.bitset.asint, it))
+        self.i = functools.reduce(operator.or_, map(self.bitset.asint, it), 0)
         return self
 
     def __int__(self):
