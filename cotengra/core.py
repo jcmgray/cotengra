@@ -389,18 +389,34 @@ class ContractionTree:
             self.compute_centralities()
             return self.info[node]['centrality']
 
-    def total_flops(self):
+    def total_flops(self, dtype='float'):
         """Sum the flops contribution from every node in the tree.
+
+        Parameters
+        ----------
+        dtype : {'float', 'complex', None}, optional
+            Scale the answer depending on the assumed data type.
         """
         if self._track_flops:
-            return self.multiplicity * self._flops
+            real_flops = self.multiplicity * self._flops
 
-        self._flops = 0
-        for node, _, _ in self.traverse():
-            self._flops += self.get_flops(node)
+        else:
+            self._flops = 0
+            for node, _, _ in self.traverse():
+                self._flops += self.get_flops(node)
 
-        self._track_flops = True
-        return self.multiplicity * self._flops
+            self._track_flops = True
+            real_flops = self.multiplicity * self._flops
+
+        if dtype is None:
+            return real_flops // 2
+
+        if 'float' in dtype:
+            return real_flops
+
+        if 'complex' in dtype:
+            return real_flops * 4
+
 
     def total_write(self):
         """Sum the total amount of memory that will be created and operated on.
@@ -447,6 +463,16 @@ class ContractionTree:
         extracting good computational performance.
         """
         return self.total_flops() / self.total_write()
+
+    def contraction_cost(self):
+        """Get the total number of scalar operations ~ time complexity.
+        """
+        return float(self.total_flops(dtype=None))
+
+    def contraction_width(self):
+        """Get log2 of the size of the largest tensor.
+        """
+        return math.log2(self.max_size())
 
     def compressed_rank(self, multibond_factor=2, order='surface_order'):
         """
