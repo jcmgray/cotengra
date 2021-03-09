@@ -1,4 +1,5 @@
 import random
+import itertools
 from os.path import join, abspath, dirname
 
 from .core import HyperGraph, PartitionTreeBuilder
@@ -16,6 +17,7 @@ def kahypar_subgraph_find_membership(
     weight_nodes='const',
     weight_edges='log',
     fuse_output_inds=False,
+    fix_output_nodes=False,
     parts=2,
     imbalance=0.01,
     seed=None,
@@ -33,15 +35,15 @@ def kahypar_subgraph_find_membership(
     if parts >= nv:
         return list(range(nv))
 
-    HG = HyperGraph(inputs, output, size_dict,
+    hg = HyperGraph(inputs, output, size_dict,
                     weight_edges=weight_edges,
                     weight_nodes=weight_nodes,
                     fuse_output_inds=fuse_output_inds)
-    hyperedge_indices, hyperedges = HG.to_sparse()
+    hyperedge_indices, hyperedges = hg.to_sparse()
 
     hypergraph_kwargs = {
-        'num_nodes': HG.num_nodes,
-        'num_edges': HG.num_edges,
+        'num_nodes': hg.num_nodes,
+        'num_edges': hg.num_edges,
         'index_vector': hyperedge_indices,
         'edge_vector': hyperedges,
         'k': parts,
@@ -49,16 +51,32 @@ def kahypar_subgraph_find_membership(
 
     edge_weights, node_weights = {
         (False, False): (None, None),
-        (False, True): ([], HG.node_weights),
-        (True, False): (HG.edge_weights, []),
-        (True, True): (HG.edge_weights, HG.node_weights),
-    }[HG.has_edge_weights, HG.has_node_weights]
+        (False, True): ([], hg.node_weights),
+        (True, False): (hg.edge_weights, []),
+        (True, True): (hg.edge_weights, hg.node_weights),
+    }[hg.has_edge_weights, hg.has_node_weights]
 
     if edge_weights or node_weights:
         hypergraph_kwargs['edge_weights'] = edge_weights
         hypergraph_kwargs['node_weights'] = node_weights
 
     hypergraph = kahypar.Hypergraph(**hypergraph_kwargs)
+
+    if fix_output_nodes:
+        # make sure all the output nodes (those with output indices) are in
+        # the same partition
+        onodes = tuple(hg.output_nodes())
+
+        if parts >= nv - len(onodes) + 1:
+            # too many partitions, simply group all outputs and return
+            groups = itertools.count(1)
+            return [0 if i in onodes else next(groups) for i in range(nv)]
+
+        for i in onodes:
+            hypergraph.fixNodeToBlock(i, 0)
+
+        # silences various warnings
+        mode = 'recursive'
 
     if profile is None:
         profile_mode = {'direct': 'k', 'recursive': 'r'}[mode]
@@ -77,11 +95,10 @@ def kahypar_subgraph_find_membership(
 
 
 kahypar_to_tree = PartitionTreeBuilder(kahypar_subgraph_find_membership)
-trial_kahypar = kahypar_to_tree.trial_fn
 
 register_hyper_function(
     name='kahypar',
-    ssa_func=trial_kahypar,
+    ssa_func=kahypar_to_tree.trial_fn,
     space={
         'random_strength': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
         'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
@@ -92,12 +109,13 @@ register_hyper_function(
         'parts_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
+        'fix_output_nodes': {'type': 'STRING', 'options': [False, 'auto']},
     },
 )
 
 register_hyper_function(
     name='kahypar-balanced',
-    ssa_func=trial_kahypar,
+    ssa_func=kahypar_to_tree.trial_fn,
     space={
         'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
         'cutoff': {'type': 'INT', 'min': 2, 'max': 4},
@@ -105,6 +123,7 @@ register_hyper_function(
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
         'fuse_output_inds': {'type': 'BOOL'},
+        'fix_output_nodes': {'type': 'STRING', 'options': [False, 'auto']},
     },
     constants={
         'random_strength': 0.0,
@@ -124,6 +143,7 @@ register_hyper_function(
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
         'groupsize': {'type': 'INT', 'min': 2, 'max': 8},
         'fuse_output_inds': {'type': 'BOOL'},
+        'fix_output_nodes': {'type': 'STRING', 'options': [False, 'auto']},
     },
     constants={
         'random_strength': 0.0,

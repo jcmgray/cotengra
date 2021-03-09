@@ -9,7 +9,7 @@ from decimal import Decimal
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
 
-from .utils import MaxCounter, oset, groupby, interleave, BitSet
+from .utils import MaxCounter, oset, groupby, interleave, unique, BitSet
 from .parallel import (
     parse_parallel_arg,
 )
@@ -1830,6 +1830,8 @@ class PartitionTreeBuilder:
             imbalance = partition_opts.pop('imbalance')
             imbalance_decay = partition_opts.pop('imbalance_decay')
 
+        dynamic_fix = partition_opts.get('fix_output_nodes', None) == 'auto'
+
         while tree.childless:
             tree_node = next(iter(tree.childless))
             subgraph = tuple(tree_node)
@@ -1854,6 +1856,10 @@ class PartitionTreeBuilder:
                 else:
                     imbalance_s = 1 - s ** -imbalance_decay * (1 - imbalance)
                 partition_opts['imbalance'] = imbalance_s
+
+            if dynamic_fix:
+                parts_s = 2
+                partition_opts['fix_output_nodes'] = (s == 1.0)
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
@@ -2126,8 +2132,13 @@ class HyperGraph:
     def neighbors(self, i):
         """Get the neighbors of node ``i``.
         """
-        return oset(j for ix in self.nodes[i]
-                    for j in self.indmap[ix] if j != i)
+        return unique(j for ix in self.nodes[i]
+                      for j in self.indmap[ix] if j != i)
+
+    def output_nodes(self):
+        """Get the nodes with output indices.
+        """
+        return unique(i for ix in self.output for i in self.indmap[ix])
 
     def simple_distance(self, region, p=2):
         """Compute a simple distance metric from nodes in ``region`` to all

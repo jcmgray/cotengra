@@ -9,7 +9,7 @@ The key methods here repeatedly build a **contraction tree**, using some combina
 This repository also contains a **tensor network slicing** implementation (for splitting contractions into many independent chunks each with lower memory) that will hopefully be added directly into `opt_einsum` at some point. The slicing can be performed *within* the Bayesian optimization loop to explicitly target contraction paths that slice well to low memory.
 
 >  :warning: Commits since [906f838](https://github.com/jcmgray/cotengra/commit/906f838d21840dc41c652efb63faf1f88c6113ee) *additionally* add functionality first demonstrated in ['Classical Simulation of Quantum Supremacy Circuits'](https://arxiv.org/abs/2005.06787) - namely, contraction subtree reconfiguration and the interleaving of this with slicing.
-
+In the ``examples`` folder you can find notebooks reproducing (in terms of sliced contraction complexity) the results of that paper as well as ['Simulating the Sycamore quantum supremacy circuits'](https://arxiv.org/abs/2103.03074).
 
 
 * [Installation :hammer:](#installation-hammer)
