@@ -2093,7 +2093,20 @@ class HyperGraph:
         Output indices.
     size_dict : dict[str, int], optional
         Size of each index.
+
+    Attributes
+    ----------
+    nodes : dict[int, list[str]]
+        Mapping of node to the list of edges incident to it.
+    edges : dict[str, list[int]]
+        Mapping of hyper edges to list of nodes it is incident to.
+    num_nodes : int
+        The number of nodes.
+    num_edges : int
+        The number of hyper-edges.
     """
+
+    __slots__ = ('inputs', 'output', 'size_dict', 'nodes', 'edges')
 
     def __init__(self, inputs, output=(), size_dict=()):
         self.inputs = inputs
@@ -2101,17 +2114,22 @@ class HyperGraph:
         self.size_dict = dict(size_dict)
 
         if isinstance(inputs, dict):
-            self.nodes = dict(inputs)
+            self.nodes = {int(k): list(v) for k, v in inputs.items()}
         else:
-            self.nodes = dict(enumerate(inputs))
+            self.nodes = dict(enumerate(map(list, inputs)))
 
-        self.ind_map = collections.defaultdict(list)
+        self.edges = collections.defaultdict(list)
         for i, term in self.nodes.items():
             for ix in term:
-                self.ind_map[ix].append(i)
+                self.edges[ix].append(i)
 
-        self.num_nodes = len(self.nodes)
-        self.num_edges = len(self.ind_map)
+    @property
+    def num_nodes(self):
+        return len(self.nodes)
+
+    @property
+    def num_edges(self):
+        return len(self.edges)
 
     def __len__(self):
         return self.num_nodes
@@ -2120,12 +2138,12 @@ class HyperGraph:
         """Get the neighbors of node ``i``.
         """
         return unique(j for ix in self.nodes[i]
-                      for j in self.ind_map[ix] if j != i)
+                      for j in self.edges[ix] if j != i)
 
     def output_nodes(self):
         """Get the nodes with output indices.
         """
-        return unique(i for ix in self.output for i in self.ind_map[ix])
+        return unique(i for ix in self.output for i in self.edges[ix])
 
     def simple_distance(self, region, p=2):
         """Compute a simple distance metric from nodes in ``region`` to all
@@ -2186,6 +2204,9 @@ class HyperGraph:
         # the total weighted score - combining num visitors and their distance
         scores = {i: 0.0 for i in self.nodes}
 
+        # pre-cache the lists of neighbors
+        neighbors = [list(self.neighbors(i)) for i in self.nodes]
+
         # at each iteration expand all nodes visitors to their neighbors
         for d in self.nodes:
 
@@ -2193,7 +2214,7 @@ class HyperGraph:
             previous_visitors = visitors.copy()
 
             for i in self.nodes:
-                for j in self.neighbors(i):
+                for j in neighbors[i]:
                     visitors[i] |= previous_visitors[j]
 
                 # visitors are worth less the further they've come from
@@ -2233,6 +2254,9 @@ class HyperGraph:
         # take a rough closeness as the starting point
         c = self.simple_closeness(**closeness_opts)
 
+        # pre-cache the lists of neighbors
+        neighbors = [list(self.neighbors(i)) for i in self.nodes]
+
         if r is None:
             # take the propagation time as sqrt hypergraph size
             r = max(10, int(self.num_nodes**0.5))
@@ -2244,7 +2268,7 @@ class HyperGraph:
             # spread the centrality of each node into its neighbors
             for i in self.nodes:
                 ci = previous_c[i]
-                for j in self.neighbors(i):
+                for j in neighbors[i]:
                     c[j] += smoothness * ci / r
 
             # then rescale all the values between 0.0 and 1.0
@@ -2262,7 +2286,7 @@ class HyperGraph:
         for i, term in self.nodes.items():
             lp[i, i] = len(term)
 
-        for i, j in self.ind_map.values():
+        for i, j in self.edges.values():
             lp[i, j] = lp[j, i] = -1
 
         return lp
@@ -2298,7 +2322,7 @@ class HyperGraph:
         import networkx as nx
 
         G = nx.Graph(any_hyper=False)
-        for ix, nodes in H.ind_map.items():
+        for ix, nodes in H.edges.items():
             if len(nodes) == 2:
                 # regular edge
                 G.add_edge(*nodes, ind=ix, hyperedge=False)
@@ -2326,7 +2350,7 @@ class HyperGraph:
             for term in self.nodes.values()
         )
 
-        winfo['edge_list'] = tuple(self.ind_map)
+        winfo['edge_list'] = tuple(self.edges)
         winfo['edge_weight_map'] = {
             e: calc_edge_weight(e, self.size_dict, weight_edges)
             for e in winfo['edge_list']

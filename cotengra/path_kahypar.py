@@ -18,7 +18,7 @@ def to_sparse(hg, weight_nodes='const', weight_edges='log'):
     hyperedges = []
     for e in winfo['edge_list']:
         hyperedge_indices.append(len(hyperedges))
-        hyperedges.extend(hg.ind_map[e])
+        hyperedges.extend(hg.edges[e])
     hyperedge_indices.append(len(hyperedges))
 
     winfo['hyperedge_indices'] = hyperedge_indices

@@ -61,7 +61,7 @@ def labels_partition(
     # populate neighbor list and weights by edge weight
     for i in sites:
         for e in hg.nodes[i]:
-            for j in hg.ind_map[e]:
+            for j in hg.edges[e]:
                 if j != i:
                     neighbs[i].add(j)
                     weights[i, j] = (
