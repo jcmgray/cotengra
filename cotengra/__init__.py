@@ -69,6 +69,19 @@ def HyperCompressedOptimizer(
                           minimize=minimize, **kwargs)
 
 
+def ReusableHyperCompressedOptimizer(
+    methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
+    minimize='compressed-rank',
+    path_order='surface',
+    **kwargs,
+):
+    """Instantiates a HyperOptimizer but with default arguments applicable to
+    compressed path finding.
+    """
+    return ReusableHyperOptimizer(methods=methods, path_order=path_order,
+                                  minimize=minimize, **kwargs)
+
+
 __all__ = (
     "ContractionTree",
     "HyperGraph",
@@ -84,6 +97,7 @@ __all__ = (
     "HyperOptimizer",
     "HyperCompressedOptimizer",
     "ReusableHyperOptimizer",
+    "ReusableHyperCompressedOptimizer",
     "list_hyper_functions",
     "optimize_flowcutter",
     "optimize_quickbb",
