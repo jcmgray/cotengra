@@ -54,8 +54,12 @@ def contraction_20_5():
 
 @pytest.mark.parametrize(('opt', 'requires'), [
     (functools.partial(ctg.UniformOptimizer, methods='greedy'), ''),
+    (functools.partial(ctg.UniformOptimizer, methods='greedy-compressed'), ''),
+    (functools.partial(ctg.UniformOptimizer, methods='greedy-span'), ''),
     (functools.partial(ctg.UniformOptimizer, methods='labels'), ''),
     (functools.partial(ctg.UniformOptimizer, methods='kahypar'), 'kahypar'),
+    (functools.partial(ctg.UniformOptimizer, methods='kahypar-agglom'),
+     'kahypar'),
     (functools.partial(ctg.UniformOptimizer, methods='betweenness'), 'igraph'),
     (functools.partial(ctg.UniformOptimizer, methods='labelprop'), 'igraph'),
     (functools.partial(ctg.UniformOptimizer, methods='spinglass'), 'igraph'),

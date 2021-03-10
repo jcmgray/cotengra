@@ -10,13 +10,28 @@ from .hyper import register_hyper_function
 KAHYPAR_PROFILE_DIR = join(abspath(dirname(__file__)), 'kahypar_profiles')
 
 
+def to_sparse(hg, weight_nodes='const', weight_edges='log'):
+    winfo = hg.compute_weights(weight_nodes=weight_nodes,
+                               weight_edges=weight_edges)
+
+    hyperedge_indices = []
+    hyperedges = []
+    for e in winfo['edge_list']:
+        hyperedge_indices.append(len(hyperedges))
+        hyperedges.extend(hg.ind_map[e])
+    hyperedge_indices.append(len(hyperedges))
+
+    winfo['hyperedge_indices'] = hyperedge_indices
+    winfo['hyperedges'] = hyperedges
+    return winfo
+
+
 def kahypar_subgraph_find_membership(
     inputs,
     output,
     size_dict,
     weight_nodes='const',
     weight_edges='log',
-    fuse_output_inds=False,
     fix_output_nodes=False,
     parts=2,
     imbalance=0.01,
@@ -35,26 +50,24 @@ def kahypar_subgraph_find_membership(
     if parts >= nv:
         return list(range(nv))
 
-    hg = HyperGraph(inputs, output, size_dict,
-                    weight_edges=weight_edges,
-                    weight_nodes=weight_nodes,
-                    fuse_output_inds=fuse_output_inds)
-    hyperedge_indices, hyperedges = hg.to_sparse()
+    hg = HyperGraph(inputs, output, size_dict)
+
+    winfo = to_sparse(hg, weight_nodes=weight_nodes, weight_edges=weight_edges)
 
     hypergraph_kwargs = {
         'num_nodes': hg.num_nodes,
         'num_edges': hg.num_edges,
-        'index_vector': hyperedge_indices,
-        'edge_vector': hyperedges,
+        'index_vector': winfo['hyperedge_indices'],
+        'edge_vector': winfo['hyperedges'],
         'k': parts,
     }
 
     edge_weights, node_weights = {
         (False, False): (None, None),
-        (False, True): ([], hg.node_weights),
-        (True, False): (hg.edge_weights, []),
-        (True, True): (hg.edge_weights, hg.node_weights),
-    }[hg.has_edge_weights, hg.has_node_weights]
+        (False, True): ([], winfo['node_weights']),
+        (True, False): (winfo['edge_weights'], []),
+        (True, True): (winfo['edge_weights'], winfo['node_weights']),
+    }[winfo['has_edge_weights'], winfo['has_node_weights']]
 
     if edge_weights or node_weights:
         hypergraph_kwargs['edge_weights'] = edge_weights
@@ -109,7 +122,7 @@ register_hyper_function(
         'parts_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
-        'fix_output_nodes': {'type': 'STRING', 'options': [False, 'auto']},
+        'fix_output_nodes': {'type': 'STRING', 'options': ['auto', '']},
     },
 )
 
@@ -122,8 +135,7 @@ register_hyper_function(
         'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.01},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
-        'fuse_output_inds': {'type': 'BOOL'},
-        'fix_output_nodes': {'type': 'STRING', 'options': [False, 'auto']},
+        'fix_output_nodes': {'type': 'STRING', 'options': ['auto', '']},
     },
     constants={
         'random_strength': 0.0,
@@ -142,8 +154,7 @@ register_hyper_function(
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
         'groupsize': {'type': 'INT', 'min': 2, 'max': 8},
-        'fuse_output_inds': {'type': 'BOOL'},
-        'fix_output_nodes': {'type': 'STRING', 'options': [False, 'auto']},
+        'fix_output_nodes': {'type': 'STRING', 'options': ['auto', '']},
     },
     constants={
         'random_strength': 0.0,

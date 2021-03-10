@@ -417,7 +417,6 @@ class ContractionTree:
         if 'complex' in dtype:
             return real_flops * 4
 
-
     def total_write(self):
         """Sum the total amount of memory that will be created and operated on.
         """
@@ -480,7 +479,7 @@ class ContractionTree:
         if order == 'surface_order':
             order = self.surface_order
 
-        indmap = collections.defaultdict(oset)
+        ind_map = collections.defaultdict(oset)
 
         # track indices that are compressed into others, and how many
         compressed_away = oset(())
@@ -492,9 +491,9 @@ class ContractionTree:
             inds = set(self.get_legs(node))
             clegs[node] = inds
             for ix in inds:
-                indmap[ix].add(node)
+                ind_map[ix].add(node)
 
-        if any(len(nodes) > 2 for nodes in indmap.values()):
+        if any(len(nodes) > 2 for nodes in ind_map.values()):
             raise ValueError("Can't compute compressed rank for "
                              "a hyper tensor network.")
 
@@ -509,13 +508,13 @@ class ContractionTree:
 
         def _add_connections(node):
             for ix in clegs[node]:
-                indmap[ix].add(node)
+                ind_map[ix].add(node)
 
         def _remove_connections(node):
             for ix in clegs[node]:
-                indmap[ix].discard(node)
-                if not indmap[ix]:
-                    del indmap[ix]
+                ind_map[ix].discard(node)
+                if not ind_map[ix]:
+                    del ind_map[ix]
 
         def _effective_rank(legs):
             return sum(map(compressed_size.__getitem__, legs))
@@ -540,7 +539,7 @@ class ContractionTree:
             # the same set of intermediate tensors
             incidences = collections.defaultdict(list)
             for ind in compressed_legs:
-                nodes = frozenset(indmap[ind])
+                nodes = frozenset(ind_map[ind])
                 incidences[nodes].append(ind)
 
             for nodes, (ind0, *inds) in incidences.items():
@@ -552,7 +551,7 @@ class ContractionTree:
                         compressed_size[ind0] + compressed_size[ind],
                     )
                     compressed_away.add(ind)
-                    del indmap[ind]
+                    del ind_map[ind]
 
         return max_rank
 
@@ -2084,47 +2083,35 @@ def dict_affine_renorm(d):
 
 class HyperGraph:
     """Simple hypergraph builder and writer.
+
+    Parameters
+    ----------
+    inputs : sequence of str or dict[int, str]
+        The nodes. If given as a dict, the keys will be taken as the node
+        enumeration rather than ``range(len(inputs))``.
+    output : str, optional
+        Output indices.
+    size_dict : dict[str, int], optional
+        Size of each index.
     """
 
-    def __init__(
-        self,
-        inputs,
-        output=(),
-        size_dict=None,
-        weight_edges='const',
-        weight_nodes='const',
-        fuse_output_inds=False,
-    ):
+    def __init__(self, inputs, output=(), size_dict=()):
         self.inputs = inputs
         self.output = output
-        self.size_dict = dict() if size_dict is None else size_dict
+        self.size_dict = dict(size_dict)
 
-        if output and fuse_output_inds:
-            self.nodes = (tuple(itertools.chain(inputs, [output])))
+        if isinstance(inputs, dict):
+            self.nodes = dict(inputs)
         else:
-            self.nodes = tuple(inputs)
+            self.nodes = dict(enumerate(inputs))
 
-        self.fuse_output_inds = fuse_output_inds
-
-        self.indmap = collections.defaultdict(list)
-        for i, term in enumerate(self.nodes):
+        self.ind_map = collections.defaultdict(list)
+        for i, term in self.nodes.items():
             for ix in term:
-                self.indmap[ix].append(i)
+                self.ind_map[ix].append(i)
 
         self.num_nodes = len(self.nodes)
-        self.num_edges = len(self.indmap)
-
-        self.weight_nodes = weight_nodes
-        self.weight_edges = weight_edges
-
-        # compute these lazily
-        self.node_weights = None
-        self.edge_list = None
-        self.edge_weight_map = None
-        self.edge_weights = None
-        self.has_edge_weights = None
-        self.has_node_weights = None
-        self.fmt = None
+        self.num_edges = len(self.ind_map)
 
     def __len__(self):
         return self.num_nodes
@@ -2133,12 +2120,12 @@ class HyperGraph:
         """Get the neighbors of node ``i``.
         """
         return unique(j for ix in self.nodes[i]
-                      for j in self.indmap[ix] if j != i)
+                      for j in self.ind_map[ix] if j != i)
 
     def output_nodes(self):
         """Get the nodes with output indices.
         """
-        return unique(i for ix in self.output for i in self.indmap[ix])
+        return unique(i for ix in self.output for i in self.ind_map[ix])
 
     def simple_distance(self, region, p=2):
         """Compute a simple distance metric from nodes in ``region`` to all
@@ -2190,22 +2177,22 @@ class HyperGraph:
         should_stop = False
 
         # which nodes have reached which other nodes (bitmap set)
-        visitors = {i: 1 << i for i in range(self.num_nodes)}
+        visitors = {i: 1 << i for i in self.nodes}
 
         # store the number of unique visitors - the change is this each step
         #    is the number of new shortest paths of length ``d``
-        num_visitors = {i: 1 for i in range(self.num_nodes)}
+        num_visitors = {i: 1 for i in self.nodes}
 
         # the total weighted score - combining num visitors and their distance
-        scores = {i: 0.0 for i in range(self.num_nodes)}
+        scores = {i: 0.0 for i in self.nodes}
 
         # at each iteration expand all nodes visitors to their neighbors
-        for d in range(self.num_nodes):
+        for d in self.nodes:
 
             # do a parallel update
             previous_visitors = visitors.copy()
 
-            for i in range(self.num_nodes):
+            for i in self.nodes:
                 for j in self.neighbors(i):
                     visitors[i] |= previous_visitors[j]
 
@@ -2255,7 +2242,7 @@ class HyperGraph:
             previous_c = c.copy()
 
             # spread the centrality of each node into its neighbors
-            for i in range(self.num_nodes):
+            for i in self.nodes:
                 ci = previous_c[i]
                 for j in self.neighbors(i):
                     c[j] += smoothness * ci / r
@@ -2272,10 +2259,10 @@ class HyperGraph:
 
         lp = np.zeros((self.num_nodes, self.num_nodes))
 
-        for i, term in enumerate(self.nodes):
+        for i, term in self.nodes.items():
             lp[i, i] = len(term)
 
-        for i, j in self.indmap.values():
+        for i, j in self.ind_map.values():
             lp[i, j] = lp[j, i] = -1
 
         return lp
@@ -2311,7 +2298,7 @@ class HyperGraph:
         import networkx as nx
 
         G = nx.Graph(any_hyper=False)
-        for ix, nodes in H.indmap.items():
+        for ix, nodes in H.ind_map.items():
             if len(nodes) == 2:
                 # regular edge
                 G.add_edge(*nodes, ind=ix, hyperedge=False)
@@ -2327,66 +2314,37 @@ class HyperGraph:
 
         return G
 
-    def _compute_weights(self):
-        if self.node_weights is not None:
-            # only compute once
-            return
+    def compute_weights(
+        self,
+        weight_edges='const',
+        weight_nodes='const',
+    ):
+        winfo = {}
 
-        self.node_weights = tuple(
-            calc_node_weight(term, self.size_dict, self.weight_nodes)
-            for term in self.nodes
+        winfo['node_weights'] = tuple(
+            calc_node_weight(term, self.size_dict, weight_nodes)
+            for term in self.nodes.values()
         )
 
-        self.edge_list = tuple(self.indmap)
-        self.edge_weight_map = {
-            e: calc_edge_weight(e, self.size_dict, self.weight_edges)
-            for e in self.edge_list}
-        self.edge_weights = tuple(
-            self.edge_weight_map[e] for e in self.edge_list
+        winfo['edge_list'] = tuple(self.ind_map)
+        winfo['edge_weight_map'] = {
+            e: calc_edge_weight(e, self.size_dict, weight_edges)
+            for e in winfo['edge_list']
+        }
+        winfo['edge_weights'] = tuple(
+            winfo['edge_weight_map'][e] for e in winfo['edge_list']
         )
 
-        self.has_edge_weights = self.weight_edges in ('log', 'linear')
-        self.has_node_weights = self.weight_nodes in ('log', 'linear')
-        self.fmt = {
+        winfo['has_edge_weights'] = weight_edges in ('log', 'linear')
+        winfo['has_node_weights'] = weight_nodes in ('log', 'linear')
+        winfo['fmt'] = {
             (False, False): "",
             (False, True): "10",
             (True, False): "1",
             (True, True): "11",
-        }[self.has_edge_weights, self.has_node_weights]
+        }[winfo['has_edge_weights'], winfo['has_node_weights']]
 
-    def to_hmetis_str(self):
-        """Note that vertices are enumerated from 1 not 0.
-        """
-        self._compute_weights()
-
-        lns = [f"{self.num_edges} {self.num_nodes} {self.fmt}"]
-
-        for e in self.edge_list:
-            ln = " ".join(str(v + 1) for v in self.indmap[e])
-            if self.has_edge_weights:
-                ln = f"{self.edge_weight_map[e]} {ln}"
-            lns.append(ln)
-
-        if self.has_node_weights:
-            for v in self.node_weights:
-                lns.append(str(v))
-
-        return "\n".join(lns)
-
-    def to_hmetis_file(self, filename):
-        with open(filename, 'w') as f:
-            f.write(self.to_hmetis_str())
-
-    def to_sparse(self):
-        self._compute_weights()
-
-        hyperedge_indices = []
-        hyperedges = []
-        for e in self.edge_list:
-            hyperedge_indices.append(len(hyperedges))
-            hyperedges.extend(self.indmap[e])
-        hyperedge_indices.append(len(hyperedges))
-        return hyperedge_indices, hyperedges
+        return winfo
 
     plot = plot_hypergraph
 

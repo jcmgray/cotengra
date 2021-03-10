@@ -7,12 +7,12 @@ from .core import HyperGraph, PartitionTreeBuilder
 from .hyper import register_hyper_function
 
 
-def pop_fact(p, parts, N, pop_small_bias, pop_big_bias):
-    M = N / parts
-    if p <= M:
-        return pop_small_bias * N * math.sin(math.pi * p / M)
+def pop_fact(p, parts, n, pop_small_bias, pop_big_bias):
+    m = n / parts
+    if p <= m:
+        return pop_small_bias * n * math.sin(math.pi * p / m)
     else:
-        return - pop_big_bias * N * math.sin(math.pi / 2 * (p - M) / (N - M))
+        return - pop_big_bias * n * math.sin(math.pi / 2 * (p - m) / (n - m))
 
 
 def labels_partition(
@@ -21,7 +21,6 @@ def labels_partition(
     size_dict,
     weight_nodes='linear',
     weight_edges='log',
-    fuse_output_inds=False,
     parts=2,
     maxiter=None,
     memory=0,
@@ -39,7 +38,6 @@ def labels_partition(
     size_dict
     weight_nodes
     weight_edges
-    fuse_output_inds
     parts
     maxiter
     memory
@@ -50,26 +48,25 @@ def labels_partition(
     final_sweep
     """
 
-    H = HyperGraph(
-        inputs, output, size_dict,
-        weight_nodes=weight_nodes, weight_edges=weight_edges,
-        fuse_output_inds=fuse_output_inds
-    )
-    N = H.num_nodes
-    H._compute_weights()
+    hg = HyperGraph(inputs, output, size_dict, )
+    n = hg.num_nodes
+    winfo = hg.compute_weights(weight_nodes=weight_nodes,
+                               weight_edges=weight_edges)
 
-    sites = list(range(len(H.nodes)))
+    sites = list(hg.nodes)
     neighbs = collections.defaultdict(set)
-    max_edge_weight = max(H.edge_weights)
+    max_edge_weight = max(winfo['edge_weights'])
     weights = {}
 
     # populate neighbor list and weights by edge weight
     for i in sites:
-        for e in H.nodes[i]:
-            for j in H.indmap[e]:
+        for e in hg.nodes[i]:
+            for j in hg.ind_map[e]:
                 if j != i:
                     neighbs[i].add(j)
-                    weights[i, j] = H.edge_weight_map[e] / max_edge_weight
+                    weights[i, j] = (
+                        winfo['edge_weight_map'][e] / max_edge_weight
+                    )
 
     # weight by mutual connectivity
     for i, j in weights:
@@ -79,7 +76,7 @@ def labels_partition(
     pops = collections.Counter(labels)
 
     if maxiter is None:
-        maxiter = N
+        maxiter = n
 
     for r in range(maxiter):
 
@@ -102,7 +99,7 @@ def labels_partition(
             for lbl in scores:
                 p = pops[lbl]
                 scores[lbl] += (
-                    pop_fact(p, parts, N, pop_small_bias, pop_big_bias)
+                    pop_fact(p, parts, n, pop_small_bias, pop_big_bias)
                 ) / (r + 1)**pop_decay
 
             new_label = scores.most_common(1)[0][0]
@@ -163,7 +160,6 @@ register_hyper_function(
         'pop_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
         'con_pow': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
         'final_sweep': {'type': 'BOOL'},
-        'fuse_output_inds': {'type': 'BOOL'},
     },
     constants={
         'random_strength': 0.0,

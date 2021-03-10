@@ -202,18 +202,18 @@ class GreedyCompressed:
     def _add_node(self, t):
         self.ssamap[self.ssa] = t
         for ind in t:
-            self.indmap[ind].add(self.ssa)
+            self.ind_map[ind].add(self.ssa)
         self.ssa += 1
         return self.ssa - 1
 
     def _remove_node(self, i):
         t = self.ssamap.pop(i)
         for ind in t:
-            self.indmap[ind].discard(i)
+            self.ind_map[ind].discard(i)
         return t
 
     def _remove_ind(self, ind):
-        for i in self.indmap.pop(ind):
+        for i in self.ind_map.pop(ind):
             self.ssamap[i].remove(ind)
 
     def _compressed_result(self, i1, i2):
@@ -227,7 +227,7 @@ class GreedyCompressed:
         incidences = collections.defaultdict(list)
         for ind in t12:
             contracted_neighbs = frozenset(
-                -1 if i in (i1, i2) else i for i in self.indmap[ind]
+                -1 if i in (i1, i2) else i for i in self.ind_map[ind]
             )
             incidences[contracted_neighbs].append(ind)
 
@@ -326,7 +326,7 @@ class GreedyCompressed:
     def ssa_path(self, inputs, output, size_dict):
         self.ssa = 0
         self.ssamap = {}
-        self.indmap = collections.defaultdict(oset)
+        self.ind_map = collections.defaultdict(oset)
         self.candidates = []
         self.compressed_sizes = collections.defaultdict(lambda: 1)
         self.ssapath = []
@@ -335,13 +335,13 @@ class GreedyCompressed:
         # compute hypergraph centralities to use heuristically
         hg = HyperGraph(inputs, output, size_dict)
         self.sgcents = hg.simple_centrality()
-        self.sgsizes = {i: 1 for i in range(hg.num_nodes)}
+        self.sgsizes = {i: 1 for i in hg.nodes}
 
         # populate initial scores with contractions among leaves
         for t in inputs:
             self._add_node(t.copy())
             self.compressed_rank = max(self.compressed_rank, len(t))
-        for ind, nodes in self.indmap.items():
+        for ind, nodes in self.ind_map.items():
             if len(nodes) == 2:
                 candidate = (self._score(*nodes), *nodes)
                 heapq.heappush(self.candidates, candidate)
@@ -360,13 +360,13 @@ class GreedyCompressed:
             # assess / re-assess new and also neighboring contractions
             #     n.b. duplicate scores should be lower and heap-popped first
             t12_neighbors = oset(itertools.chain.from_iterable(
-                self.indmap[ind] for ind in t12
+                self.ind_map[ind] for ind in t12
             ))
             next_nearest_inds = oset(itertools.chain.from_iterable(
                 self.ssamap[i] for i in t12_neighbors
             ))
             for ind in next_nearest_inds:
-                nodes = self.indmap[ind]
+                nodes = self.ind_map[ind]
                 if len(nodes) == 2:
                     candidate = (self._score(*nodes), *nodes)
                     heapq.heappush(self.candidates, candidate)
@@ -474,7 +474,7 @@ class GreedySpan:
 
         if output:
             region = oset(itertools.chain.from_iterable(
-                self.H.indmap[ind] for ind in output
+                self.H.ind_map[ind] for ind in output
             ))
         elif self.start == 'max':
             region = oset([max(self.cents.keys(), key=self.cents.__getitem__)])
