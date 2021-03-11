@@ -9,7 +9,16 @@ except ImportError:
     from toolz import groupby, interleave, unique
 
 
-__all__ = ('groupby', 'interleave')
+__all__ = ('groupby', 'interleave', 'unique')
+
+
+def prod(it):
+    """Compute the product of sequence of numbers ``it``.
+    """
+    x = 1
+    for i in it:
+        x *= i
+    return x
 
 
 class oset:
@@ -253,6 +262,9 @@ class BitMembers:
         return self.i
 
     __hash__ = __int__
+
+    def __eq__(self, other):
+        return (self.bitset is other.bitset) and (self.i == other.i)
 
     def __len__(self):
         return f"{self.i:b}".count("1")

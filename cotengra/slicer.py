@@ -8,7 +8,7 @@ from opt_einsum import contract_expression, contract_path
 from opt_einsum.contract import PathInfo
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 
-from .utils import MaxCounter, oset
+from .utils import MaxCounter, oset, prod
 from .plot import plot_slicings, plot_slicings_alt
 
 
@@ -447,15 +447,6 @@ def create_size_dict(inputs, arrays):
         for ix, d in zip(term, array.shape):
             size_dict[ix] = max(size_dict.get(ix, 1), d)
     return size_dict
-
-
-def prod(it):
-    """Compute the product of sequence of numbers ``it``.
-    """
-    x = 1
-    for i in it:
-        x *= i
-    return x
 
 
 def dynary(x, bases):

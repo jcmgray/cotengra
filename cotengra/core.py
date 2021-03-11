@@ -9,7 +9,7 @@ from decimal import Decimal
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
 
-from .utils import MaxCounter, oset, groupby, interleave, unique, BitSet
+from .utils import MaxCounter, oset, groupby, interleave, unique, BitSet, prod
 from .parallel import (
     parse_parallel_arg,
 )
@@ -472,6 +472,29 @@ class ContractionTree:
         """Get log2 of the size of the largest tensor.
         """
         return math.log2(self.max_size())
+
+    def max_size_compressed(self, chi, order='surface_order'):
+        """Compute the maximum sized tensor produced when a compressed
+        contraction is performed with maximum bond size ``chi``, ordered by
+        ``order``.
+        """
+        if order == 'surface_order':
+            order = self.surface_order
+
+        hg = HyperGraph(self.inputs, self.output, size_dict=self.size_dict)
+        tree_map = dict(zip(self.gen_leaves(), hg.nodes))
+
+        msc = max(map(self.get_size, self.gen_leaves()))
+
+        for p, l, r in self.traverse(order):
+            li = tree_map[l]
+            ri = tree_map[r]
+            pi = hg.contract(li, ri)
+            tree_map[p] = pi
+            msc = max(msc, hg.node_size(pi))
+            hg.compress(chi=chi, edges=hg.nodes[pi])
+
+        return msc
 
     def compressed_rank(self, multibond_factor=2, order='surface_order'):
         """
@@ -2106,7 +2129,8 @@ class HyperGraph:
         The number of hyper-edges.
     """
 
-    __slots__ = ('inputs', 'output', 'size_dict', 'nodes', 'edges')
+    __slots__ = ('inputs', 'output', 'size_dict',
+                 'nodes', 'edges', 'compressed', '_node_counter')
 
     def __init__(self, inputs, output=(), size_dict=()):
         self.inputs = inputs
@@ -2120,8 +2144,11 @@ class HyperGraph:
 
         self.edges = collections.defaultdict(list)
         for i, term in self.nodes.items():
-            for ix in term:
-                self.edges[ix].append(i)
+            for e in term:
+                self.edges[e].append(i)
+
+        self._node_counter = None
+        self.compressed = set()
 
     @property
     def num_nodes(self):
@@ -2137,13 +2164,96 @@ class HyperGraph:
     def neighbors(self, i):
         """Get the neighbors of node ``i``.
         """
-        return unique(j for ix in self.nodes[i]
-                      for j in self.edges[ix] if j != i)
+        return unique(
+            j for e in self.nodes[i] for j in self.edges[e]
+            if (j != i)
+        )
+
+    def next_node(self):
+        """Get the next available node identifier.
+        """
+        if self._node_counter is None:
+            self._node_counter = max(self.nodes) + 1
+        while self._node_counter in self.nodes:
+            self._node_counter += 1
+        return self._node_counter
+
+    def add_node(self, inds, node=None):
+        """Add a node with ``inds``, and optional identifier ``node``. The
+        identifier will be generated if not given and returned.
+        """
+        if node is None:
+            node = self.next_node()
+        inds = list(inds)
+        self.nodes[node] = inds
+        for e in inds:
+            self.edges[e].append(node)
+        return node
+
+    def remove_node(self, i):
+        """Remove node ``i`` from this hypergraph.
+        """
+        inds = self.nodes.pop(i)
+        for e in inds:
+            e_nodes = self.edges[e]
+            e_nodes.remove(i)
+            if not e_nodes:
+                del self.edges[e]
+        return inds
+
+    def remove_edge(self, e):
+        """Remove edge ``e`` from this hypergraph.
+        """
+        for i in self.edges[e]:
+            self.nodes[i].remove(e)
+        del self.edges[e]
+
+    def contract(self, i, j):
+        """Combine node ``i`` and node ``j``.
+        """
+        inds_i = self.remove_node(i)
+        inds_j = self.remove_node(j)
+        inds_ij = (
+            ind for ind in itertools.chain(inds_i, inds_j)
+            if (ind in self.edges) or (ind in self.output)
+        )
+        return self.add_node(inds_ij)
+
+    def compress(self, chi, edges=None):
+        """'Compress' multiedges, combining their size up to a maximum of
+        ``chi``.
+        """
+        if edges is None:
+            edges = self.edges
+
+        # find edges which are incident to the same set of nodes
+        incidences = collections.defaultdict(list)
+        for e in edges:
+            if e not in self.output:
+                nodes = frozenset(self.edges[e])
+                incidences[nodes].append(e)
+
+        for es in incidences.values():
+            if len(es) < 2:
+                continue
+
+            # combine edges into first, capping size at `chi`
+            new_size = prod(map(self.size_dict.__getitem__, es))
+            e_keep, *es_del = es
+            for e in es_del:
+                self.remove_edge(e)
+                self.compressed.add(e)
+            self.size_dict[e_keep] = min(new_size, chi)
+
+    def node_size(self, i):
+        """Get the size of the term represented by node ``i``.
+        """
+        return prod(map(self.size_dict.__getitem__, self.nodes[i]))
 
     def output_nodes(self):
         """Get the nodes with output indices.
         """
-        return unique(i for ix in self.output for i in self.edges[ix])
+        return unique(i for e in self.output for i in self.edges[e])
 
     def simple_distance(self, region, p=2):
         """Compute a simple distance metric from nodes in ``region`` to all
@@ -2205,7 +2315,7 @@ class HyperGraph:
         scores = {i: 0.0 for i in self.nodes}
 
         # pre-cache the lists of neighbors
-        neighbors = [list(self.neighbors(i)) for i in self.nodes]
+        neighbors = {i: list(self.neighbors(i)) for i in self.nodes}
 
         # at each iteration expand all nodes visitors to their neighbors
         for d in self.nodes:
@@ -2255,7 +2365,7 @@ class HyperGraph:
         c = self.simple_closeness(**closeness_opts)
 
         # pre-cache the lists of neighbors
-        neighbors = [list(self.neighbors(i)) for i in self.nodes]
+        neighbors = {i: list(self.neighbors(i)) for i in self.nodes}
 
         if r is None:
             # take the propagation time as sqrt hypergraph size
