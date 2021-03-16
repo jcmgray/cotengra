@@ -56,6 +56,7 @@ class RandomSpace:
     def sample(self):
         return {k: fn() for k, fn in self._samplers.items()}
 
+
 class RandomSampler:
 
     def __init__(self, methods, spaces):
@@ -81,15 +82,15 @@ def random_init_optimizers(
     space : dict[str, dict[str, dict]]
         The search space.
     """
-    self._random_sampler = RandomSampler(methods, space)
+    self.sampler = RandomSampler(methods, space)
 
 
 def random_get_setting(self):
-    method, params = self._random_sampler.ask()
+    method, params = self.sampler.ask()
     return {'method': method, 'params': params}
 
 
-def random_report_result(self, setting, trial, score):
+def random_report_result(*_, **__):
     pass
 
 

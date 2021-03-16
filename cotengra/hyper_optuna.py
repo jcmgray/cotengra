@@ -19,10 +19,11 @@ def make_getter(name, param):
             name, param['min'], param['max'])
     raise ValueError("Didn't understand space {}.".format(param))
 
+
 def make_retriever(methods, space):
 
     if len(methods) == 1:
-        def meth_getter(trial):
+        def meth_getter(_):
             return methods[0]
     else:
         def meth_getter(trial):
