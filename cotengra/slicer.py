@@ -8,7 +8,7 @@ from opt_einsum import contract_expression, contract_path
 from opt_einsum.contract import PathInfo
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 
-from .utils import MaxCounter, oset, prod
+from .utils import MaxCounter, oset, dynary
 from .plot import plot_slicings, plot_slicings_alt
 
 
@@ -449,45 +449,6 @@ def create_size_dict(inputs, arrays):
     return size_dict
 
 
-def dynary(x, bases):
-    """Represent the integer ``x`` with respect to the 'dynamical' ``bases``.
-    Gives a way to reliably enumerate and 'de-enumerate' the combination of
-    all different index values.
-
-    Examples
-    --------
-
-        >>> dynary(9, [2, 2, 2, 2])  # binary
-        [1, 0, 0, 1]
-
-        >>> dynary(123, [10, 10, 10])  # decimal
-        [1, 2, 3]
-
-        >>> # arbitrary
-        >>> bases = [2, 5, 7, 3, 8, 7, 20, 4]
-        >>> for i in range(301742, 301752):
-        ...     print(dynary(i, bases))
-        [0, 3, 1, 1, 2, 5, 15, 2]
-        [0, 3, 1, 1, 2, 5, 15, 3]
-        [0, 3, 1, 1, 2, 5, 16, 0]
-        [0, 3, 1, 1, 2, 5, 16, 1]
-        [0, 3, 1, 1, 2, 5, 16, 2]
-        [0, 3, 1, 1, 2, 5, 16, 3]
-        [0, 3, 1, 1, 2, 5, 17, 0]
-        [0, 3, 1, 1, 2, 5, 17, 1]
-        [0, 3, 1, 1, 2, 5, 17, 2]
-        [0, 3, 1, 1, 2, 5, 17, 3]
-
-    """
-    bs_szs = [prod(bases[i + 1:]) for i in range(len(bases))]
-    dx = []
-    for b in bs_szs:
-        div = x // b
-        dx.append(div)
-        x -= div * b
-    return dx
-
-
 class SlicedContractor:
     """A contraction where certain indices are explicitly summed over,
     corresponding to taking different 'slices' of the input arrays, each of
@@ -599,7 +560,7 @@ class SlicedContractor:
             # re-insert the sliced array
             temp_arrays[c] = temp_arrays[c][selector]
 
-        return tuple(temp_arrays)
+        return temp_arrays
 
     def contract_slice(self, i, **kwargs):
         """Contraction of just slice ``i``.

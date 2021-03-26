@@ -360,14 +360,14 @@ def plot_tree(
 
     # plot the raw connectivity of the underlying graph
     if plot_raw_graph:
+        G_tn = nx.Graph()
         # collect which nodes each edge connects
         ind_map = collections.defaultdict(list)
         for nd in leaves:
-            inds, = tree.node_to_terms(nd)
-            for ix in inds:
+            G_tn.add_node(nd)
+            for ix in tree.inputs[next(iter(nd))]:
                 ind_map[ix].append(nd)
         # turn into another nx graph
-        G_tn = nx.Graph()
         any_hyper = False
         for ix, nodes in ind_map.items():
             width = math.log2(tree.size_dict.get(ix, 2))
@@ -376,15 +376,17 @@ def plot_tree(
                 if ix not in highlight else
                 (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
             )
+            eprops = {'ind': ix, 'width': width, 'color': color,
+                      'style': 'dotted' if ix in tree.sliced_inds else 'solid'}
             # regular edge
             if len(nodes) == 2:
-                G_tn.add_edge(*nodes, ind=ix, width=width, color=color)
+                G_tn.add_edge(*nodes, **eprops)
             # hyperedge
             else:
                 any_hyper = True
                 G_tn.add_node(ix)
                 for nd in nodes:
-                    G_tn.add_edge(ix, nd, ind=ix, width=width, color=color)
+                    G_tn.add_edge(ix, nd, **eprops)
 
     if layout == 'tent':
         # place raw graph first
@@ -464,6 +466,7 @@ def plot_tree(
         nx.draw_networkx_edges(
             G_tn, pos=pos, ax=ax,
             width=[G_tn.edges[e]['width'] for e in G_tn.edges],
+            style=[G_tn.edges[e]['style'] for e in G_tn.edges],
             edge_color=[G_tn.edges[e]['color'] for e in G_tn.edges])
 
     if plot_leaf_labels:
@@ -801,7 +804,7 @@ def hypergraph_compute_plot_info_G(
                 color = cmap(c)
             else:
                 color = node_color
-            label = ''  # H.inputs[nd]
+            label = f'{nd}'  # H.inputs[nd]
 
         G.nodes[nd]['color'] = color
         G.nodes[nd]['label'] = label
@@ -897,7 +900,8 @@ def plot_hypergraph(
             font_size=edge_labels_font_size,
             font_color=font_color,
             font_family=edge_labels_font_family,
-            bbox={'color': to_rgb(mpl.rcParams['figure.facecolor'])},
+            bbox={'color': to_rgb(mpl.rcParams['figure.facecolor']),
+                  'alpha': 0.5},
         )
         nx.draw_networkx_edge_labels(
             G, pos=pos, ax=ax,
@@ -907,7 +911,8 @@ def plot_hypergraph(
             font_size=edge_labels_font_size,
             font_color=font_color,
             font_family=edge_labels_font_family,
-            bbox={'color': to_rgb(mpl.rcParams['figure.facecolor'])},
+            bbox={'color': to_rgb(mpl.rcParams['figure.facecolor']),
+                  'alpha': 0.5},
         )
 
     return _return_or_close_fig(fig, return_fig)

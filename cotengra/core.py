@@ -1,6 +1,7 @@
 import math
 import random
 import warnings
+import operator
 import itertools
 import functools
 import collections
@@ -8,11 +9,19 @@ from decimal import Decimal
 
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
+from autoray import do
 
-from .utils import MaxCounter, oset, groupby, interleave, unique, BitSet, prod
-from .parallel import (
-    parse_parallel_arg,
+from .utils import (
+    MaxCounter,
+    BitSet,
+    oset,
+    groupby,
+    interleave,
+    unique,
+    prod,
+    dynary,
 )
+from .parallel import parse_parallel_arg
 from .plot import (
     plot_tree_ring,
     plot_tree_tent,
@@ -97,11 +106,13 @@ class ContractionTree:
         track_write=False,
         track_size=False,
     ):
-        self.bitset = to_ind_bitset(size_dict.keys())
-        self.inputs = tuple(map(self.bitset, inputs))
-        self.output = self.bitset.frommembers(output)
+        self.inputs = inputs
+        self.output = output
         self.size_dict = size_dict
         self.N = len(self.inputs)
+
+        self.bitset_edges = to_ind_bitset(size_dict.keys())
+        self.output_legs = self.bitset_edges.frommembers(output)
 
         # mapping of parents to children - the core binary tree object
         self.children = {}
@@ -113,9 +124,12 @@ class ContractionTree:
         # the collection of all nodes
         self.root = frozenset(range(self.N))
         self.add_node(self.root)
-        self.info[self.root]['legs'] = self.output
-        self.info[self.root]['size'] = compute_size_by_dict(self.output,
-                                                            size_dict)
+        root_info = self.info[self.root]
+        root_info['legs'] = self.output_legs
+        root_info['size'] = compute_size_by_dict(self.output, size_dict)
+
+        for leaf in self.gen_leaves():
+            self.add_node(leaf)
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -139,19 +153,22 @@ class ContractionTree:
         # container for caching subtree reconfiguration condidates
         self.already_optimized = dict()
 
+        # info relating to slicing (base constructor is always unsliced)
         self.multiplicity = 1
-        self.sliced_inds = ()
+        self.sliced_inds = self.sliced_sizes = ()
+        self.sliced_inputs = frozenset()
 
     def set_state_from(self, other):
         """Set the internal state of this tree to that of ``other``.
         """
         # immutable properties
-        for attr in ('inputs', 'N', 'root', 'output',
-                     'multiplicity', 'sliced_inds', 'bitset'):
+        for attr in ('inputs', 'output', 'size_dict', 'N', 'root',
+                     'multiplicity', 'sliced_inds', 'sliced_sizes',
+                     'sliced_inputs', 'bitset_edges'):
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
-        for attr in ('size_dict', 'children'):
+        for attr in ('children', 'output_legs'):
             setattr(self, attr, getattr(other, attr).copy())
 
         # dicts of mutable
@@ -186,7 +203,8 @@ class ContractionTree:
         """Turn a node -- a frozen set of ints -- into the corresponding terms
         -- a sequence of sets of str corresponding to input indices.
         """
-        return map(self.inputs.__getitem__, node)
+        for i in node:
+            yield self.get_legs(frozenset((i,)))
 
     def gen_leaves(self):
         """Generate the nodes representing leaves of the contraction tree, i.e.
@@ -216,7 +234,7 @@ class ContractionTree:
                 merge = [terms[i] for i in p]
             else:
                 merge = [terms.pop(i) for i in sorted(p, reverse=True)]
-            terms.append(tree.contract(merge, check=check))
+            terms.append(tree.contract_nodes(merge, check=check))
 
         return tree
 
@@ -259,7 +277,7 @@ class ContractionTree:
 
             # contract the subgraph
             if merge:
-                nodes = new_terms + [tree.contract(merge, check=check)]
+                nodes = new_terms + [tree.contract_nodes(merge, check=check)]
 
         # make sure we are generating a full contraction tree
         nt = len(nodes)
@@ -268,7 +286,7 @@ class ContractionTree:
             # scalar? Or disconnected subgraphs?
             warnings.warn(
                 f"Ended up with {nt} nodes - contracting all remaining.")
-            tree.contract(nodes, check=check)
+            tree.contract_nodes(nodes, check=check)
 
         return tree
 
@@ -309,7 +327,7 @@ class ContractionTree:
         except KeyError:
             nodes_above = self.root.difference(node)
             terms_above = self.node_to_terms(nodes_above)
-            keep = inds_union((self.output, *terms_above))
+            keep = inds_union((self.output_legs, *terms_above))
             self.info[node]['keep'] = keep
         return keep
 
@@ -321,7 +339,7 @@ class ContractionTree:
             legs = self.info[node]['legs']
         except KeyError:
             if len(node) == 1:
-                legs = self.inputs[next(iter(node))]
+                legs = self.bitset_edges(self.inputs[next(iter(node))])
             else:
                 try:
                     involved = self.get_involved(node)
@@ -339,7 +357,7 @@ class ContractionTree:
             involved = self.info[node]['involved']
         except KeyError:
             if len(node) == 1:
-                involved = self.bitset.infimum
+                involved = self.bitset_edges.infimum
             else:
                 sub_legs = map(self.get_legs, self.children[node])
                 involved = inds_union(sub_legs)
@@ -388,6 +406,41 @@ class ContractionTree:
         except KeyError:
             self.compute_centralities()
             return self.info[node]['centrality']
+
+    def get_can_dot(self, node):
+        """Get whether this contraction can be performed as a dot product (i.e.
+        with ``tensordot``), or else requires ``einsum``, as it has indices
+        that don't appear exactly twice in either the inputs or the output.
+        """
+        try:
+            can_dot = self.info[node]['can_dot']
+        except KeyError:
+            l, r = self.children[node]
+            sp, sl, sr = map(self.get_legs, (node, l, r))
+            can_dot = sl.symmetric_difference(sr) == sp
+            self.info[node]['can_dot'] = can_dot
+        return can_dot
+
+    def get_inds(self, node):
+        """Get the indices of this node - an ordered string version of
+        ``get_legs`` that starts with ``tree.inputs`` and maintains the order
+        they appear in each contraction 'ABC,abc->ABCabc', to match tensordot.
+        """
+        try:
+            inds = self.info[node]['inds']
+        except KeyError:
+            sp = self.get_legs(node)
+            if len(node) == 1:
+                i, = node
+                inds = "".join(filter(sp.__contains__, self.inputs[i]))
+            else:
+                l_inds, r_inds = map(self.get_inds, self.children[node])
+                inds = "".join(unique(filter(
+                    sp.__contains__, l_inds + r_inds
+                )))
+            self.info[node]['inds'] = inds
+
+        return inds
 
     def total_flops(self, dtype='float'):
         """Sum the flops contribution from every node in the tree.
@@ -586,7 +639,7 @@ class ContractionTree:
         tree.max_size()
 
         d = tree.size_dict[ind]
-        s_ind = self.bitset.frommembers((ind,))
+        s_ind = self.bitset_edges.frommembers((ind,))
 
         for node, node_info in tree.info.items():
 
@@ -596,14 +649,16 @@ class ContractionTree:
             # inputs can have leg indices that are not involved so
             legs = tree.get_legs(node)
 
-            if (ind not in involved) and (ind not in legs):
+            if not ((s_ind & involved) or (s_ind & legs)):
                 continue
 
             # else update all the relevant information about this node
             node_info['involved'] = involved.difference(s_ind)
             removed = tree.get_removed(node)
 
-            if ind in legs:
+            # update information regarding node indices sets
+            if s_ind & legs:
+                # removing indices changes both flops and size of node
                 node_info['legs'] = legs.difference(s_ind)
 
                 old_size = tree.get_size(node)
@@ -613,11 +668,15 @@ class ContractionTree:
                 node_info['size'] = new_size
                 tree._write += (-old_size + new_size)
 
-                # modifying keep not stricly necessarily as its only called as
-                #     ``legs = keep.intersection(involved)`` ?
+                # XXX: modifying 'keep' not stricly necessarily as its only
+                #     needed for ``legs = keep.intersection(involved)``?
                 keep = tree.get_keep(node)
                 node_info['keep'] = keep.difference(s_ind)
+
+                node_info.pop('inds', None)
+
             else:
+                # removing indices only changes flops
                 node_info['removed'] = removed.difference(s_ind)
 
             old_flops = tree.get_flops(node)
@@ -628,18 +687,15 @@ class ContractionTree:
             node_info['flops'] = new_flops
             tree._flops += (-old_flops + new_flops)
 
-        def term_without(t):
-            if ind in t:
-                return t.difference(s_ind)
-            return t
-
-        tree.output = term_without(tree.output)
-        tree.inputs = tuple(map(term_without, tree.inputs))
+            if len(node) == 1:
+                # its a leaf - corresponding input will be sliced
+                tree.sliced_inputs = tree.sliced_inputs | node
 
         tree.already_optimized.clear()
 
         tree.multiplicity = tree.multiplicity * d
         tree.sliced_inds = tree.sliced_inds + (ind,)
+        tree.sliced_sizes = tree.sliced_sizes + (tree.size_dict[ind],)
 
         return tree
 
@@ -682,7 +738,7 @@ class ContractionTree:
 
         return parent
 
-    def contract(self, nodes, optimize='auto-hq', check=False):
+    def contract_nodes(self, nodes, optimize='auto-hq', check=False):
         """Contract an arbitrary number of ``nodes`` in the tree to build up a
         subtree. The root of this subtree (a new intermediate) is returned.
         """
@@ -724,7 +780,9 @@ class ContractionTree:
                 frozenset(temp_nodes.pop(i)) for i in sorted(p, reverse=True)
             ]
             temp_nodes.append(
-                self.contract(to_contract, optimize=optimize, check=check)
+                self.contract_nodes(
+                    to_contract, optimize=optimize, check=check
+                )
             )
 
         parent, = temp_nodes
@@ -1076,7 +1134,7 @@ class ContractionTree:
                 optimizer.cost_cap = current_cost
 
                 # and reoptimize the leaves
-                tree.contract(sub_leaves, optimize=optimizer)
+                tree.contract_nodes(sub_leaves, optimize=optimizer)
                 already_optimized.add(sub_leaves)
 
                 r += 1
@@ -1692,6 +1750,185 @@ class ContractionTree:
             self._hypergraph = HyperGraph(
                 self.inputs, self.output, self.size_dict)
         return self._hypergraph
+    def contract_core(
+        self,
+        arrays,
+        order=None,
+        prefer_einsum=False,
+        backend=None,
+        check=False,
+    ):
+        """Contract ``arrays`` with this tree. The order of the axes and
+        output is assumed to be that of ``tree.inputs`` and ``tree.output``,
+        but with sliced indices removed. This functon contracts the core tree
+        and thus if indices have been sliced the arrays supplied need to be
+        sliced as well.
+
+        Parameters
+        ----------
+        arrays : sequence of array
+            The arrays to contract.
+        order : str or callable, optional
+            Supplied to :meth:`ContractionTree.traverse`.
+        prefer_einsum : bool, optional
+            Prefer to use ``einsum`` for pairwise contractions, even if
+            ``tensordot`` can perform the contraction.
+        backend : str, optional
+            What library to use for ``einsum`` and ``transpose``, will be
+            automatically inferred from the arrays if not given.
+        check : bool, optional
+            Perform some basic error checks.
+        """
+        # temporary storage for intermediates
+        data = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
+
+        for p, l, r in self.traverse(order=order):
+            # ordered strings of indices
+            p_inds, l_inds, r_inds = map(self.get_inds, (p, l, r))
+
+            # get input arrays for this contraction
+            l_array = data.pop(l)
+            r_array = data.pop(r)
+            if check and (
+                (len(l_array.shape) != len(l_inds)) or
+                (len(r_array.shape) != len(r_inds))
+            ):
+                raise ValueError(
+                    f"Array shapes don't match indices: "
+                    f"[{l_array.shape}, '{l_inds}'], "
+                    f"[{r_array.shape}, '{r_inds}'].")
+
+            # perform the contraction
+            if prefer_einsum or not self.get_can_dot(p):
+                eq = f"{l_inds},{r_inds}->{p_inds}"
+                p_array = do('einsum', eq, l_array, r_array, like=backend)
+            else:
+                axes = [[], []]
+                for ind in set(l_inds).intersection(r_inds):
+                    axes[0].append(l_inds.find(ind))
+                    axes[1].append(r_inds.find(ind))
+                p_array = do('tensordot', l_array, r_array,
+                             axes=axes, like=backend)
+
+            # insert the new intermediate array
+            data[p] = p_array
+
+        # check if we need to transpose the final array to match the output
+        perm = [p_inds.find(ind) for ind in self.output]
+        if perm != list(range(len(perm))):
+            p_array = do('transpose', p_array, perm, like=backend)
+
+        return p_array
+
+    def slice_arrays(self, arrays, i):
+        """Take ``arrays`` and slice the relevant inputs according to
+        ``tree.sliced_inds`` and the dynary representation of ``i``.
+        """
+        temp_arrays = list(arrays)
+
+        # e.g. {'a': 2, 'd': 7, 'z': 0}
+        locations = dict(zip(self.sliced_inds, dynary(i, self.sliced_sizes)))
+
+        for c in self.sliced_inputs:
+            # the indexing object, e.g. [:, :, 7, :, 2, :, :, 0]
+            selector = tuple(
+                locations.get(ix, slice(None)) for ix in self.inputs[c]
+            )
+            # re-insert the sliced array
+            temp_arrays[c] = temp_arrays[c][selector]
+
+        return temp_arrays
+
+    def contract_slice(self, arrays, i, **kwargs):
+        """Get slices ``i`` of ``arrays`` and then contract them.
+        """
+        return self.contract_core(self.slice_arrays(arrays, i), **kwargs)
+
+    def gather_slices(self, slices, backend=None):
+        """Gather all the output contracted slices into a single full result.
+        If none of the sliced indices appear in the output, then this is a
+        simple sum - otherwise the slices need to be partially summed and
+        partially stacked.
+        """
+        output_pos = {ix: i for i, ix in enumerate(self.output)
+                      if ix in self.sliced_inds}
+
+        if not output_pos:
+            # we can just sum everything
+            return functools.reduce(operator.add, slices)
+
+        # else we need to do a multidimensional stack of all the results
+        sliced_pos = {ix: i for i, ix in enumerate(self.sliced_inds)
+                      if ix in self.output}
+
+        # first we sum over non-output sliced indices
+        chunks = {}
+        for i, s in enumerate(slices):
+            loc = dynary(i, self.sliced_sizes)
+            key = tuple(loc[sliced_pos[ix]] for ix in output_pos)
+            try:
+                chunks[key] = chunks[key] + s
+            except KeyError:
+                chunks[key] = s
+
+        # then we stack these summed chunks over output sliced indices
+        def recursively_stack_chunks(loc, rem):
+            if not rem:
+                return chunks[loc]
+            arrays = [recursively_stack_chunks(loc + (d,), rem[1:])
+                      for d in range(self.size_dict[rem[0]])]
+            axes = output_pos[rem[0]] - len(loc)
+            return do("stack", arrays, axes, like=backend)
+
+        return recursively_stack_chunks((), tuple(output_pos))
+
+    def contract(
+        self,
+        arrays,
+        order=None,
+        prefer_einsum=False,
+        backend=None,
+        check=False,
+    ):
+        """Contract ``arrays`` with this tree. This function takes *unsliced*
+        arrays and handles the slicing, contractions and gathering. The order
+        of the axes and output is assumed to match that of ``tree.inputs`` and
+        ``tree.output``.
+
+        Parameters
+        ----------
+        arrays : sequence of array
+            The arrays to contract.
+        order : str or callable, optional
+            Supplied to :meth:`ContractionTree.traverse`.
+        prefer_einsum : bool, optional
+            Prefer to use ``einsum`` for pairwise contractions, even if
+            ``tensordot`` can perform the contraction.
+        backend : str, optional
+            What library to use for ``einsum`` and ``transpose``, will be
+            automatically inferred from the arrays if not given.
+        check : bool, optional
+            Perform some basic error checks.
+
+        See Also
+        --------
+        contract_core, contract_slice, slice_arrays, gather_slices
+        """
+        if not self.sliced_inds:
+            return self.contract_core(
+                arrays, order=order, prefer_einsum=prefer_einsum,
+                backend=backend, check=check,
+            )
+
+        slices = (
+            self.contract_slice(
+                arrays, i, order=order, prefer_einsum=prefer_einsum,
+                backend=backend, check=check,
+            )
+            for i in range(self.multiplicity)
+        )
+
+        return self.gather_slices(slices, backend=backend)
 
     plot_ring = plot_tree_ring
     plot_tent = plot_tree_tent
@@ -1861,8 +2098,8 @@ class PartitionTreeBuilder:
 
             # skip straight to better method
             if subsize <= cutoff:
-                tree.contract([frozenset([x]) for x in subgraph],
-                              optimize=sub_optimize, check=check)
+                tree.contract_nodes([frozenset([x]) for x in subgraph],
+                                    optimize=sub_optimize, check=check)
                 continue
 
             # relative subgraph size
@@ -1899,11 +2136,12 @@ class PartitionTreeBuilder:
 
             if len(new_subgs) == 1:
                 # no communities found - contract all remaining
-                tree.contract([frozenset([x]) for x in subgraph],
-                              optimize=sub_optimize, check=check)
+                tree.contract_nodes([frozenset([x]) for x in subgraph],
+                                    optimize=sub_optimize, check=check)
                 continue
 
-            tree.contract(new_subgs, optimize=super_optimize, check=check)
+            tree.contract_nodes(
+                new_subgs, optimize=super_optimize, check=check)
 
         if check:
             assert tree.is_complete()
@@ -1935,12 +2173,12 @@ class PartitionTreeBuilder:
                 inputs, output, rand_size_dict, parts=parts, **partition_opts,
             )
             leaves = [
-                tree.contract(group, check=check, optimize=sub_optimize)
+                tree.contract_nodes(group, check=check, optimize=sub_optimize)
                 for group in separate(leaves, membership)
             ]
 
         if len(leaves) > 1:
-            tree.contract(leaves, check=check, optimize=sub_optimize)
+            tree.contract_nodes(leaves, check=check, optimize=sub_optimize)
 
         if check:
             assert tree.is_complete()
