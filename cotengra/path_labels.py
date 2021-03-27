@@ -48,8 +48,8 @@ def labels_partition(
     final_sweep
     """
 
-    hg = HyperGraph(inputs, output, size_dict, )
-    n = hg.num_nodes
+    hg = HyperGraph(inputs, output, size_dict)
+    n = hg.get_num_nodes()
     winfo = hg.compute_weights(weight_nodes=weight_nodes,
                                weight_edges=weight_edges)
 
@@ -60,8 +60,8 @@ def labels_partition(
 
     # populate neighbor list and weights by edge weight
     for i in sites:
-        for e in hg.nodes[i]:
-            for j in hg.edges[e]:
+        for e in hg.get_node(i):
+            for j in hg.get_edge(e):
                 if j != i:
                     neighbs[i].add(j)
                     weights[i, j] = (

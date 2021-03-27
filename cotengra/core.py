@@ -1,3 +1,4 @@
+import re
 import math
 import random
 import warnings
@@ -5,7 +6,6 @@ import operator
 import itertools
 import functools
 import collections
-from decimal import Decimal
 
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
@@ -112,7 +112,8 @@ class ContractionTree:
         self.N = len(self.inputs)
 
         self.bitset_edges = to_ind_bitset(size_dict.keys())
-        self.output_legs = self.bitset_edges.frommembers(output)
+        self.inputs_legs = list(map(self.bitset_edges, self.inputs))
+        self.output_legs = self.bitset_edges(self.output)
 
         # mapping of parents to children - the core binary tree object
         self.children = {}
@@ -125,11 +126,8 @@ class ContractionTree:
         self.root = frozenset(range(self.N))
         self.add_node(self.root)
         root_info = self.info[self.root]
-        root_info['legs'] = self.output_legs
+        root_info['keep'] = root_info['legs'] = self.output_legs
         root_info['size'] = compute_size_by_dict(self.output, size_dict)
-
-        for leaf in self.gen_leaves():
-            self.add_node(leaf)
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -168,7 +166,7 @@ class ContractionTree:
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
-        for attr in ('children', 'output_legs'):
+        for attr in ('children', 'inputs_legs', 'output_legs'):
             setattr(self, attr, getattr(other, attr).copy())
 
         # dicts of mutable
@@ -203,8 +201,7 @@ class ContractionTree:
         """Turn a node -- a frozen set of ints -- into the corresponding terms
         -- a sequence of sets of str corresponding to input indices.
         """
-        for i in node:
-            yield self.get_legs(frozenset((i,)))
+        return map(self.inputs_legs.__getitem__, node)
 
     def gen_leaves(self):
         """Generate the nodes representing leaves of the contraction tree, i.e.
@@ -339,7 +336,7 @@ class ContractionTree:
             legs = self.info[node]['legs']
         except KeyError:
             if len(node) == 1:
-                legs = self.bitset_edges(self.inputs[next(iter(node))])
+                legs = self.inputs_legs[next(iter(node))]
             else:
                 try:
                     involved = self.get_involved(node)
@@ -534,20 +531,52 @@ class ContractionTree:
         if order == 'surface_order':
             order = self.surface_order
 
-        hg = HyperGraph(self.inputs, self.output, size_dict=self.size_dict)
-        tree_map = dict(zip(self.gen_leaves(), hg.nodes))
+        hg = self.get_hypergraph()
 
-        msc = max(map(self.get_size, self.gen_leaves()))
+        # conversion between tree nodes <-> hypergraph nodes during contraction
+        tree_map = dict(zip(self.gen_leaves(), range(hg.get_num_nodes())))
+
+        size_max = max(map(hg.node_size, range(hg.get_num_nodes())))
 
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
-            pi = hg.contract(li, ri)
-            tree_map[p] = pi
-            msc = max(msc, hg.node_size(pi))
+            pi = tree_map[p] = hg.contract(li, ri)
+            size_max = max(size_max, hg.node_size(pi))
+            hg.compress(chi=chi, edges=hg.get_node(pi))
+
+        return size_max
+
+    def peak_size_compressed(self, chi, order='surface_order'):
+        """Compute the peak size of combined intermediate tensors when a
+        compressed contraction is performed with maximum bond size ``chi``,
+        ordered by ``order``.
+        """
+        if order == 'surface_order':
+            order = self.surface_order
+
+        hg = self.get_hypergraph()
+
+        # conversion between tree nodes <-> hypergraph nodes during contraction
+        tree_map = dict(zip(self.gen_leaves(), hg.nodes))
+
+        size = sum(map(hg.node_size, range(hg.get_num_nodes())))
+        size_peak = size
+
+        for p, l, r in self.traverse(order):
+            li = tree_map[l]
+            ri = tree_map[r]
+            size -= hg.node_size(li)
+            size -= hg.node_size(ri)
+            pi = tree_map[p] = hg.contract(li, ri)
+
+            # measure peak size before compression
+            size += hg.node_size(pi)
+            size_peak = max(size_peak, size)
+
             hg.compress(chi=chi, edges=hg.nodes[pi])
 
-        return msc
+        return size_peak
 
     def compressed_rank(self, multibond_factor=2, order='surface_order'):
         """
@@ -690,6 +719,11 @@ class ContractionTree:
             if len(node) == 1:
                 # its a leaf - corresponding input will be sliced
                 tree.sliced_inputs = tree.sliced_inputs | node
+                i = next(iter(node))
+                tree.inputs_legs[i] = tree.inputs_legs[i] - s_ind
+            elif len(node) == tree.N:
+                # root node
+                tree.output_legs = tree.output_legs - s_ind
 
         tree.already_optimized.clear()
 
@@ -1746,10 +1780,11 @@ class ContractionTree:
                 self.info[r]['centrality'])
 
     def get_hypergraph(self):
-        if not hasattr(self, '_hypergraph'):
-            self._hypergraph = HyperGraph(
-                self.inputs, self.output, self.size_dict)
-        return self._hypergraph
+        """Get a hypergraph representing the uncontracted network (i.e. the
+        leaves).
+        """
+        return get_hypergraph(self.inputs, self.output, self.size_dict)
+
     def contract_core(
         self,
         arrays,
@@ -1814,8 +1849,11 @@ class ContractionTree:
             data[p] = p_array
 
         # check if we need to transpose the final array to match the output
-        perm = [p_inds.find(ind) for ind in self.output]
-        if perm != list(range(len(perm))):
+        # get desired (sliced) output order
+        perm = tuple(
+            p_inds.find(ind) for ind in self.output if ind in self.output_legs
+        )
+        if perm != tuple(range(len(perm))):
             p_array = do('transpose', p_array, perm, like=backend)
 
         return p_array
@@ -1994,18 +2032,25 @@ def score_combo(trial):
     )
 
 
-def score_compressed_rank(trial, multibond_factor=2):
+def score_size_compressed(trial, chi):
     tree = trial['tree']
+    size = tree.max_size_compressed(chi)
     cr = (
-        tree.compressed_rank(multibond_factor=multibond_factor) +
+        math.log2(size) +
         math.log2(tree.max_size())**0.5 / 1000
     )
     # overwrite the effective max size
-    trial['size'] = 2**Decimal(cr)
+    trial['size'] = size
     return cr
 
 
 def get_score_fn(minimize):
+
+    match = re.match(r'size-compressed-(\d+)', minimize)
+    if match:
+        chi = int(match.group(1))
+        return functools.partial(score_size_compressed, chi=chi)
+
     if minimize == 'flops':
         return score_flops
     if minimize == 'write':
@@ -2014,16 +2059,7 @@ def get_score_fn(minimize):
         return score_size
     if minimize == 'combo':
         return score_combo
-    if minimize == 'compressed-rank':
-        return score_compressed_rank
-    if minimize == 'compressed-rank-1':
-        return functools.partial(score_compressed_rank, multibond_factor=1)
-    if minimize == 'compressed-rank-2':
-        return functools.partial(score_compressed_rank, multibond_factor=2)
-    if minimize == 'compressed-rank-3':
-        return functools.partial(score_compressed_rank, multibond_factor=3)
-    if minimize == 'compressed-rank-4':
-        return functools.partial(score_compressed_rank, multibond_factor=4)
+
     raise ValueError(f"No score function '{minimize}' found.")
 
 
@@ -2347,7 +2383,7 @@ class HyperGraph:
 
     Parameters
     ----------
-    inputs : sequence of str or dict[int, str]
+    inputs : sequence of list[str] or dict[int, list[str]]
         The nodes. If given as a dict, the keys will be taken as the node
         enumeration rather than ``range(len(inputs))``.
     output : str, optional
@@ -2368,12 +2404,12 @@ class HyperGraph:
     """
 
     __slots__ = ('inputs', 'output', 'size_dict',
-                 'nodes', 'edges', 'compressed', '_node_counter')
+                 'nodes', 'edges', 'compressed', 'node_counter')
 
-    def __init__(self, inputs, output=(), size_dict=()):
+    def __init__(self, inputs, output=None, size_dict=None):
         self.inputs = inputs
-        self.output = output
-        self.size_dict = dict(size_dict)
+        self.output = [] if output is None else list(output)
+        self.size_dict = {} if size_dict is None else dict(size_dict)
 
         if isinstance(inputs, dict):
             self.nodes = {int(k): list(v) for k, v in inputs.items()}
@@ -2385,12 +2421,37 @@ class HyperGraph:
             for e in term:
                 self.edges[e].append(i)
 
-        self._node_counter = None
         self.compressed = set()
+        self.node_counter = self.num_nodes - 1
+
+    @classmethod
+    def from_edges(cls, edges, output=(), size_dict=()):
+        self = cls.__new__(cls)
+        self.edges = collections.defaultdict(list)
+        for e, e_nodes in edges.items():
+            self.edges[e] = list(e_nodes)
+        self.output = output
+        self.size_dict = dict(size_dict)
+
+        self.nodes = collections.defaultdict(list)
+        for e, e_nodes in self.edges.items():
+            for i in e_nodes:
+                self.nodes[i].append(e)
+
+        self.compressed = set()
+        self.node_counter = self.num_nodes - 1
+
+        return self
+
+    def get_num_nodes(self):
+        return len(self.nodes)
 
     @property
     def num_nodes(self):
         return len(self.nodes)
+
+    def get_num_edges(self):
+        return len(self.edges)
 
     @property
     def num_edges(self):
@@ -2398,6 +2459,21 @@ class HyperGraph:
 
     def __len__(self):
         return self.num_nodes
+
+    def edges_size(self, es):
+        """Get the combined, i.e. product, size of all edges in ``es``.
+        """
+        return prod(map(self.size_dict.__getitem__, es))
+
+    def node_size(self, i):
+        """Get the size of the term represented by node ``i``.
+        """
+        return self.edges_size(self.nodes[i])
+
+    def output_nodes(self):
+        """Get the nodes with output indices.
+        """
+        return unique(i for e in self.output for i in self.edges[e])
 
     def neighbors(self, i):
         """Get the neighbors of node ``i``.
@@ -2407,14 +2483,43 @@ class HyperGraph:
             if (j != i)
         )
 
+    def neighbor_edges(self, i):
+        """Get the edges incident to all neighbors of node ``i``, (including
+        its own edges).
+        """
+        return unique(itertools.chain.from_iterable(
+            map(self.get_node, self.neighbors(i))
+        ))
+
+    def has_node(self, i):
+        """Does this hypergraph have node ``i``?
+        """
+        return i in self.nodes
+
+    def get_node(self, i):
+        """Get the edges node ``i`` is incident to.
+        """
+        return self.nodes[i]
+
+    def get_edge(self, e):
+        """Get the nodes edge ``e`` is incident to.
+        """
+        return self.edges[e]
+
+    def has_edge(self, e):
+        """Does this hypergraph have edge ``e``?
+        """
+        return e in self.edges
+
     def next_node(self):
         """Get the next available node identifier.
         """
-        if self._node_counter is None:
-            self._node_counter = max(self.nodes) + 1
-        while self._node_counter in self.nodes:
-            self._node_counter += 1
-        return self._node_counter
+        # always increment to try and generate unique ids
+        self.node_counter += 1
+        # ... but also check node is valid
+        while self.node_counter in self.nodes:
+            self.node_counter += 1
+        return self.node_counter
 
     def add_node(self, inds, node=None):
         """Add a node with ``inds``, and optional identifier ``node``. The
@@ -2446,16 +2551,16 @@ class HyperGraph:
             self.nodes[i].remove(e)
         del self.edges[e]
 
-    def contract(self, i, j):
+    def contract(self, i, j, node=None):
         """Combine node ``i`` and node ``j``.
         """
         inds_i = self.remove_node(i)
         inds_j = self.remove_node(j)
-        inds_ij = (
-            ind for ind in itertools.chain(inds_i, inds_j)
+        inds_ij = unique(
+            ind for ind in inds_i + inds_j
             if (ind in self.edges) or (ind in self.output)
         )
-        return self.add_node(inds_ij)
+        return self.add_node(inds_ij, node=node)
 
     def compress(self, chi, edges=None):
         """'Compress' multiedges, combining their size up to a maximum of
@@ -2472,26 +2577,43 @@ class HyperGraph:
                 incidences[nodes].append(e)
 
         for es in incidences.values():
-            if len(es) < 2:
-                continue
+            if len(es) > 1:
+                # combine edges into first, capping size at `chi`
+                new_size = self.edges_size(es)
+                e_keep, *es_del = es
+                for e in es_del:
+                    self.remove_edge(e)
+                    self.compressed.add(e)
+                self.size_dict[e_keep] = min(new_size, chi)
 
-            # combine edges into first, capping size at `chi`
-            new_size = prod(map(self.size_dict.__getitem__, es))
-            e_keep, *es_del = es
-            for e in es_del:
-                self.remove_edge(e)
-                self.compressed.add(e)
-            self.size_dict[e_keep] = min(new_size, chi)
-
-    def node_size(self, i):
-        """Get the size of the term represented by node ``i``.
+    def candidate_contraction_size(self, i, j, chi=None):
+        """Get the size of the node created if ``i`` and ``j`` were contracted,
+        optionally including the effect of first compressing bonds to size
+        ``chi``.
         """
-        return prod(map(self.size_dict.__getitem__, self.nodes[i]))
+        # figure out the indices of the contracted nodes
+        sij = {i, j}
+        new_es = list(unique(
+            e for e in self.nodes[i] + self.nodes[j]
+            if set(self.edges[e]) - sij or e in self.output
+        ))
 
-    def output_nodes(self):
-        """Get the nodes with output indices.
-        """
-        return unique(i for e in self.output for i in self.edges[e])
+        if chi is None:
+            return self.edges_size(new_es)
+
+        incidences = collections.defaultdict(list)
+        for e in new_es:
+            # compressable indices -> those which will not be incident to the
+            # exact same set of nodes
+            contracted_neighbs = frozenset(
+                i if k == j else k for k in self.edges[e]
+            )
+            incidences[contracted_neighbs].append(e)
+
+        # each group of compressed inds maxes out at size `chi`
+        return prod(
+            min(chi, self.edges_size(es)) for es in incidences.values()
+        )
 
     def simple_distance(self, region, p=2):
         """Compute a simple distance metric from nodes in ``region`` to all
@@ -2722,3 +2844,10 @@ class HyperGraph:
 
     def __repr__(self):
         return f"<HyperGraph(|V|={self.num_nodes}, |E|={self.num_edges})>"
+
+
+def get_hypergraph(inputs, output=None, size_dict=None):
+    """Single entry-point for creating a, possibly accelerated, HyperGraph.
+    """
+    return HyperGraph(inputs, output, size_dict)
+

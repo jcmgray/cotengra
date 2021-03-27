@@ -2,7 +2,7 @@ import functools
 
 from opt_einsum.paths import register_path_fn
 
-from .core import ContractionTree, HyperGraph
+from .core import ContractionTree, HyperGraph, get_hypergraph
 from .slicer import SliceFinder, SlicedContractor
 
 from . import path_greedy
@@ -57,34 +57,37 @@ more 'even' way than purely random - requires ``chocolate``.
 
 
 def HyperCompressedOptimizer(
+    chi,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
-    minimize='compressed-rank',
     path_order='surface',
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    return HyperOptimizer(methods=methods, path_order=path_order,
-                          minimize=minimize, **kwargs)
+    minimize = f"size-compressed-{chi}"
+    return HyperOptimizer(
+        methods=methods, path_order=path_order, minimize=minimize, **kwargs)
 
 
 def ReusableHyperCompressedOptimizer(
+    chi,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
-    minimize='compressed-rank',
     path_order='surface',
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    return ReusableHyperOptimizer(methods=methods, path_order=path_order,
-                                  minimize=minimize, **kwargs)
+    minimize = f"size-compressed-{chi}"
+    return ReusableHyperOptimizer(
+        methods=methods, path_order=path_order, minimize=minimize, **kwargs)
 
 
 __all__ = (
     "ContractionTree",
     "HyperGraph",
+    "get_hypergraph",
     "FlowCutterOptimizer",
     "get_hyper_space",
     "hyper_baytune",
@@ -131,78 +134,81 @@ def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
     optimizer = HyperOptimizer(**opts)
     return optimizer(inputs, output, size_dict, memory_limit)
 
-
-register_path_fn(
-    'hyper',
-    hyper_optimize,
-)
-register_path_fn(
-    'hyper-256',
-    functools.partial(hyper_optimize, max_repeats=256),
-)
-register_path_fn(
-    'hyper-greedy',
-    functools.partial(hyper_optimize, methods=['greedy']),
-)
-register_path_fn(
-    'hyper-labels',
-    functools.partial(hyper_optimize, methods=['labels']),
-)
-register_path_fn(
-    'hyper-kahypar',
-    functools.partial(hyper_optimize, methods=['kahypar']),
-)
-register_path_fn(
-    'hyper-balanced',
-    functools.partial(hyper_optimize, methods=['kahypar-balanced'],
-                      max_repeats=16),
-)
-register_path_fn(
-    'hyper-compressed',
-    functools.partial(
+try:
+    register_path_fn(
+        'hyper',
         hyper_optimize,
-        minimize='compressed-rank',
-        path_order='surface',
-        methods=('greedy-span', 'greedy-compressed', 'kahypar-agglom'),
     )
-)
-register_path_fn(
-    'hyper-spinglass',
-    functools.partial(hyper_optimize, methods=['spinglass']),
-)
-register_path_fn(
-    'hyper-betweenness',
-    functools.partial(hyper_optimize, methods=['betweenness']),
-)
-register_path_fn(
-    'flowcutter-2',
-    functools.partial(optimize_flowcutter, max_time=2),
-)
-register_path_fn(
-    'flowcutter-10',
-    functools.partial(optimize_flowcutter, max_time=10),
-)
-register_path_fn(
-    'flowcutter-60',
-    functools.partial(optimize_flowcutter, max_time=60),
-)
-register_path_fn(
-    'quickbb-2',
-    functools.partial(optimize_quickbb, max_time=2),
-)
-register_path_fn(
-    'quickbb-10',
-    functools.partial(optimize_quickbb, max_time=10),
-)
-register_path_fn(
-    'quickbb-60',
-    functools.partial(optimize_quickbb, max_time=60),
-)
-register_path_fn(
-    'greedy-compressed',
-    path_greedy.greedy_compressed,
-)
-register_path_fn(
-    'greedy-span',
-    path_greedy.greedy_span,
-)
+    register_path_fn(
+        'hyper-256',
+        functools.partial(hyper_optimize, max_repeats=256),
+    )
+    register_path_fn(
+        'hyper-greedy',
+        functools.partial(hyper_optimize, methods=['greedy']),
+    )
+    register_path_fn(
+        'hyper-labels',
+        functools.partial(hyper_optimize, methods=['labels']),
+    )
+    register_path_fn(
+        'hyper-kahypar',
+        functools.partial(hyper_optimize, methods=['kahypar']),
+    )
+    register_path_fn(
+        'hyper-balanced',
+        functools.partial(hyper_optimize, methods=['kahypar-balanced'],
+                          max_repeats=16),
+    )
+    register_path_fn(
+        'hyper-compressed',
+        functools.partial(
+            hyper_optimize,
+            minimize='compressed-rank',
+            path_order='surface',
+            methods=('greedy-span', 'greedy-compressed', 'kahypar-agglom'),
+        )
+    )
+    register_path_fn(
+        'hyper-spinglass',
+        functools.partial(hyper_optimize, methods=['spinglass']),
+    )
+    register_path_fn(
+        'hyper-betweenness',
+        functools.partial(hyper_optimize, methods=['betweenness']),
+    )
+    register_path_fn(
+        'flowcutter-2',
+        functools.partial(optimize_flowcutter, max_time=2),
+    )
+    register_path_fn(
+        'flowcutter-10',
+        functools.partial(optimize_flowcutter, max_time=10),
+    )
+    register_path_fn(
+        'flowcutter-60',
+        functools.partial(optimize_flowcutter, max_time=60),
+    )
+    register_path_fn(
+        'quickbb-2',
+        functools.partial(optimize_quickbb, max_time=2),
+    )
+    register_path_fn(
+        'quickbb-10',
+        functools.partial(optimize_quickbb, max_time=10),
+    )
+    register_path_fn(
+        'quickbb-60',
+        functools.partial(optimize_quickbb, max_time=60),
+    )
+    register_path_fn(
+        'greedy-compressed',
+        path_greedy.greedy_compressed,
+    )
+    register_path_fn(
+        'greedy-span',
+        path_greedy.greedy_span,
+    )
+except KeyError:
+    # if reloading cotengra e.g. library entries already registered
+    pass

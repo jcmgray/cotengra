@@ -15,7 +15,7 @@ from opt_einsum.path_random import thermal_chooser
 from .core import (
     jitter_dict,
     ContractionTree,
-    HyperGraph,
+    get_hypergraph,
 )
 from .utils import oset
 from .hyper import register_hyper_function
@@ -134,24 +134,33 @@ def gumbel():
     return -math.log(-math.log(random.uniform(0.0, 1.0)))
 
 
+try:
+    import numba as nb
+    gumbel = nb.njit(gumbel)
+except ImportError:
+    pass
+
+
 class GreedyCompressed:
     """A greedy contraction path finder that takes into account the effect of
     compression, and can also make use of subgraph size and centrality.
 
     Parameters
     ----------
-    coeff_rank_compressed : float, optional
-        When assessing contractions, how to weight the rank of the output
+    chi : int
+        The maximum bond size between nodes to compress to.
+    coeff_size_compressed : float, optional
+        When assessing contractions, how to weight the size of the output
         tensor, post compression.
-    coeff_rank : float, optional
-        When assessing contractions, how to weight the rank of the output
+    coeff_size : float, optional
+        When assessing contractions, how to weight the size of the output
         tenor, pre compression.
-    coeff_rank_inputs : float, optional
-        When assessing contractions, how to weight the maximum rank of the
+    coeff_size_inputs : float, optional
+        When assessing contractions, how to weight the maximum size of the
         inputs tensors.
-    score_rank_inputs : {'sum', 'mean', 'max', 'min', 'diff'}, optional
+    score_size_inputs : {'sum', 'mean', 'max', 'min', 'diff'}, optional
         When assessing contractions, how to score the combination of the two
-        input tensor ranks.
+        input tensor sizes.
     coeff_subgraph_size : float, optional
         When assessing contractions, how to weight the total subgraph size
         corresponding to the inputs tensors.
@@ -173,144 +182,53 @@ class GreedyCompressed:
 
     def __init__(
         self,
-        coeff_rank_compressed=1.0,
-        coeff_rank=0.0,
-        coeff_rank_inputs=0.0,
-        score_rank_inputs='max',
-        coeff_subgraph_size=0.0,
-        score_subgraph_size='sum',
+        chi,
+        coeff_size_compressed=1.0,
+        coeff_size=0.0,
+        coeff_size_inputs=0.0,
+        score_size_inputs='max',
+        coeff_subgraph=0.0,
+        score_subgraph='sum',
         coeff_centrality=0.0,
         centrality_combine='max',
         score_centrality='diff',
-        multibond_factor=2,
         temperature=0.0,
         score_perm='',
     ):
-        self.coeff_rank_compressed = coeff_rank_compressed
-        self.coeff_rank = coeff_rank
-        self.coeff_rank_inputs = coeff_rank_inputs
-        self.score_rank_inputs = score_rank_inputs
-        self.coeff_subgraph_size = coeff_subgraph_size
-        self.score_subgraph_size = score_subgraph_size
+        self.chi = chi
+        self.coeff_size_compressed = coeff_size_compressed
+        self.coeff_size = coeff_size
+        self.coeff_size_inputs = coeff_size_inputs
+        self.score_size_inputs = score_size_inputs
+        self.coeff_subgraph = coeff_subgraph
+        self.score_subgraph = score_subgraph
         self.coeff_centrality = coeff_centrality
         self.centrality_combine = centrality_combine
         self.score_centrality = score_centrality
-        self.multibond_factor = multibond_factor
         self.temperature = temperature
         self.score_perm = score_perm
 
-    def _add_node(self, t):
-        self.ssamap[self.ssa] = t
-        for ind in t:
-            self.ind_map[ind].add(self.ssa)
-        self.ssa += 1
-        return self.ssa - 1
-
-    def _remove_node(self, i):
-        t = self.ssamap.pop(i)
-        for ind in t:
-            self.ind_map[ind].discard(i)
-        return t
-
-    def _remove_ind(self, ind):
-        for i in self.ind_map.pop(ind):
-            self.ssamap[i].remove(ind)
-
-    def _compressed_result(self, i1, i2):
-        # input and output inds, pre compression
-        t1 = self.ssamap[i1]
-        t2 = self.ssamap[i2]
-        t12 = t1.symmetric_difference(t2)
-
-        # the set of neighbors each edge will be incident too *after*
-        #     contracting `i1` and `i2`
-        incidences = collections.defaultdict(list)
-        for ind in t12:
-            contracted_neighbs = frozenset(
-                -1 if i in (i1, i2) else i for i in self.ind_map[ind]
-            )
-            incidences[contracted_neighbs].append(ind)
-
-        new_sizes = dict()
-        removable = oset()
-        for ind0, *inds in incidences.values():
-            # if several edges are incident to same set of nodes - can compress
-            new_sizes[ind0] = self.compressed_sizes[ind0]
-            for ind in inds:
-                new_sizes[ind0] = min(
-                    new_sizes[ind0] + self.compressed_sizes[ind],
-                    self.multibond_factor
-                )
-                removable.add(ind)
-
-        return t12, new_sizes, removable
-
-    def _effective_rank(self, t):
-        return sum(map(self.compressed_sizes.__getitem__, t))
-
-    def _contract(self, i1, i2):
-        t12, new_sizes, removable = self._compressed_result(i1, i2)
-
-        # check maximum effective rank pre-compression
-        self.compressed_rank = max(
-            self.compressed_rank, self._effective_rank(t12)
-        )
-
-        # the new resulting tensor, after compression
-        c12 = t12.difference(removable)
-
-        # update graph structure for contraction and compression
-        for ind in removable:
-            self._remove_ind(ind)
-
-        # remove compressed indices but keep track of those which have been
-        #     'compressed into' - will weight these separately
-        self.compressed_sizes.update(new_sizes)
-
-        self._remove_node(i1)
-        self._remove_node(i2)
-        i12 = self._add_node(c12)
-
-        # propagate some meta information up the contraction tree
-        self.sgsizes[i12] = self.sgsizes.pop(i1) + self.sgsizes.pop(i2)
-        self.sgcents[i12] = _binary_combine(
-            self.centrality_combine,
-            self.sgcents.pop(i1),
-            self.sgcents.pop(i2))
-
-        # build the path
-        self.ssapath.append((i1, i2))
-
-        return c12
-
     def _score(self, i1, i2):
         # the two inputs tensors (with prior compressions)
-        t1 = self.ssamap[i1]
-        t2 = self.ssamap[i2]
+        size1 = self.hg.node_size(i1)
+        size2 = self.hg.node_size(i2)
 
         # the new tensor inds, plus indices that will be available to compress
-        t12, new_sizes, removable = self._compressed_result(i1, i2)
-
-        # the old tensor inds (including old compressions)
-        old_effective_rank = self._effective_rank(t12)
-
-        # the new tensor inds once those inds are compressed away
-        poss_sizes = collections.ChainMap(new_sizes, self.compressed_sizes)
-        new_effective_rank = sum(
-            poss_sizes[ind] for ind in t12 if ind not in removable
-        )
+        old_size = self.hg.candidate_contraction_size(i1, i2)
+        new_size = self.hg.candidate_contraction_size(i1, i2, chi=self.chi)
 
         scores = {
-            'R': self.coeff_rank_compressed * new_effective_rank,
-            'O': self.coeff_rank * old_effective_rank,
-            # weight some combination of the inputs ranks
-            'I': self.coeff_rank_inputs * _binary_combine(
-                self.score_rank_inputs, len(t1), len(t2)
+            'R': self.coeff_size_compressed * math.log2(new_size),
+            'O': self.coeff_size * math.log2(old_size),
+            # weight some combination of the inputs sizes
+            'I': self.coeff_size_inputs * _binary_combine(
+                self.score_size_inputs, math.log2(size1), math.log2(size2)
             ),
             # weight some combination of the inputs subgraph sizes
-            'S': self.coeff_subgraph_size * _binary_combine(
-                self.score_subgraph_size,
-                math.log(self.sgsizes[i1]), math.log(self.sgsizes[i2]),
+            'S': self.coeff_subgraph * _binary_combine(
+                self.score_subgraph,
+                math.log(self.sgsizes[i1]),
+                math.log(self.sgsizes[i2]),
             ),
             # weight some combination of the inputs centralities
             'L': self.coeff_centrality * _binary_combine(
@@ -324,54 +242,50 @@ class GreedyCompressed:
         return tuple(scores[p] for p in self.score_perm)
 
     def ssa_path(self, inputs, output, size_dict):
-        self.ssa = 0
-        self.ssamap = {}
-        self.ind_map = collections.defaultdict(oset)
         self.candidates = []
-        self.compressed_sizes = collections.defaultdict(lambda: 1)
         self.ssapath = []
-        self.compressed_rank = 0
+        self.hg = get_hypergraph(inputs, output, size_dict)
 
         # compute hypergraph centralities to use heuristically
-        hg = HyperGraph(inputs, output, size_dict)
-        self.sgcents = hg.simple_centrality()
-        self.sgsizes = {i: 1 for i in hg.nodes}
+        self.sgcents = self.hg.simple_centrality()
+        self.sgsizes = {i: 1 for i in range(len(inputs))}
 
         # populate initial scores with contractions among leaves
-        for t in inputs:
-            self._add_node(t.copy())
-            self.compressed_rank = max(self.compressed_rank, len(t))
-        for ind, nodes in self.ind_map.items():
+        for _, nodes in self.hg.edges.items():
             if len(nodes) == 2:
                 candidate = (self._score(*nodes), *nodes)
                 heapq.heappush(self.candidates, candidate)
 
-        while len(self.ssamap) > 2:
+        while self.hg.get_num_nodes() > 2:
             # get the next best score contraction
             _, i1, i2 = heapq.heappop(self.candidates)
 
-            if (i1 not in self.ssamap) or (i2 not in self.ssamap):
+            if not (self.hg.has_node(i1) and self.hg.has_node(i2)):
                 # invalid - either node already contracted
                 continue
 
             # perform contraction
-            t12 = self._contract(i1, i2)
+            i12 = self.hg.contract(i1, i2)
+            self.hg.compress(chi=self.chi, edges=self.hg.get_node(i12))
+
+            # build the path
+            self.ssapath.append((i1, i2))
+
+            # propagate some meta information up the contraction tree
+            self.sgsizes[i12] = self.sgsizes.pop(i1) + self.sgsizes.pop(i2)
+            self.sgcents[i12] = _binary_combine(self.centrality_combine,
+                                                self.sgcents.pop(i1),
+                                                self.sgcents.pop(i2))
 
             # assess / re-assess new and also neighboring contractions
             #     n.b. duplicate scores should be lower and heap-popped first
-            t12_neighbors = oset(itertools.chain.from_iterable(
-                self.ind_map[ind] for ind in t12
-            ))
-            next_nearest_inds = oset(itertools.chain.from_iterable(
-                self.ssamap[i] for i in t12_neighbors
-            ))
-            for ind in next_nearest_inds:
-                nodes = self.ind_map[ind]
+            for e in self.hg.neighbor_edges(i12):
+                nodes = self.hg.get_edge(e)
                 if len(nodes) == 2:
                     candidate = (self._score(*nodes), *nodes)
                     heapq.heappush(self.candidates, candidate)
 
-        self._contract(*self.ssamap)
+        self.ssapath.append(tuple(self.hg.nodes))
 
         return self.ssapath
 
@@ -380,7 +294,8 @@ class GreedyCompressed:
 
 
 def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
-    return GreedyCompressed(**kwargs)(inputs, output, size_dict)
+    chi = max(size_dict.values())**2
+    return GreedyCompressed(chi, **kwargs)(inputs, output, size_dict)
 
 
 def trial_greedy_compressed(inputs, output, size_dict, **kwargs):
@@ -396,14 +311,14 @@ register_hyper_function(
     name='greedy-compressed',
     ssa_func=trial_greedy_compressed,
     space={
-        'coeff_rank_compressed': {'type': 'FLOAT', 'min': 0.2, 'max': 2.0},
-        'coeff_rank': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
-        'coeff_rank_inputs': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'score_rank_inputs': {
+        'coeff_size_compressed': {'type': 'FLOAT', 'min': 0.5, 'max': 2.0},
+        'coeff_size': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
+        'coeff_size_inputs': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
+        'score_size_inputs': {
             'type': 'STRING',
             'options': ['min', 'max', 'mean', 'sum', 'diff']},
-        'coeff_subgraph_size': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'score_subgraph_size': {
+        'coeff_subgraph': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
+        'score_subgraph': {
             'type': 'STRING',
             'options': ['min', 'max', 'mean', 'sum', 'diff']},
         'coeff_centrality': {'type': 'FLOAT', 'min': -10.0, 'max': 10.0},
@@ -414,7 +329,7 @@ register_hyper_function(
             'type': 'STRING',
             'options': ['min', 'max', 'mean', 'diff']},
         'temperature': {'type': 'FLOAT', 'min': -0.1, 'max': 1.0},
-        'multibond_factor': {'type': 'INT', 'min': 1, 'max': 4},
+        'chi': {'type': 'INT', 'min': 2, 'max': 128},
     },
 )
 
@@ -469,13 +384,11 @@ class GreedySpan:
         self.distance_steal = distance_steal
 
     def ssa_path(self, inputs, output, size_dict):
-        self.H = HyperGraph(inputs, output, size_dict)
-        self.cents = self.H.simple_centrality()
+        self.hg = get_hypergraph(inputs, output, size_dict)
+        self.cents = self.hg.simple_centrality()
 
         if output:
-            region = oset(itertools.chain.from_iterable(
-                self.H.ind_map[ind] for ind in output
-            ))
+            region = oset(self.hg.output_nodes())
         elif self.start == 'max':
             region = oset([max(self.cents.keys(), key=self.cents.__getitem__)])
         elif self.start == 'min':
@@ -485,7 +398,7 @@ class GreedySpan:
 
         candidates = []
         merges = {}
-        distances = self.H.simple_distance(region, p=self.distance_p)
+        distances = self.hg.simple_distance(list(region), p=self.distance_p)
         connectivity = collections.defaultdict(lambda: 0)
 
         if len(region) == 1:
@@ -543,20 +456,20 @@ class GreedySpan:
             return c
 
         for i in region:
-            for j in self.H.neighbors(i):
+            for j in self.hg.neighbors(i):
                 _check_candidate(i, j)
 
         while candidates:
             candidates.sort(key=_sorter)
             i_surface = candidates.pop()
             region.add(i_surface)
-            for i_next in self.H.neighbors(i_surface):
+            for i_next in self.hg.neighbors(i_surface):
                 _check_candidate(i_surface, i_next)
             seq.append((i_surface, merges[i_surface]))
         seq.reverse()
 
         ssapath = []
-        ssa = self.H.num_nodes
+        ssa = self.hg.get_num_nodes()
         node2ssa = {i: i for i in range(ssa)}
         for i, j in seq:
             ssapath.append((node2ssa[i], node2ssa[j]))

@@ -2,7 +2,7 @@ import random
 import itertools
 from os.path import join, abspath, dirname
 
-from .core import HyperGraph, PartitionTreeBuilder
+from .core import PartitionTreeBuilder, get_hypergraph
 from .hyper import register_hyper_function
 
 
@@ -35,6 +35,7 @@ def kahypar_subgraph_find_membership(
     fix_output_nodes=False,
     parts=2,
     imbalance=0.01,
+    compress=0,
     seed=None,
     profile=None,
     mode='direct',
@@ -50,13 +51,16 @@ def kahypar_subgraph_find_membership(
     if parts >= nv:
         return list(range(nv))
 
-    hg = HyperGraph(inputs, output, size_dict)
+    hg = get_hypergraph(inputs, output, size_dict)
+
+    if compress:
+        hg.compress(compress)
 
     winfo = to_sparse(hg, weight_nodes=weight_nodes, weight_edges=weight_edges)
 
     hypergraph_kwargs = {
-        'num_nodes': hg.num_nodes,
-        'num_edges': hg.num_edges,
+        'num_nodes': hg.get_num_nodes(),
+        'num_edges': hg.get_num_edges(),
         'index_vector': winfo['hyperedge_indices'],
         'edge_vector': winfo['hyperedges'],
         'k': parts,
@@ -150,11 +154,12 @@ register_hyper_function(
     ssa_func=kahypar_to_tree.trial_fn_agglom,
     space={
         'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
-        'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.01},
+        'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.05},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
-        'groupsize': {'type': 'INT', 'min': 2, 'max': 8},
+        'groupsize': {'type': 'INT', 'min': 2, 'max': 10},
         'fix_output_nodes': {'type': 'STRING', 'options': ['auto', '']},
+        'compress': {'type': 'STRING', 'options': [0, 3, 10, 30, 100]}
     },
     constants={
         'random_strength': 0.0,
