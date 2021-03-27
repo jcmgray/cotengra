@@ -1,3 +1,4 @@
+import re
 import random
 import operator
 import functools
@@ -9,6 +10,7 @@ from opt_einsum.contract import PathInfo
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 
 from .utils import MaxCounter, oset, dynary
+from .core import DEFAULT_COMBO_FACTOR
 from .plot import plot_slicings, plot_slicings_alt
 
 
@@ -152,25 +154,27 @@ class ContractionCosts:
         } for node in contraction_tree.info)
         return cls(cs, size_dict, **kwargs)
 
-    def score(self, ix, minimize='flops'):
+    def score(self, ix, minimize='flops', factor=''):
         """The 'score' for assessing whether to remove ``ix``.
         """
         if minimize == 'flops':
             return (
                 self._flop_reductions[ix] +
-                500 * self._write_reductions[ix] / 1000 +
+                self._write_reductions[ix] / 1000 +
                 1
             )
         if minimize in ('write', 'size'):
             return (
                 self._flop_reductions[ix] / 1000 +
-                500 * self._write_reductions[ix] +
+                self._write_reductions[ix] +
                 1
             )
-        if minimize == 'combo':
+        if minimize in ('combo', 'limit'):
+            if not factor:
+                factor = DEFAULT_COMBO_FACTOR
             return (
                 self._flop_reductions[ix] +
-                500 * self._write_reductions[ix] +
+                float(factor) * self._write_reductions[ix] +
                 1
             )
 
@@ -226,6 +230,11 @@ class ContractionCosts:
              "nslices={:.3e}, overhead={:.3f})>")
         return s.format(self.total_flops, self.size,
                         self.nslices, self.overhead)
+
+
+score_matcher = re.compile(
+    "(flops|size|write|combo|limit|size-compressed)-*(\d*)"
+)
 
 
 class SliceFinder:
@@ -298,6 +307,8 @@ class SliceFinder:
         self.target_slices = target_slices
 
         self.minimize = minimize
+        self._minimize_args = score_matcher.findall(self.minimize)[0]
+
 
     def _maybe_default(self, attr, value):
         if value is None:
@@ -378,7 +389,7 @@ class SliceFinder:
             ix = max(
                 cost.size_dict, key=lambda ix:
                 # the base score
-                log(cost.score(ix, self.minimize)) -
+                log(cost.score(ix, *self._minimize_args)) -
                 # a smudge that replicates boltzmann sampling
                 temperature * log(-log(random.random())) -
                 # penalize forbidden (outer) indices

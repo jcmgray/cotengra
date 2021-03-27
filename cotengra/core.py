@@ -31,6 +31,11 @@ from .plot import (
     plot_hypergraph,
 )
 
+# the default weighting for comparing flops vs mops
+try:
+    from opt_einsum.paths import DEFAULT_COMBO_FACTOR
+except ImportError:
+    DEFAULT_COMBO_FACTOR = 256
 
 def is_valid_node(node):
     """Check ``node`` is of type frozenset[int].
@@ -479,6 +484,14 @@ class ContractionTree:
 
         self._track_write = True
         return self.multiplicity * self._write
+
+    def total_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum):
+        t = 0
+        for p in self.children:
+            f = self.get_flops(p) // 2
+            w = self.get_size(p)
+            t += combine((f, factor * w))
+        return self.multiplicity * t
 
     def max_size(self):
         """The size of the largest intermediate tensor.
@@ -1097,6 +1110,27 @@ class ContractionTree:
         tree.max_size()
 
         optimizer = DynamicProgramming(minimize=minimize)
+        minimize, param = score_matcher.findall(minimize)[0]
+
+        if minimize == 'flops':
+            def cost(node):
+                return tree.get_flops(node) // 2
+        elif minimize == 'write':
+            def cost(node):
+                return tree.get_size(node)
+        elif minimize == 'size':
+            def cost(node):
+                return tree.get_size(node)
+        elif minimize == 'combo':
+            factor = float(param) if param else DEFAULT_COMBO_FACTOR
+            def cost(node):
+                return tree.get_flops(node) // 2 + factor * tree.get_size(node)
+        elif minimize == 'limit':
+            factor = float(param) if param else DEFAULT_COMBO_FACTOR
+            def cost(node):
+                return max(tree.get_flops(node) // 2,
+                           factor * tree.get_size(node))
+
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -1138,30 +1172,12 @@ class ContractionTree:
                     continue
 
                 # else remove the branches, keeping track of current cost
-                if minimize == 'flops':
-                    current_cost = tree.get_flops(sub_root) // 2
-                elif minimize == 'write':
-                    current_cost = tree.get_size(sub_root)
-                elif minimize == 'size':
-                    current_cost = tree.get_size(sub_root)
-                elif minimize == 'combo':
-                    current_cost = (
-                        tree.get_flops(sub_root) // 2 +
-                        500 * tree.get_size(sub_root))
-
+                current_cost = cost(sub_root)
                 for node in sub_branches:
-                    if minimize == 'flops':
-                        current_cost += tree.get_flops(node) // 2
-                    elif minimize == 'write':
-                        current_cost += tree.get_size(node)
-                    elif minimize == 'size':
-                        current_cost = max(
-                            current_cost, tree.get_size(node))
-                    elif minimize == 'combo':
-                        current_cost += (
-                            tree.get_flops(node) // 2 +
-                            500 * tree.get_size(node))
-
+                    if minimize == 'size':
+                        current_cost = max(current_cost, cost(node))
+                    else:
+                        current_cost += cost(node)
                     tree.remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap
@@ -1952,6 +1968,9 @@ class ContractionTree:
         --------
         contract_core, contract_slice, slice_arrays, gather_slices
         """
+        if isinstance(self.inputs[0], set) or isinstance(self.output, set):
+            warnings.warn("The inputs or output of this tree are not ordered.")
+
         if not self.sliced_inds:
             return self.contract_core(
                 arrays, order=order, prefer_einsum=prefer_einsum,
@@ -2025,15 +2044,21 @@ def score_size(trial):
     )
 
 
-def score_combo(trial):
+def score_combo(trial, factor=DEFAULT_COMBO_FACTOR):
     return (
-        math.log2(trial['flops'] + 256 * trial['write']) +
-        math.log2(trial['size']) / 1000
+        math.log2(trial['flops'] // 2 + factor * trial['write'])
     )
 
 
-def score_size_compressed(trial, chi):
+def score_limit(trial, factor=DEFAULT_COMBO_FACTOR):
     tree = trial['tree']
+    return math.log2(tree.total_cost(factor=factor, combine=max))
+
+
+def score_size_compressed(trial, chi='auto'):
+    tree = trial['tree']
+    if chi == 'auto':
+        chi = max(tree.size_dict.values())**2
     size = tree.max_size_compressed(chi)
     cr = (
         math.log2(size) +
@@ -2044,35 +2069,28 @@ def score_size_compressed(trial, chi):
     return cr
 
 
+score_matcher = re.compile(
+    "(flops|size|write|combo|limit|size-compressed)-*(\d*)"
+)
+
 def get_score_fn(minimize):
-
-    match = re.match(r'size-compressed-(\d+)', minimize)
-    if match:
-        chi = int(match.group(1))
-        return functools.partial(score_size_compressed, chi=chi)
-
-    if minimize == 'flops':
+    which, param = score_matcher.findall(minimize)[0]
+    if which == 'flops':
         return score_flops
-    if minimize == 'write':
+    if which == 'write':
         return score_write
-    if minimize == 'size':
+    if which == 'size':
         return score_size
-    if minimize == 'combo':
-        return score_combo
-
+    if which == 'combo':
+        factor = float(param) if param else DEFAULT_COMBO_FACTOR
+        return functools.partial(score_combo, factor=factor)
+    if which == 'limit':
+        factor = float(param) if param else DEFAULT_COMBO_FACTOR
+        return functools.partial(score_limit, factor=factor)
+    if which == 'size-compressed':
+        chi = int(param) if param else 'auto'
+        return functools.partial(score_size_compressed, chi=chi)
     raise ValueError(f"No score function '{minimize}' found.")
-
-
-def _score_flops(tree):
-    """Score by flops but split ties with size.
-    """
-    return math.log2(tree.total_flops()) + math.log2(tree.max_size()) / 1000
-
-
-def _score_size(tree):
-    """Score by size but split ties with flops.
-    """
-    return math.log2(tree.total_flops()) / 1000 + math.log2(tree.max_size())
 
 
 def _describe_tree(tree):
