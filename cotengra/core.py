@@ -6,6 +6,7 @@ import operator
 import itertools
 import functools
 import collections
+from string import ascii_letters
 
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 from opt_einsum.paths import get_path_fn, DynamicProgramming
@@ -49,6 +50,23 @@ def is_valid_node(node):
         return True
     except TypeError:
         return False
+
+
+def cached_node_property(name):
+    """Decorator for caching information about nodes.
+    """
+    def wrapper(meth):
+
+        @functools.wraps(meth)
+        def getter(self, node):
+            try:
+                return self.info[node][name]
+            except KeyError:
+                self.info[node][name] = value = meth(self, node)
+                return value
+
+        return getter
+    return wrapper
 
 
 def to_ind_bitset(inds):
@@ -320,87 +338,144 @@ class ContractionTree:
         del self.info[node]
         del self.children[node]
 
+    @cached_node_property('keep')
     def get_keep(self, node):
         """Get a set of at least the indices that should be explicitly kept if
         they appear on ``node`` (or below).
         """
-        try:
-            keep = self.info[node]['keep']
-        except KeyError:
-            nodes_above = self.root.difference(node)
-            terms_above = self.node_to_terms(nodes_above)
-            keep = inds_union((self.output_legs, *terms_above))
-            self.info[node]['keep'] = keep
-        return keep
+        nodes_above = self.root.difference(node)
+        terms_above = self.node_to_terms(nodes_above)
+        return inds_union((self.output_legs, *terms_above))
 
+    @cached_node_property('legs')
     def get_legs(self, node):
         """Get the effective 'outer' indices for the collection of tensors
         in ``node``.
         """
+        if len(node) == 1:
+            return self.inputs_legs[next(iter(node))]
         try:
-            legs = self.info[node]['legs']
+            involved = self.get_involved(node)
         except KeyError:
-            if len(node) == 1:
-                legs = self.inputs_legs[next(iter(node))]
-            else:
-                try:
-                    involved = self.get_involved(node)
-                except KeyError:
-                    involved = inds_union(self.node_to_terms(node))
-                keep = self.get_keep(node)
-                legs = involved.intersection(keep)
-            self.info[node]['legs'] = legs
-        return legs
+            involved = inds_union(self.node_to_terms(node))
+        keep = self.get_keep(node)
+        return involved.intersection(keep)
 
+    @cached_node_property('involved')
     def get_involved(self, node):
         """Get all the indices involved in the formation of subgraph ``node``.
         """
-        try:
-            involved = self.info[node]['involved']
-        except KeyError:
-            if len(node) == 1:
-                involved = self.bitset_edges.infimum
-            else:
-                sub_legs = map(self.get_legs, self.children[node])
-                involved = inds_union(sub_legs)
-            self.info[node]['involved'] = involved
-        return involved
+        if len(node) == 1:
+            return self.bitset_edges.infimum
+        sub_legs = map(self.get_legs, self.children[node])
+        return inds_union(sub_legs)
 
+    @cached_node_property('removed')
     def get_removed(self, node):
         """Get the indices that will be removed by the creation of ``node``.
         """
-        try:
-            removed = self.info[node]['removed']
-        except KeyError:
-            removed = self.get_involved(node).difference(self.get_legs(node))
-            self.info[node]['removed'] = removed
-        return removed
+        return self.get_involved(node).difference(self.get_legs(node))
 
+    @cached_node_property('size')
     def get_size(self, node):
         """Get the tensor size of ``node``.
         """
-        try:
-            size = self.info[node]['size']
-        except KeyError:
-            size = compute_size_by_dict(self.get_legs(node), self.size_dict)
-            self.info[node]['size'] = size
-        return size
+        return compute_size_by_dict(self.get_legs(node), self.size_dict)
 
+    @cached_node_property('flops')
     def get_flops(self, node):
         """Get the FLOPs for the pairwise contraction that will create
         ``node``.
         """
-        try:
-            flops = self.info[node]['flops']
-        except KeyError:
-            if len(node) == 1:
-                flops = 0
-            else:
-                involved = self.get_involved(node)
-                removed = self.get_removed(node)
-                flops = flop_count(involved, removed, 2, self.size_dict)
-            self.info[node]['flops'] = flops
-        return flops
+        if len(node) == 1:
+            return 0
+        involved = self.get_involved(node)
+        removed = self.get_removed(node)
+        return flop_count(involved, removed, 2, self.size_dict)
+
+    @cached_node_property('can_dot')
+    def get_can_dot(self, node):
+        """Get whether this contraction can be performed as a dot product (i.e.
+        with ``tensordot``), or else requires ``einsum``, as it has indices
+        that don't appear exactly twice in either the inputs or the output.
+        """
+        l, r = self.children[node]
+        sp, sl, sr = map(self.get_legs, (node, l, r))
+        return sl.symmetric_difference(sr) == sp
+
+    @cached_node_property('inds')
+    def get_inds(self, node):
+        """Get the indices of this node - an ordered string version of
+        ``get_legs`` that starts with ``tree.inputs`` and maintains the order
+        they appear in each contraction 'ABC,abc->ABCabc', to match tensordot.
+        """
+        # NB: self.inputs and self.output contain the full (unsliced) indices
+        #     thus we filter even the input legs and output legs
+
+        if len(node) == 1:
+            # leaf indices are fixed
+            i, = node
+            if not self.sliced_inds:
+                return "".join(self.inputs[i])
+            legs = self.get_legs(node)
+            return "".join(filter(legs.__contains__, self.inputs[i]))
+
+        if len(node) == self.N:
+            # root (output) indices are fixed
+            if not self.sliced_inds:
+                return "".join(self.output)
+            return "".join(filter(self.output_legs.__contains__, self.output))
+
+        legs = self.get_legs(node)
+        l_inds, r_inds = map(self.get_inds, self.children[node])
+        # the filter here takes care of contracted indices
+        return "".join(
+            unique(filter(legs.__contains__, itertools.chain(l_inds, r_inds)))
+        )
+
+    @cached_node_property('tensordot_axes')
+    def get_tensordot_axes(self, node):
+        """Get the ``axes`` arg for a tensordot ocontraction that produces
+        ``node``. The pairs are sorted in order of appearance on the left
+        input.
+        """
+        l_inds, r_inds = map(self.get_inds, self.children[node])
+        l_axes, r_axes = [], []
+        for i, ind in enumerate(l_inds):
+            j = r_inds.find(ind)
+            if j != -1:
+                l_axes.append(i)
+                r_axes.append(j)
+        return tuple(l_axes), tuple(r_axes)
+
+    @cached_node_property('tensordot_perm')
+    def get_tensordot_perm(self, node):
+        """Get the permutation required, if any, to bring the tensordot output
+        of this nodes contraction into line with ``self.get_inds(node)``.
+        """
+        l_inds, r_inds = map(self.get_inds, self.children[node])
+        # the target output inds
+        p_inds = self.get_inds(node)
+        # the tensordot output inds
+        td_inds = "".join(sorted(p_inds, key=f"{l_inds}{r_inds}".find))
+        if td_inds == p_inds:
+            return None
+        return tuple(map(td_inds.find, p_inds))
+
+    @cached_node_property('einsum_eq')
+    def get_einsum_eq(self, node):
+        """Get the einsum string describing the contraction that produces
+        ``node``, unlike ``get_inds`` the characters are mapped into [a-zA-Z],
+        for compatibility with ``numpy.einsum`` for example.
+        """
+        l, r = self.children[node]
+        l_inds, r_inds, p_inds = map(self.get_inds, (l, r, node))
+        # we need to map any extended unicode characters into ascii
+        char_mapping = {
+            ord(ix): ascii_letters[i] for i, ix in
+            enumerate(unique(itertools.chain(l_inds, r_inds)))
+        }
+        return f"{l_inds},{r_inds}->{p_inds}".translate(char_mapping)
 
     def get_centrality(self, node):
         try:
@@ -408,41 +483,6 @@ class ContractionTree:
         except KeyError:
             self.compute_centralities()
             return self.info[node]['centrality']
-
-    def get_can_dot(self, node):
-        """Get whether this contraction can be performed as a dot product (i.e.
-        with ``tensordot``), or else requires ``einsum``, as it has indices
-        that don't appear exactly twice in either the inputs or the output.
-        """
-        try:
-            can_dot = self.info[node]['can_dot']
-        except KeyError:
-            l, r = self.children[node]
-            sp, sl, sr = map(self.get_legs, (node, l, r))
-            can_dot = sl.symmetric_difference(sr) == sp
-            self.info[node]['can_dot'] = can_dot
-        return can_dot
-
-    def get_inds(self, node):
-        """Get the indices of this node - an ordered string version of
-        ``get_legs`` that starts with ``tree.inputs`` and maintains the order
-        they appear in each contraction 'ABC,abc->ABCabc', to match tensordot.
-        """
-        try:
-            inds = self.info[node]['inds']
-        except KeyError:
-            sp = self.get_legs(node)
-            if len(node) == 1:
-                i, = node
-                inds = "".join(filter(sp.__contains__, self.inputs[i]))
-            else:
-                l_inds, r_inds = map(self.get_inds, self.children[node])
-                inds = "".join(unique(filter(
-                    sp.__contains__, l_inds + r_inds
-                )))
-            self.info[node]['inds'] = inds
-
-        return inds
 
     def total_flops(self, dtype='float'):
         """Sum the flops contribution from every node in the tree.
@@ -674,8 +714,12 @@ class ContractionTree:
         return max_rank
 
     def remove_ind(self, ind, inplace=False):
+        """Remove (i.e. slice) index ``ind`` from this contraction tree,
+        taking care to update all relevant information about each node.
+        """
         tree = self if inplace else self.copy()
 
+        # make sure all flops and size information has been populated
         tree.total_flops()
         tree.total_write()
         tree.max_size()
@@ -714,9 +758,6 @@ class ContractionTree:
                 #     needed for ``legs = keep.intersection(involved)``?
                 keep = tree.get_keep(node)
                 node_info['keep'] = keep.difference(s_ind)
-
-                node_info.pop('inds', None)
-
             else:
                 # removing indices only changes flops
                 node_info['removed'] = removed.difference(s_ind)
@@ -737,6 +778,11 @@ class ContractionTree:
             elif len(node) == tree.N:
                 # root node
                 tree.output_legs = tree.output_legs - s_ind
+
+            # delete info we can't change
+            for k in ('inds', 'einsum_eq', 'can_dot',
+                      'tensordot_axes', 'tensordot_perm'):
+                tree.info[node].pop(k, None)
 
         tree.already_optimized.clear()
 
@@ -1111,6 +1157,7 @@ class ContractionTree:
 
         optimizer = DynamicProgramming(minimize=minimize)
         minimize, param = score_matcher.findall(minimize)[0]
+        factor = float(param) if param else DEFAULT_COMBO_FACTOR
 
         if minimize == 'flops':
             def cost(node):
@@ -1122,15 +1169,12 @@ class ContractionTree:
             def cost(node):
                 return tree.get_size(node)
         elif minimize == 'combo':
-            factor = float(param) if param else DEFAULT_COMBO_FACTOR
             def cost(node):
                 return tree.get_flops(node) // 2 + factor * tree.get_size(node)
         elif minimize == 'limit':
-            factor = float(param) if param else DEFAULT_COMBO_FACTOR
             def cost(node):
                 return max(tree.get_flops(node) // 2,
                            factor * tree.get_size(node))
-
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -1801,6 +1845,8 @@ class ContractionTree:
         """
         return get_hypergraph(self.inputs, self.output, self.size_dict)
 
+    # --------------------- Performing the Contraction ---------------------- #
+
     def contract_core(
         self,
         arrays,
@@ -1831,46 +1877,36 @@ class ContractionTree:
             Perform some basic error checks.
         """
         # temporary storage for intermediates
-        data = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
+        temps = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
 
         for p, l, r in self.traverse(order=order):
-            # ordered strings of indices
-            p_inds, l_inds, r_inds = map(self.get_inds, (p, l, r))
-
             # get input arrays for this contraction
-            l_array = data.pop(l)
-            r_array = data.pop(r)
-            if check and (
-                (len(l_array.shape) != len(l_inds)) or
-                (len(r_array.shape) != len(r_inds))
-            ):
-                raise ValueError(
-                    f"Array shapes don't match indices: "
-                    f"[{l_array.shape}, '{l_inds}'], "
-                    f"[{r_array.shape}, '{r_inds}'].")
+            l_array = temps.pop(l)
+            r_array = temps.pop(r)
+
+            if check:
+                l_shp, r_shp = l_array.shape, r_array.shape
+                l_inds, r_inds = map(self.get_inds, (l, r))
+                if (len(l_shp) != len(l_inds)) or (len(r_shp) != len(r_inds)):
+                    raise ValueError(
+                        f"Array shapes don't match indices: "
+                        f"[{l_shp}, '{l_inds}'], [{r_shp}, '{r_inds}'].")
 
             # perform the contraction
             if prefer_einsum or not self.get_can_dot(p):
-                eq = f"{l_inds},{r_inds}->{p_inds}"
+                eq = self.get_einsum_eq(p)
                 p_array = do('einsum', eq, l_array, r_array, like=backend)
             else:
-                axes = [[], []]
-                for ind in set(l_inds).intersection(r_inds):
-                    axes[0].append(l_inds.find(ind))
-                    axes[1].append(r_inds.find(ind))
-                p_array = do('tensordot', l_array, r_array,
-                             axes=axes, like=backend)
+                axes = self.get_tensordot_axes(p)
+                p_array = do('tensordot', l_array, r_array, axes, like=backend)
+
+                # check if we need to transpose tensordot output order
+                perm = self.get_tensordot_perm(p)
+                if perm:
+                    p_array = do('transpose', p_array, perm, like=backend)
 
             # insert the new intermediate array
-            data[p] = p_array
-
-        # check if we need to transpose the final array to match the output
-        # get desired (sliced) output order
-        perm = tuple(
-            p_inds.find(ind) for ind in self.output if ind in self.output_legs
-        )
-        if perm != tuple(range(len(perm))):
-            p_array = do('transpose', p_array, perm, like=backend)
+            temps[p] = p_array
 
         return p_array
 
@@ -2070,8 +2106,9 @@ def score_size_compressed(trial, chi='auto'):
 
 
 score_matcher = re.compile(
-    "(flops|size|write|combo|limit|size-compressed)-*(\d*)"
+    r"(flops|size|write|combo|limit|size-compressed)-*(\d*)"
 )
+
 
 def get_score_fn(minimize):
     which, param = score_matcher.findall(minimize)[0]
