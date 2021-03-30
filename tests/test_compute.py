@@ -68,6 +68,7 @@ def rand_equation(
 @pytest.mark.parametrize("n_hyper_in", [0, 1, 2])
 @pytest.mark.parametrize("n_hyper_out", [0, 1, 2])
 @pytest.mark.parametrize("seed", [42, 666])
+@pytest.mark.parametrize("indices_sort", [None, 'root', 'flops'])
 def test_rand_equation(
     n,
     reg,
@@ -77,6 +78,7 @@ def test_rand_equation(
     d_min,
     d_max,
     seed,
+    indices_sort,
 ):
     inputs, output, shapes, size_dict = rand_equation(
         n=n, reg=reg, n_out=n_out, n_hyper_in=n_hyper_in,
@@ -92,6 +94,9 @@ def test_rand_equation(
     x = oe.contract(eq, *arrays, optimize=path)
 
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+
+    if indices_sort:
+        tree.sort_contraction_indices(indices_sort)
 
     # base contract
     y1 = tree.contract(arrays, check=True)
@@ -117,5 +122,9 @@ def test_rand_equation(
     so_ix = np.random.choice(remaining_out, replace=False, size=nsout)
     for ind in so_ix:
         tree.remove_ind_(ind)
+
+        if indices_sort:
+            tree.sort_contraction_indices(indices_sort)
+
         y4 = tree.contract(arrays, check=True)
         assert_allclose(x, y4)

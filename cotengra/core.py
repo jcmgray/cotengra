@@ -1845,6 +1845,159 @@ class ContractionTree:
         """
         return get_hypergraph(self.inputs, self.output, self.size_dict)
 
+    def reset_contraction_indices(self):
+        """Reset all information regarding the explicit contraction indices
+        ordering.
+        """
+        # delete all derived information
+        for node in self.children:
+            for k in ('inds', 'einsum_eq', 'can_dot',
+                      'tensordot_axes', 'tensordot_perm'):
+                self.info[node].pop(k, None)
+
+    def sort_contraction_indices(
+        self,
+        priority='flops',
+        make_output_contig=True,
+        make_contracted_contig=True,
+    ):
+        """Set explicit orders for the contraction indices of this self to
+        optimize for one of two things: contiguity in contracted ('k') indices,
+        or contiguity of left and right output ('m' and 'n') indices.
+
+        Parameters
+        ----------
+        priority : {'flops', 'size', 'root', 'leaves'}, optional
+            Which order to process the intermediate nodes in. Later nodes
+            re-sort previous nodes so are more likely to keep their ordering.
+            E.g. for 'flops' the mostly costly contracton will be process last
+            and thus will be guaranteed to have its indices exactly sorted.
+        make_output_contig
+        make_contracted_contig
+        """
+        self.reset_contraction_indices()
+
+        if priority == 'flops':
+            nodes = sorted(
+                self.children.items(), key=lambda x: self.get_flops(x[0])
+            )
+        elif priority == 'size':
+            nodes = sorted(
+                self.children.items(), key=lambda x: self.get_size(x[0])
+            )
+        elif priority == 'root':
+            nodes = ((p, (l, r)) for p, l, r in self.traverse())
+        elif priority == 'leaves':
+            nodes = ((p, (l, r)) for p, l, r in self.descend())
+        else:
+            raise ValueError(priority)
+
+        for p, (l, r) in nodes:
+            p_inds, l_inds, r_inds = map(self.get_inds, (p, l, r))
+
+            if make_output_contig and len(p) != self.N:
+                # sort indices by whether they appear in the left or right
+                # whether this happens before or after the sort below depends
+                # on the order we are processing the nodes
+                # (avoid root as don't want to modify output)
+
+                def psort(ix):
+                    # group by whether in left or right input
+                    return (r_inds.find(ix), l_inds.find(ix))
+
+                p_inds = "".join(sorted(p_inds, key=psort))
+                self.info[p]['inds'] = p_inds
+
+            if make_contracted_contig:
+                # sort indices by:
+                # 1. if they are going to be contracted
+                # 2. what order they appear in the parent indices
+                # (but ignore leaf indices)
+                if len(l) != 1:
+
+                    def lsort(ix):
+                        return (r_inds.find(ix), p_inds.find(ix))
+
+                    l_inds = "".join(sorted(self.get_legs(l), key=lsort))
+                    self.info[l]['inds'] = l_inds
+
+                if len(r) != 1:
+
+                    def rsort(ix):
+                        return (p_inds.find(ix), l_inds.find(ix))
+
+                    r_inds = "".join(sorted(self.get_legs(r), key=rsort))
+                    self.info[r]['inds'] = r_inds
+
+    def print_contractions(self, sort=None, show_brackets=True):
+        """Print each pairwise contraction, with colorized indices (if
+        `colorama` is installed), and other information.
+        """
+        try:
+            from colorama import Fore
+            RESET = Fore.RESET
+            GREY = Fore.WHITE
+            PINK = Fore.MAGENTA
+            RED = Fore.RED
+            BLUE = Fore.BLUE
+            GREEN = Fore.GREEN
+        except ImportError:
+            RESET = GREY = PINK = RED = BLUE = GREEN = ""
+
+        entries = []
+
+        for i, (p, l, r) in enumerate(self.traverse()):
+            p_legs, l_legs, r_legs = map(self.get_legs, [p, l, r])
+            p_inds, l_inds, r_inds = map(self.get_inds, [p, l, r])
+
+            # print sizes and flops
+            p_flops = self.get_flops(p)
+            p_sz, l_sz, r_sz = (
+                math.log2(self.get_size(node)) for node in [p, l, r]
+            )
+            # print whether tensordottable
+            if self.get_can_dot(p):
+                type_msg = "tensordot"
+                perm = self.get_tensordot_perm(p)
+                if perm is not None:
+                    # and whether indices match tensordot
+                    type_msg += "+perm"
+            else:
+                type_msg = "einsum"
+
+            pa = "".join(
+                PINK + f'({ix})' if ix in l_legs & r_legs else
+                GREEN + f'({ix})' if ix in r_legs else
+                BLUE + ix for ix in p_inds
+            ).replace(f'){GREEN}(', '')
+            la = "".join(
+                PINK + f"[{ix}]" if ix in p_legs & r_legs else
+                RED + f"[{ix}]" if ix in r_legs else
+                BLUE + ix for ix in l_inds
+            ).replace(f']{RED}[', '')
+            ra = "".join(
+                PINK + f"[{ix}]" if ix in p_legs & l_legs else
+                RED + f"[{ix}]" if ix in l_legs else
+                GREEN + ix for ix in r_inds
+            ).replace(f']{RED}[', '')
+
+            entries.append((
+                p,
+                f"{GREY}({i}) cost: {RESET}{p_flops:.1e} "
+                f"{GREY}widths: {RESET}{l_sz:.1f},{r_sz:.1f}->{p_sz:.1f} "
+                f"{GREY}type: {RESET}{type_msg}\n"
+                f"{GREY}inputs: {la},{ra}{RESET}->\n"
+                f"{GREY}output: {pa}\n"
+            ))
+
+        if sort == 'flops':
+            entries.sort(key=lambda x: self.get_flops(x[0]), reverse=True)
+        if sort == 'size':
+            entries.sort(key=lambda x: self.get_size(x[0]), reverse=True)
+
+        o = "\n".join(entry for _, entry in entries)
+        print(o)
+
     # --------------------- Performing the Contraction ---------------------- #
 
     def contract_core(
