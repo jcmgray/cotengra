@@ -22,7 +22,12 @@ from .utils import (
     prod,
     dynary,
 )
-from .parallel import parse_parallel_arg
+from .parallel import (
+    parse_parallel_arg,
+    maybe_leave_pool,
+    maybe_rejoin_pool,
+    submit,
+)
 from .plot import (
     plot_tree_ring,
     plot_tree_tent,
@@ -76,6 +81,10 @@ def to_ind_bitset(inds):
 def inds_union(terms):
     t0, *ts = terms
     return t0.union(*ts)
+
+
+def get_with_default(k, obj, default):
+    return obj.get(k, default)
 
 
 class ContractionTree:
@@ -1327,13 +1336,7 @@ class ContractionTree:
         # set up the initial 'forest' and parallel machinery
         pool = parse_parallel_arg(parallel)
         if pool is not None:
-            try:
-                from dask.distributed import secede, rejoin
-                secede()  # for nested parallelism
-                is_dask_worker = True
-            except (ImportError, ValueError):
-                is_dask_worker = False
-
+            is_worker = maybe_leave_pool(pool)
             # store the trees as futures for the entire process
             forest = [pool.scatter(tree)]
             maxiter = subtree_maxiter // parallel_maxiter_steps
@@ -1371,12 +1374,11 @@ class ContractionTree:
                     # submit in smaller steps to saturate processes
                     for _ in range(parallel_maxiter_steps):
                         for s in saplings:
-                            s['tree'] = pool.submit(
-                                _reconfigure_tree, pure=False, **s)
+                            s['tree'] = submit(pool, _reconfigure_tree, **s)
 
                     # compute scores remotely then gather
                     forest_futures = [s['tree'] for s in saplings]
-                    res_futures = [pool.submit(_get_tree_info, t, pure=False)
+                    res_futures = [submit(pool, _get_tree_info, t)
                                    for t in forest_futures]
                     res = [{'tree': tree_future, **res_future.result()}
                            for tree_future, res_future in
@@ -1391,8 +1393,7 @@ class ContractionTree:
                     if pool is None:
                         d = _describe_tree(forest[0])
                     else:
-                        d = pool.submit(_describe_tree, forest[0],
-                                        pure=False).result()
+                        d = submit(pool, _describe_tree, forest[0]).result()
                     pbar.set_description(d)
 
         finally:
@@ -1403,9 +1404,7 @@ class ContractionTree:
             tree.set_state_from(forest[0])
         else:
             tree.set_state_from(forest[0].result())
-
-            if is_dask_worker:
-                rejoin()
+            maybe_rejoin_pool(is_worker, pool)
 
         return tree
 
@@ -1564,13 +1563,7 @@ class ContractionTree:
         # set up the initial 'forest' and parallel machinery
         pool = parse_parallel_arg(parallel)
         if pool is not None:
-            try:
-                from dask.distributed import secede, rejoin
-                secede()  # for nested parallelism
-                is_dask_worker = True
-            except (ImportError, ValueError):
-                is_dask_worker = False
-
+            is_worker = maybe_leave_pool(pool)
             # store the trees as futures for the entire process
             forest = [pool.scatter(tree)]
         else:
@@ -1607,14 +1600,13 @@ class ContractionTree:
 
                 else:
                     forest_futures = [
-                        pool.submit(
-                            _slice_and_reconfigure_tree, pure=False, **s)
+                        submit(pool, _slice_and_reconfigure_tree, **s)
                         for s in saplings
                     ]
 
                     # compute scores remotely then gather
                     res_futures = [
-                        pool.submit(_get_tree_info, t, pure=False)
+                        submit(pool, _get_tree_info, t)
                         for t in forest_futures
                     ]
                     res = [
@@ -1639,8 +1631,7 @@ class ContractionTree:
                     if pool is None:
                         d = _describe_tree(forest[0])
                     else:
-                        d = pool.submit(_describe_tree, forest[0],
-                                        pure=False).result()
+                        d = submit(pool, _describe_tree, forest[0]).result()
                     pbar.set_description(d)
 
                 if res[0]['size'] <= target_size:
@@ -1654,9 +1645,7 @@ class ContractionTree:
             tree.set_state_from(forest[0])
         else:
             tree.set_state_from(forest[0].result())
-
-            if is_dask_worker:
-                rejoin()
+            maybe_rejoin_pool(is_worker, pool)
 
         return tree
 
@@ -1741,10 +1730,8 @@ class ContractionTree:
             nodes.append(p)
             o[p] = j
 
-        def order(node):
-            return o.get(node, float('inf'))
-
-        self.surface_order = order
+        self.surface_order = functools.partial(
+            get_with_default, obj=o, default=float('inf'))
 
     def path_surface(self):
         return self.path(order=self.surface_order)

@@ -4,10 +4,19 @@ import warnings
 import functools
 
 
+_AUTO_BACKEND = None
+_DEFAULT_BACKEND = 'concurrent.futures'
+
+
 def get_pool(n_workers=None, maybe_create=False, backend=None):
+    """Get a parallel pool.
+    """
 
     if backend is None:
         backend = _DEFAULT_BACKEND
+
+    if backend == 'concurrent.futures':
+        return _get_pool_cf(n_workers=n_workers, maybe_create=maybe_create)
 
     if backend == 'dask':
         return _get_pool_dask(n_workers=n_workers, maybe_create=maybe_create)
@@ -16,20 +25,49 @@ def get_pool(n_workers=None, maybe_create=False, backend=None):
         return _get_pool_ray(n_workers=n_workers, maybe_create=maybe_create)
 
 
-def get_n_workers(pool=None):
+@functools.lru_cache(None)
+def _infer_backed_cached(pool_class):
+    if pool_class.__name__ == 'RayExecutor':
+        return "ray"
+
+    path = pool_class.__module__.split(".")
+
+    if path[0] == "concurrent":
+        return "'concurrent.futures'"
+
+    if path[0] == "distributed":
+        return "dask"
+
+    return path[0]
+
+
+def _infer_backend(pool):
+    """Return the backend type of ``pool`` - cached for speed.
     """
+    return _infer_backed_cached(pool.__class__)
+
+
+def get_n_workers(pool=None):
+    """Extract how many workers our pool has (mostly for working out how many
+    tasks to pre-dispatch).
     """
     if pool is None:
         pool = get_pool()
 
-    if isinstance(pool, RayExecutor):
-        return int(get_ray().available_resources()['CPU'])
+    backend = _infer_backend(pool)
 
-    return len(pool.scheduler_info()['workers'])
+    if backend == 'dask':
+        return len(pool.scheduler_info()['workers'])
 
+    if backend == 'ray':
+        while True:
+            try:
+                return int(get_ray().available_resources()['CPU'])
+            except KeyError:
+                import time
+                time.sleep(1e-3)
 
-_AUTO_BACKEND = None
-_DEFAULT_BACKEND = 'dask'
+    return pool._max_workers
 
 
 def parse_parallel_arg(parallel):
@@ -48,13 +86,17 @@ def parse_parallel_arg(parallel):
             _AUTO_BACKEND = _DEFAULT_BACKEND
         parallel = _AUTO_BACKEND
 
+    if isinstance(parallel, numbers.Integral):
+        _AUTO_BACKEND = _DEFAULT_BACKEND
+        return get_pool(n_workers=parallel, maybe_create=True,
+                        backend=_DEFAULT_BACKEND)
+
+    if parallel == 'concurrent.futures':
+        return get_pool(maybe_create=True, backend='concurrent.futures')
+
     if parallel == 'dask':
         _AUTO_BACKEND = 'dask'
         return get_pool(maybe_create=True, backend='dask')
-
-    if isinstance(parallel, numbers.Integral):
-        _AUTO_BACKEND = 'dask'
-        return get_pool(n_workers=parallel, maybe_create=True, backend='dask')
 
     if parallel == 'ray':
         _AUTO_BACKEND = 'ray'
@@ -64,7 +106,77 @@ def parse_parallel_arg(parallel):
 
 
 def set_parallel_backend(backend):
+    """Create a parallel pool of type ``backend`` which registers it as the
+    default for ``'auto'`` parallel.
+    """
     return parse_parallel_arg(backend)
+
+
+def maybe_leave_pool(pool):
+    """Logic required for nested parallelism in dask.distributed.
+    """
+    if _infer_backend(pool) == 'dask':
+        return _maybe_leave_pool_dask()
+
+
+def maybe_rejoin_pool(is_worker, pool):
+    """Logic required for nested parallelism in dask.distributed.
+    """
+    if is_worker and _infer_backend(pool) == 'dask':
+        _maybe_rejoin_pool_dask()
+
+
+def submit(pool, fn, *args, **kwargs):
+    """Interface for submitting ``fn(*args, **kwargs)`` to ``pool``.
+    """
+    if _infer_backend(pool) == "dask":
+        kwargs.setdefault("pure", False)
+    return pool.submit(fn, *args, **kwargs)
+
+
+def should_nest(pool):
+    """Given argument ``pool`` should we try nested parallelism.
+    """
+    if pool is None:
+        return False
+    backend = _infer_backend(pool)
+    if backend in ('ray', 'dask'):
+        return backend
+    return False
+
+
+# --------------------------- concurrent.futures ---------------------------- #
+
+
+class CachedProcessPoolExecutor:
+
+    def __init__(self):
+        self._pool = None
+        self._n_workers = -1
+
+    def __call__(self, n_workers=None):
+        if n_workers != self._n_workers:
+            from concurrent.futures import ProcessPoolExecutor
+            self.shutdown()
+            self._pool = ProcessPoolExecutor(n_workers)
+            self._n_workers = n_workers
+        return self._pool
+
+    def is_initialized(self):
+        return self._pool is not None
+
+    def shutdown(self):
+        if self._pool is not None:
+            self._pool.shutdown()
+            self._pool = None
+
+
+PoolHandler = CachedProcessPoolExecutor()
+
+
+def _get_pool_cf(n_workers=None, maybe_create=False):
+    if PoolHandler.is_initialized() or maybe_create:
+        return PoolHandler(n_workers)
 
 
 # ---------------------------------- DASK ----------------------------------- #
@@ -128,10 +240,26 @@ def _get_pool_dask(n_workers=None, maybe_create=False):
     return client
 
 
+def _maybe_leave_pool_dask():
+    try:
+        from dask.distributed import secede
+        secede()  # for nested parallelism
+        is_dask_worker = True
+    except (ImportError, ValueError):
+        is_dask_worker = False
+    return is_dask_worker
+
+
+def _maybe_rejoin_pool_dask(is_worker):
+    if is_worker:
+        from dask.distributed import rejoin
+        rejoin()
+
+
 # ----------------------------------- RAY ----------------------------------- #
 
 
-@functools.lru_cache(1)
+@functools.lru_cache(None)
 def get_ray():
     """
     """
@@ -147,7 +275,7 @@ def get_remote_fn(fn):
     return ray.remote(fn)
 
 
-@functools.lru_cache(1)
+@functools.lru_cache(None)
 def get_deploy():
     """Alternative for 'non-function' callables - e.g. partial
     functions - pass the callable object too.
@@ -259,7 +387,6 @@ def _get_pool_ray(n_workers=None, maybe_create=False):
     -------
     None or RayExecutor
     """
-
     try:
         import ray
     except ImportError:

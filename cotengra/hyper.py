@@ -7,7 +7,7 @@ from math import log2, log10
 from opt_einsum.paths import PathOptimizer
 
 from .core import get_score_fn
-from .parallel import parse_parallel_arg, get_n_workers
+from .parallel import parse_parallel_arg, get_n_workers, submit, should_nest
 from .plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 
 
@@ -334,6 +334,7 @@ class HyperOptimizer(PathOptimizer):
 
     def setup(self, inputs, output, size_dict):
         trial_fn = find_tree
+        nested_parallel = should_nest(self._pool)
 
         if self.slicing_opts is not None:
             self.slicing_opts.setdefault('minimize', self.minimize)
@@ -341,13 +342,13 @@ class HyperOptimizer(PathOptimizer):
 
         if self.slicing_reconf_opts is not None:
             self.slicing_reconf_opts.setdefault('minimize', self.minimize)
-            self.slicing_reconf_opts.setdefault('parallel', self.parallel)
+            self.slicing_reconf_opts.setdefault('parallel', nested_parallel)
             trial_fn = SlicedReconfTrialFn(
                 trial_fn, **self.slicing_reconf_opts)
 
         if self.reconf_opts is not None:
             self.reconf_opts.setdefault('minimize', self.minimize)
-            self.reconf_opts.setdefault('parallel', self.parallel)
+            self.reconf_opts.setdefault('parallel', nested_parallel)
             trial_fn = ReconfTrialFn(trial_fn, **self.reconf_opts)
 
         return trial_fn, (inputs, output, size_dict)
@@ -417,8 +418,8 @@ class HyperOptimizer(PathOptimizer):
             setting = self._optimizer['get_setting'](self)
             method = setting['method']
 
-            future = self._pool.submit(
-                trial_fn, *trial_args, method=method, pure=False,
+            future = submit(
+                self._pool, trial_fn, *trial_args, method=method,
                 **setting['params'], **constants[method])
             self._futures.append((setting, future))
 

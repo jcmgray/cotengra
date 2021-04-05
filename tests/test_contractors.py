@@ -161,16 +161,21 @@ def test_hyper_slicer_reconf(parallel):
     assert optimizer.best['tree'].max_size() <= 2**19
 
 
-def test_insane_nested():
-    pytest.importorskip('distributed')
+@pytest.mark.parametrize("parallel_backend", ("dask", "ray"))
+def test_insane_nested(parallel_backend):
+    if parallel_backend == 'dask':
+        pytest.importorskip('distributed')
+    else:
+        pytest.importorskip(parallel_backend)
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     optimizer = ctg.HyperOptimizer(
-        max_repeats=16, parallel=True, optlib='random', progbar=True,
+        max_repeats=16, parallel=parallel_backend,
+        optlib='random', progbar=True,
         slicing_reconf_opts={
             'target_size': 2**20,
             'forested': True,
-            'max_repeats': 8,
+            'max_repeats': 4,
             'num_trees': 2,
             'reconf_opts': {
                 'forested': True,

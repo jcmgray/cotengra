@@ -28,7 +28,7 @@ def test_contraction_tree_equivalency():
 @pytest.mark.parametrize(('forested', 'parallel', 'requires'), [
     (False, False, ''),
     (True, False, ''),
-    (True, True, 'distributed'),
+    (True, 'dask', 'distributed'),
     (True, 'ray', 'ray'),
 ])
 def test_reconfigure(forested, parallel, requires):
