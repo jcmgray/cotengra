@@ -65,7 +65,7 @@ def HyperCompressedOptimizer(
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    minimize = f"size-compressed-{chi}"
+    minimize = f"compressed-{chi}"
     return HyperOptimizer(
         methods=methods, path_order=path_order, minimize=minimize, **kwargs)
 
@@ -79,7 +79,7 @@ def ReusableHyperCompressedOptimizer(
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    minimize = f"size-compressed-{chi}"
+    minimize = f"compressed-{chi}"
     return ReusableHyperOptimizer(
         methods=methods, path_order=path_order, minimize=minimize, **kwargs)
 

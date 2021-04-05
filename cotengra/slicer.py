@@ -233,7 +233,7 @@ class ContractionCosts:
 
 
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|size-compressed)-*(\d*)"
+    r"(flops|size|write|combo|limit|compressed)-*(\d*)"
 )
 
 

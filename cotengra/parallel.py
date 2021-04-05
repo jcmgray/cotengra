@@ -54,6 +54,11 @@ def get_n_workers(pool=None):
     if pool is None:
         pool = get_pool()
 
+    try:
+        return pool._max_workers
+    except AttributeError:
+        pass
+
     backend = _infer_backend(pool)
 
     if backend == 'dask':
@@ -67,7 +72,11 @@ def get_n_workers(pool=None):
                 import time
                 time.sleep(1e-3)
 
-    return pool._max_workers
+    if backend == 'mpi4py':
+        from mpi4py import MPI
+        return MPI.COMM_WORLD.size
+
+    raise ValueError(f"Can't find number of workers in pool {pool}.")
 
 
 def parse_parallel_arg(parallel):

@@ -1982,6 +1982,8 @@ class ContractionTree:
         if sort == 'size':
             entries.sort(key=lambda x: self.get_size(x[0]), reverse=True)
 
+        entries.append((None, f"{RESET}"))
+
         o = "\n".join(entry for _, entry in entries)
         print(o)
 
