@@ -7,59 +7,6 @@ from numpy.testing import assert_allclose
 import opt_einsum as oe
 
 
-def rand_equation(
-    n, reg,
-    n_out=0,
-    n_hyper_in=0,
-    n_hyper_out=0,
-    d_min=2, d_max=3,
-    seed=None
-):
-    if seed is not None:
-        np.random.seed(seed)
-
-    num_inds = max((n * reg) // 2, n_hyper_out + n_hyper_in + n_out)
-    size_dict = {oe.get_symbol(i): np.random.randint(d_min, d_max + 1)
-                 for i in range(num_inds)}
-
-    inds = iter(size_dict)
-    inputs = [[] for _ in range(n)]
-    output = []
-
-    for _ in range(n_hyper_out):
-        ind = next(inds)
-        output.append(ind)
-        s = np.random.randint(3, n + 1)
-        where = np.random.choice(np.arange(n), size=s, replace=False)
-        for i in where:
-            inputs[i].append(ind)
-
-    for _ in range(n_hyper_in):
-        ind = next(inds)
-        s = np.random.randint(3, n + 1)
-        where = np.random.choice(np.arange(n), size=s, replace=False)
-        for i in where:
-            inputs[i].append(ind)
-
-    for _ in range(n_out):
-        ind = next(inds)
-        output.append(ind)
-        where = np.random.choice(np.arange(n), size=2, replace=False)
-        for i in where:
-            inputs[i].append(ind)
-
-    for ind in inds:
-        where = np.random.choice(np.arange(n), size=2, replace=False)
-        for i in where:
-            inputs[i].append(ind)
-
-    shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
-
-    output = list(np.random.permutation(output))
-
-    return inputs, output, shapes, size_dict
-
-
 @pytest.mark.parametrize("n", [10])
 @pytest.mark.parametrize("d_min", [2])
 @pytest.mark.parametrize("d_max", [4])
@@ -80,7 +27,7 @@ def test_rand_equation(
     seed,
     indices_sort,
 ):
-    inputs, output, shapes, size_dict = rand_equation(
+    inputs, output, shapes, size_dict = ctg.utils.rand_equation(
         n=n, reg=reg, n_out=n_out, n_hyper_in=n_hyper_in,
         n_hyper_out=n_hyper_out, d_min=d_min, d_max=d_max, seed=seed,
     )

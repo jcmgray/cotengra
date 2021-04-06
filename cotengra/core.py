@@ -2165,6 +2165,69 @@ class ContractionTree:
 
         return self.gather_slices(slices, backend=backend)
 
+    def contract_mpi(
+        self,
+        arrays,
+        comm=None,
+        root=None,
+        **kwargs
+    ):
+        """Contract the slices of this tree and sum them in parallel -
+        *assuming* we are already running under MPI.
+
+        Parameters
+        ----------
+        arrays : sequence of array
+            The input (unsliced arrays)
+        comm : None or mpi4py communicator
+            Defaults to ``mpi4py.MPI.COMM_WORLD`` if not given.
+        root : None or int, optional
+            If ``root=None``, an ``Allreduce`` will be performed such that
+            every process has the resulting tensor, else if an integer e.g.
+            ``root=0``, the result will be exclusively gathered to that
+            process using ``Reduce``, with every other process returning
+            ``None``.
+        kwargs
+            Supplied to :meth:`~cotengra.ContractionTree.contract_slice`.
+        """
+        if not set(self.sliced_inds).isdisjoint(set(self.output)):
+            raise NotImplementedError(
+                "Sliced and output indices overlap - currently only a simple "
+                "sum of result slices is supported currently.")
+
+        if comm is None:
+            from mpi4py import MPI
+            comm = MPI.COMM_WORLD
+
+        if self.multiplicity < comm.size:
+            raise ValueError(
+                f"Need to have more slices than MPI processes, but have "
+                f"{self.multiplicity} and {comm.size} respectively.")
+
+        # round robin compute each slice, eagerly summing
+        result_i = None
+        for i in range(comm.rank, self.multiplicity, comm.size):
+            # note: fortran ordering is needed for the MPI reduce
+            x = do('asfortranarray', self.contract_slice(arrays, i, **kwargs))
+            if result_i is None:
+                result_i = x
+            else:
+                result_i += x
+
+        if root is None:
+            # everyone gets the summed result
+            result = do('empty_like', result_i)
+            comm.Allreduce(result_i, result)
+            return result
+
+        # else we only sum reduce the result to process ``root``
+        if comm.rank == root:
+            result = do('empty_like', result_i)
+        else:
+            result = None
+        comm.Reduce(result_i, result, root=root)
+        return result
+
     plot_ring = plot_tree_ring
     plot_tent = plot_tree_tent
     plot_span = plot_tree_span
