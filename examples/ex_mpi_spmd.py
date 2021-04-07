@@ -31,11 +31,12 @@ opt = ctg.HyperOptimizer(
     max_time=5,
 )
 # perform the search
-opt(inputs, output, size_dict)
+tree = opt.search(inputs, output, size_dict)
+score = opt.best['score']
 
 # need to get the best tree from across all processes
 print(f"{comm.rank}:: Sharing best tree ...")
-_, tree = comm.allreduce((opt.best['score'], opt.best['tree']), op=MPI.MIN)
+_, tree = comm.allreduce((score, tree), op=MPI.MIN)
 
 
 # -------------- STAGE 2: use SPMD mode to perform contraction -------------- #

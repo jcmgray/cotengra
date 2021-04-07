@@ -124,7 +124,7 @@ def test_hyper_slicer(parallel):
         slicing_opts={'target_slices': 1000}, progbar=True,
     )
     oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
-    assert optimizer.best['tree'].multiplicity >= 1000
+    assert optimizer.get_tree().multiplicity >= 1000
     assert optimizer.best['flops'] > optimizer.best['original_flops']
 
 
@@ -158,7 +158,7 @@ def test_hyper_slicer_reconf(parallel):
         }, progbar=True,
     )
     oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
-    assert optimizer.best['tree'].max_size() <= 2**19
+    assert optimizer.get_tree().max_size() <= 2**19
 
 
 @pytest.mark.parametrize("parallel_backend", ("dask", "ray"))
@@ -185,4 +185,4 @@ def test_insane_nested(parallel_backend):
         }
     )
     oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
-    assert optimizer.best['tree'].max_size() <= 2**20
+    assert optimizer.get_tree().max_size() <= 2**20

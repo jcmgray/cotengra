@@ -8,9 +8,10 @@ The key methods here repeatedly build a **contraction tree**, using some combina
 
 This repository also contains a **tensor network slicing** implementation (for splitting contractions into many independent chunks each with lower memory) that will hopefully be added directly into `opt_einsum` at some point. The slicing can be performed *within* the Bayesian optimization loop to explicitly target contraction paths that slice well to low memory.
 
->  :warning: Commits since [906f838](https://github.com/jcmgray/cotengra/commit/906f838d21840dc41c652efb63faf1f88c6113ee) *additionally* add functionality first demonstrated in ['Classical Simulation of Quantum Supremacy Circuits'](https://arxiv.org/abs/2005.06787) - namely, contraction subtree reconfiguration and the interleaving of this with slicing.
+>  :warning: Commits since [906f838](https://github.com/jcmgray/cotengra/commit/906f838d21840dc41c652efb63faf1f88c6113ee) *additionally* add functionality first demonstrated in ['Classical Simulation of Quantum Supremacy Circuits'](https://arxiv.org/abs/2005.06787) - namely, contraction subtree reconfiguration and the interleaving of this with slicing - *dynamic slicing*.
 In the ``examples`` folder you can find notebooks reproducing (in terms of sliced contraction complexity) the results of that paper as well as ['Simulating the Sycamore quantum supremacy circuits'](https://arxiv.org/abs/2103.03074).
 
+### Contents
 
 * [Installation :hammer:](#installation-hammer)
 
@@ -69,6 +70,10 @@ If you want to automatically cache paths to disk, you'll need:
 
 * [diskcache](http://www.grantjenks.com/docs/diskcache/index.html)
 
+If you want to perform the contractions using ``cotengra`` itself you'll need: 
+
+* [autoray](https://github.com/jcmgray/autoray)
+
 And finally, if you want to install this package from source, you will need to clone it locally, navigate into the source directory and then call:
 ```
 pip install .
@@ -80,7 +85,7 @@ pip install --no-deps -U -e .
 
 ## Basic usage :zap:
 
-All the [optimizers are `opt_einsum.PathOptimizer` instances](https://optimized-einsum.readthedocs.io/en/stable/custom_paths.html) which can be supplied as the `optimize=` kwarg to either `opt_einsum` or `quimb`:
+All the [optimizers are `opt_einsum.PathOptimizer` instances](https://optimized-einsum.readthedocs.io/en/stable/custom_paths.html) which can be supplied as the `optimize=` kwarg to either `opt_einsum` or `quimb`. Alternatively, the ``HyperOptimizer`` can directly generate instances of ``ContractionTree`` objects which can be used to actually perform contractions - including slicing and gathering arrays automatically.
 
 ### With [`opt_einsum`](https://github.com/dgasmith/opt_einsum)
 
@@ -123,6 +128,39 @@ Additionally, if the optimizer is specified like such as a string, ``quimb`` wil
 
 > :warning: By convention `opt_einsum` assumes real floating point arithmetic when calculating `info.opt_cost`, if every contraction is an inner product and there are no output indices then this is generally 2x the cost (or number of operations), C, defined in [the paper](https://arxiv.org/abs/2002.01935). The contraction width, W, is just `math.log2(info.largest_intermediate)`.
 
+### Direct usage
+
+Here we directly build a contraction tree by supplying the explicit sequence of input indices, output indices, and their sizes.
+
+```python
+# helper function for generating sample contractions
+inputs, output, shapes, size_dict = ctg.utils.rand_equation(
+    100, 3, n_out=2, seed=666,
+)
+
+# specify optimizer settings and search for a tree
+opt = ctg.HyperOptimizer(slicing_opts={'target_slices': 4})
+tree = opt.search(inputs, output, size_dict)
+```
+
+We also don't need to call any other libraries to perform the contraction:
+
+```python
+arrays = [np.random.normal(size=s) for s in shapes]
+tree.contract(arrays)
+# array([[-4.38075419e+21,  2.51654737e+22],
+#        [-2.08393155e+20, -1.10731354e+22]])
+```
+
+Note the array operations are abstracted via [``autoray``](https://github.com/jcmgray/autoray) so support most common tensor libraries. Note also this performs all slicing and gathering of slices automatically, if you want manual control see:
+
+* ``ContractionTree.contract_core``
+* ``ContractionTree.slice_arrays``
+* ``ContractionTree.contract_slice``
+* ``ContractionTree.gather_slices``
+
+The ``examples`` folder illustrates these for GPU and MPI contractions.
+
 ### Advanced Settings
 
 Various settings can be specified when initializing the `HyperOptimizer` object, here are some key ones:
@@ -130,7 +168,7 @@ Various settings can be specified when initializing the `HyperOptimizer` object,
 ```python
 opt = ctg.HyperOptimizer(
     minimize='size',    # {'size', 'flops', 'combo'}, what to target
-    parallel=True,      # {'auto', bool, int, distributed.Client}
+    parallel=True,      # {'auto', bool, int, 'dask', 'ray', executor}
     max_time=60,        # maximum seconds to run for (None for no limit)
     max_repeats=1024,   # maximum number of repeats
     progbar=True,       # whether to show live progress
@@ -430,7 +468,7 @@ Or if we want paths with at least 1024 independent contractions we could use:
 opt = ctg.HyperOptimizer(slicing_opts={'target_slices': 2**10})
 ```
 
-The sliced tree can be retrieved from `tree = opt.best['tree']` which will have `tree.sliced_inds`, or you can re-slice the final returned path yourself.
+The sliced tree can be retrieved from `tree = opt.get_tree()` which will have `tree.sliced_inds`, or you can re-slice the final returned path yourself.
 
 ---
 

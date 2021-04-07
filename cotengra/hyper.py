@@ -429,7 +429,7 @@ class HyperOptimizer(PathOptimizer):
         while self._futures:
             yield self._get_and_report_next_future()
 
-    def __call__(self, inputs, output, size_dict, memory_limit=None):
+    def _search(self, inputs, output, size_dict):
         self._check_args_against_first_call(inputs, output, size_dict)
 
         # start a timer?
@@ -481,6 +481,23 @@ class HyperOptimizer(PathOptimizer):
             pbar.close()
 
         self._maybe_cancel_futures()
+
+    def search(self, inputs, output, size_dict):
+        """Run this optimizer and return the ``ContractionTree`` for the best
+        path it finds.
+        """
+        self._search(inputs, output, size_dict,)
+        return self.best['tree']
+
+    def get_tree(self):
+        """Return the ``ContractionTree`` for the best path found.
+        """
+        return self.best['tree']
+
+    def __call__(self, inputs, output, size_dict, memory_limit=None):
+        """``opt_einsum`` interface, returns direct ``path``.
+        """
+        self._search(inputs, output, size_dict,)
         return tuple(self.path)
 
     def get_trials(self, sort=None):

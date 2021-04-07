@@ -237,6 +237,13 @@ class ContractionTree:
         tree.set_state_from(self)
         return tree
 
+    @property
+    def nslices(self):
+        """Simple alias for how many independent contractions this tree
+        represents overall.
+        """
+        return self.multiplicity
+
     def node_to_terms(self, node):
         """Turn a node -- a frozen set of ints -- into the corresponding terms
         -- a sequence of sets of str corresponding to input indices.
@@ -2080,12 +2087,16 @@ class ContractionTree:
         """
         return self.contract_core(self.slice_arrays(arrays, i), **kwargs)
 
-    def gather_slices(self, slices, backend=None):
+    def gather_slices(self, slices, backend=None, progbar=False):
         """Gather all the output contracted slices into a single full result.
         If none of the sliced indices appear in the output, then this is a
         simple sum - otherwise the slices need to be partially summed and
         partially stacked.
         """
+        if progbar:
+            import tqdm
+            slices = tqdm.tqdm(slices, total=self.multiplicity)
+
         output_pos = {ix: i for i, ix in enumerate(self.output)
                       if ix in self.sliced_inds}
 

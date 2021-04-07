@@ -35,8 +35,7 @@ with MPICommExecutor() as pool:
             progbar=True,
         )
         # run the optimizer and extract the contraction tree
-        opt(inputs, output, size_dict)
-        tree = opt.best['tree']
+        tree = opt.search(inputs, output, size_dict)
 
         # ------------- STAGE 2: perform contraction on workers ------------- #
 
@@ -45,7 +44,7 @@ with MPICommExecutor() as pool:
 
         # submit contractions eagerly
         fs = [pool.submit(tree.contract_slice, arrays, i)
-              for i in range(tree.multiplicity)]
+              for i in range(tree.nslices)]
 
         # gather results lazily (i.e. using generator)
         x = tree.gather_slices((f.result() for f in fs))
