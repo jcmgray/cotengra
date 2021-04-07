@@ -132,7 +132,7 @@ def maybe_rejoin_pool(is_worker, pool):
     """Logic required for nested parallelism in dask.distributed.
     """
     if is_worker and _infer_backend(pool) == 'dask':
-        _maybe_rejoin_pool_dask()
+        _rejoin_pool_dask()
 
 
 def submit(pool, fn, *args, **kwargs):
@@ -259,10 +259,9 @@ def _maybe_leave_pool_dask():
     return is_dask_worker
 
 
-def _maybe_rejoin_pool_dask(is_worker):
-    if is_worker:
-        from dask.distributed import rejoin
-        rejoin()
+def _rejoin_pool_dask():
+    from dask.distributed import rejoin
+    rejoin()
 
 
 # ----------------------------------- RAY ----------------------------------- #

@@ -51,7 +51,7 @@ def kahypar_subgraph_find_membership(
     if parts >= nv:
         return list(range(nv))
 
-    hg = get_hypergraph(inputs, output, size_dict)
+    hg = get_hypergraph(inputs, output, size_dict, accel=False)
 
     if compress:
         hg.compress(compress)

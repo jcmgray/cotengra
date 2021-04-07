@@ -244,7 +244,7 @@ class GreedyCompressed:
     def ssa_path(self, inputs, output, size_dict):
         self.candidates = []
         self.ssapath = []
-        self.hg = get_hypergraph(inputs, output, size_dict)
+        self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
 
         # compute hypergraph centralities to use heuristically
         self.sgcents = self.hg.simple_centrality()
@@ -384,7 +384,7 @@ class GreedySpan:
         self.distance_steal = distance_steal
 
     def ssa_path(self, inputs, output, size_dict):
-        self.hg = get_hypergraph(inputs, output, size_dict)
+        self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
         self.cents = self.hg.simple_centrality()
 
         if output:

@@ -1,0 +1,22 @@
+[package]
+name = "cotengra"
+version = "0.1.0"
+authors = ["Johnnie Gray <johnniemcgray@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "cotengra"
+crate-type = ["cdylib"]
+
+[dependencies.pyo3]
+version = "0.13"
+features = ["extension-module"]
+
+[dependencies.bit-set]
+version = "0.5"
+
+[dependencies.itertools]
+version = "0.10"
+
+[dependencies.rustc-hash]
+version = "1.1"

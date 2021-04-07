@@ -396,6 +396,19 @@ class BitMembers:
     __or__ = union
 
 
+try:
+    # accelerated bitmember iteration
+    from cotengra.cotengra import indexes
+
+    def fast_bitmember_iter(self):
+        return map(self.bitset.members.__getitem__, indexes(f"{self.i:b}"))
+
+    BitMembers.__iter__ = fast_bitmember_iter
+
+except ImportError:
+    pass
+
+
 def rand_equation(
     n, reg,
     n_out=0,

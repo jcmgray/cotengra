@@ -43,6 +43,12 @@ try:
 except ImportError:
     DEFAULT_COMBO_FACTOR = 256
 
+try:
+    from cotengra.cotengra import HyperGraph as HyperGraphRust
+except ImportError:
+    HyperGraphRust = None
+
+
 def is_valid_node(node):
     """Check ``node`` is of type frozenset[int].
     """
@@ -80,7 +86,9 @@ def to_ind_bitset(inds):
 
 def inds_union(terms):
     t0, *ts = terms
-    return t0.union(*ts)
+    return t0.bitset.fromint(
+        functools.reduce(operator.or_, (t.i for t in ts), t0.i)
+    )
 
 
 def get_with_default(k, obj, default):
@@ -593,7 +601,7 @@ class ContractionTree:
         if order == 'surface_order':
             order = self.surface_order
 
-        hg = self.get_hypergraph()
+        hg = self.get_hypergraph(accel='auto')
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), range(hg.get_num_nodes())))
@@ -617,26 +625,22 @@ class ContractionTree:
         if order == 'surface_order':
             order = self.surface_order
 
-        hg = self.get_hypergraph()
+        hg = self.get_hypergraph(accel='auto')
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), hg.nodes))
 
-        size = sum(map(hg.node_size, range(hg.get_num_nodes())))
+        size = hg.total_node_size()
         size_peak = size
 
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
-            size -= hg.node_size(li)
-            size -= hg.node_size(ri)
             pi = tree_map[p] = hg.contract(li, ri)
 
             # measure peak size before compression
-            size += hg.node_size(pi)
-            size_peak = max(size_peak, size)
-
-            hg.compress(chi=chi, edges=hg.nodes[pi])
+            size_peak = max(size_peak, hg.total_node_size())
+            hg.compress(chi=chi, edges=hg.get_node(pi))
 
         return size_peak
 
@@ -1808,7 +1812,7 @@ class ContractionTree:
     def compute_centralities(self, combine='mean'):
         """Compute a centrality for every node in this contraction tree.
         """
-        hg = self.get_hypergraph()
+        hg = self.get_hypergraph(accel='auto')
         cents = hg.simple_centrality()
 
         for i, leaf in enumerate(self.gen_leaves()):
@@ -1826,11 +1830,11 @@ class ContractionTree:
                 self.info[l]['centrality'],
                 self.info[r]['centrality'])
 
-    def get_hypergraph(self):
+    def get_hypergraph(self, accel=False):
         """Get a hypergraph representing the uncontracted network (i.e. the
         leaves).
         """
-        return get_hypergraph(self.inputs, self.output, self.size_dict)
+        return get_hypergraph(self.inputs, self.output, self.size_dict, accel)
 
     def reset_contraction_indices(self):
         """Reset all information regarding the explicit contraction indices
@@ -2236,7 +2240,7 @@ class ContractionTree:
 
     @functools.wraps(plot_hypergraph)
     def plot_hypergraph(self, **kwargs):
-        hg = self.get_hypergraph()
+        hg = self.get_hypergraph(accel=False)
         hg.plot(**kwargs)
 
     def __repr__(self):
@@ -2730,6 +2734,11 @@ class HyperGraph:
         """
         return self.edges_size(self.nodes[i])
 
+    def total_node_size(self):
+        """Get the total size of all nodes.
+        """
+        return sum(map(self.node_size, self.nodes))
+
     def output_nodes(self):
         """Get the nodes with output indices.
         """
@@ -3006,6 +3015,61 @@ class HyperGraph:
 
         return c
 
+    def compute_loops(self, max_loop_length=None):
+        """Generate all loops up to a certain length in this hypergraph.
+
+        Parameters
+        ----------
+        max_loop_length : None or int, optional
+            The maximum loop length to search for. If ``None``, then this is
+            set automatically by the length of the first loop found.
+
+        Yields
+        ------
+        loop : tuple[int]
+            A set of nodes that form a loop.
+        """
+        # start paths beginning at every node
+        queue = []
+        neighbors = {}  # pre-cache neighbors for speed
+        for i in self.nodes:
+            queue.append((i,))
+            neighbors[i] = tuple(self.neighbors(i))
+
+        seen = set()
+        while queue:
+            path = queue.pop(0)
+            # consider all the ways to extend each path
+            for j in neighbors[path[-1]]:
+                i0 = path[0]
+                # check for valid loop ...
+                if (
+                    # is not trivial
+                    (len(path) > 2) and
+                    # ends where it starts
+                    (j == i0) and
+                    # and is not just a cyclic permutation of existing loop
+                    (frozenset(path) not in seen)
+                ):
+                    yield tuple(sorted(path))
+                    seen.add(frozenset(path))
+                    if max_loop_length is None:
+                        # automatically set the max loop length
+                        max_loop_length = len(path) + 1
+
+                # path hits itself too early
+                elif j in path:
+                    continue
+
+                # keep extending path, but only if
+                elif (
+                    # we haven't found any loops yet
+                    (max_loop_length is None) or
+                    # or this loops is short
+                    (len(path) < max_loop_length)
+                ):
+                    queue.append(path + (j,))
+
     def get_laplacian(self):
         """Get the graph Laplacian.
         """
@@ -3106,8 +3170,19 @@ class HyperGraph:
         return f"<HyperGraph(|V|={self.num_nodes}, |E|={self.num_edges})>"
 
 
-def get_hypergraph(inputs, output=None, size_dict=None):
+def get_hypergraph(inputs, output=None, size_dict=None, accel=False):
     """Single entry-point for creating a, possibly accelerated, HyperGraph.
     """
-    return HyperGraph(inputs, output, size_dict)
+    if accel == 'auto':
+        accel = HyperGraphRust is not None
 
+    if accel:
+        if not isinstance(inputs, dict):
+            inputs = {i: list(term) for i, term in enumerate(inputs)}
+        if not isinstance(output, list):
+            output = [] if output is None else list(output)
+        if not isinstance(size_dict, dict):
+            size_dict = {} if size_dict is None else dict(size_dict)
+        return HyperGraphRust(inputs, output, size_dict)
+
+    return HyperGraph(inputs, output, size_dict)
