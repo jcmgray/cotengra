@@ -2311,7 +2311,7 @@ def score_size_compressed(trial, chi='auto'):
 
 
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|size-compressed)-*(\d*)"
+    r"(flops|size|write|combo|limit|compressed)-*(\d*)"
 )
 
 
@@ -2329,7 +2329,7 @@ def get_score_fn(minimize):
     if which == 'limit':
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_limit, factor=factor)
-    if which == 'size-compressed':
+    if which == 'compressed':
         chi = int(param) if param else 'auto'
         return functools.partial(score_size_compressed, chi=chi)
     raise ValueError(f"No score function '{minimize}' found.")

@@ -401,9 +401,41 @@ def rand_equation(
     n_out=0,
     n_hyper_in=0,
     n_hyper_out=0,
-    d_min=2, d_max=3,
+    d_min=2,
+    d_max=3,
     seed=None
 ):
+    """A more advanced version of ``opt_einsum.helpers.rand_equation`` that
+    can also generate both inner and outer hyper-edges. Mostly useful for
+    generating test instances covering all edge cases.
+
+    Parameters
+    ----------
+    n : int
+        The number of tensors.
+    reg : int
+        The average number of indices per tensor if no hyper-edges, i.e.
+        total number of inds ``= n * reg // 2``.
+    n_out : int, optional
+        The number of output indices.
+    n_hyper_in : int, optional
+        The number of inner hyper-indices.
+    n_hyper_out : int, optional
+        The number of outer hyper-indices.
+    d_min : int, optional
+        The minimum dimension size.
+    d_max : int, optional
+        The maximum dimension size.
+    seed : None or int, optional
+        Seed for ``np.random`` for repeatibility.
+
+    Returns
+    -------
+    inputs : list[list[str]]
+    output : list[str]
+    shapes : list[tuple[int]]
+    size_dict : dict[str, int]
+    """
     import numpy as np
     import opt_einsum as oe
 
