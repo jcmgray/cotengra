@@ -31,7 +31,7 @@ tree = opt.search(inputs, output, size_dict)
 
 # ------------------------- Perform the contraction ------------------------- #
 
-print("Contracting slices with jax...")
+print("1: Contracting slices with jax...")
 
 # we'll run the GPU contraction on a separate single thread, which mostly
 # serves as an example of how one might distribute contractions to multi-GPUs
@@ -51,4 +51,37 @@ fs = [
 slices = (np.array(f.result()) for f in fs)
 
 x = tree.gather_slices(slices, progbar=True)
+print(x)
+
+# ------------------------ Perform the contraction 2 ------------------------ #
+
+print("2: Contracting slices with jax and constants...")
+
+# this time we'll treat the input arrays as constant, so they ideally be
+# folded in, possibly with some extra memory overhead
+jax_arrays = [jax.numpy.asarray(x) for x in arrays]
+contract_core_jit = jax.jit(
+    lambda i: tree.contract_slice(jax_arrays, i)
+)
+
+# eagerly submit all the contractions to the thread pool
+fs = [
+    pool.submit(contract_core_jit, np.array(i))
+    for i in range(tree.nslices)
+]
+
+# lazily gather all the slices in the main process with progress bar
+slices = (np.array(f.result()) for f in fs)
+
+x = tree.gather_slices(slices, progbar=True)
+print(x)
+
+
+# ------------------------ Perform the contraction 3 ------------------------ #
+
+print("3: Contracting slices with jax but no jit...")
+
+# we can also contract the raw jax arrays with no jit - though jax is
+# significantly slower in this mode
+x = tree.contract(jax_arrays, progbar=True)
 print(x)

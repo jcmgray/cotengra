@@ -600,7 +600,8 @@ class ContractionTree:
         """
         return math.log2(self.max_size())
 
-    def max_size_compressed(self, chi, order='surface_order'):
+    def max_size_compressed(self, chi, order='surface_order',
+                            compress_late=False):
         """Compute the maximum sized tensor produced when a compressed
         contraction is performed with maximum bond size ``chi``, ordered by
         ``order``.
@@ -618,13 +619,21 @@ class ContractionTree:
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
+
+            if compress_late:
+                hg.compress(chi=chi, edges=hg.get_node(li))
+                hg.compress(chi=chi, edges=hg.get_node(ri))
+
             pi = tree_map[p] = hg.contract(li, ri)
             size_max = max(size_max, hg.node_size(pi))
-            hg.compress(chi=chi, edges=hg.get_node(pi))
+
+            if not compress_late:
+                hg.compress(chi=chi, edges=hg.get_node(pi))
 
         return size_max
 
-    def peak_size_compressed(self, chi, order='surface_order'):
+    def peak_size_compressed(self, chi, order='surface_order',
+                             compress_late=False, accel='auto'):
         """Compute the peak size of combined intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``.
@@ -632,7 +641,7 @@ class ContractionTree:
         if order == 'surface_order':
             order = self.surface_order
 
-        hg = self.get_hypergraph(accel='auto')
+        hg = self.get_hypergraph(accel=accel)
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), hg.nodes))
@@ -643,95 +652,18 @@ class ContractionTree:
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
-            pi = tree_map[p] = hg.contract(li, ri)
 
-            # measure peak size before compression
+            if compress_late:
+                hg.compress(chi=chi, edges=hg.get_node(li))
+                hg.compress(chi=chi, edges=hg.get_node(ri))
+
+            pi = tree_map[p] = hg.contract(li, ri)
             size_peak = max(size_peak, hg.total_node_size())
-            hg.compress(chi=chi, edges=hg.get_node(pi))
+
+            if not compress_late:
+                hg.compress(chi=chi, edges=hg.get_node(pi))
 
         return size_peak
-
-    def compressed_rank(self, multibond_factor=2, order='surface_order'):
-        """
-        """
-        if order == 'surface_order':
-            order = self.surface_order
-
-        ind_map = collections.defaultdict(oset)
-
-        # track indices that are compressed into others, and how many
-        compressed_away = oset(())
-        compressed_size = collections.defaultdict(lambda: 1)
-
-        # track the effective
-        clegs = {}
-        for node in self.gen_leaves():
-            inds = set(self.get_legs(node))
-            clegs[node] = inds
-            for ix in inds:
-                ind_map[ix].add(node)
-
-        if any(len(nodes) > 2 for nodes in ind_map.values()):
-            raise ValueError("Can't compute compressed rank for "
-                             "a hyper tensor network.")
-
-        def _compessed_result(p, ln, rn):
-            inds = (
-                clegs[ln]
-                .symmetric_difference(clegs[rn])
-                .difference(compressed_away)
-            )
-            clegs[p] = inds
-            return inds
-
-        def _add_connections(node):
-            for ix in clegs[node]:
-                ind_map[ix].add(node)
-
-        def _remove_connections(node):
-            for ix in clegs[node]:
-                ind_map[ix].discard(node)
-                if not ind_map[ix]:
-                    del ind_map[ix]
-
-        def _effective_rank(legs):
-            return sum(map(compressed_size.__getitem__, legs))
-
-        # total number of indices on any compressed intermediate
-        max_rank = max(map(len, self.inputs))
-
-        for p, l, r in self.traverse(order):
-
-            # get exact legs, minus indices compressed away in previous steps
-            compressed_legs = _compessed_result(p, l, r)
-
-            # check rank (pre compression)
-            max_rank = max(max_rank, _effective_rank(compressed_legs))
-
-            # merge children into parent
-            _remove_connections(l)
-            _remove_connections(r)
-            _add_connections(p)
-
-            # look for compressible indices -> those that join
-            # the same set of intermediate tensors
-            incidences = collections.defaultdict(list)
-            for ind in compressed_legs:
-                nodes = frozenset(ind_map[ind])
-                incidences[nodes].append(ind)
-
-            for nodes, (ind0, *inds) in incidences.items():
-                for ind in inds:
-                    # compress multi-bonds, if any, into first ind, allowing it
-                    #     to grow up to size `multibond_factor`
-                    compressed_size[ind0] = min(
-                        multibond_factor,
-                        compressed_size[ind0] + compressed_size[ind],
-                    )
-                    compressed_away.add(ind)
-                    del ind_map[ind]
-
-        return max_rank
 
     def remove_ind(self, ind, inplace=False):
         """Remove (i.e. slice) index ``ind`` from this contraction tree,
@@ -2007,6 +1939,7 @@ class ContractionTree:
         prefer_einsum=False,
         backend=None,
         check=False,
+        progbar=False,
     ):
         """Contract ``arrays`` with this tree. The order of the axes and
         output is assumed to be that of ``tree.inputs`` and ``tree.output``,
@@ -2032,7 +1965,13 @@ class ContractionTree:
         # temporary storage for intermediates
         temps = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
 
-        for p, l, r in self.traverse(order=order):
+        if progbar:
+            from tqdm import tqdm
+            contractions = tqdm(self.traverse(order=order), total=self.N - 1)
+        else:
+            contractions = self.traverse(order=order)
+
+        for p, l, r in contractions:
             # get input arrays for this contraction
             l_array = temps.pop(l)
             r_array = temps.pop(r)
@@ -2136,6 +2075,7 @@ class ContractionTree:
         prefer_einsum=False,
         backend=None,
         check=False,
+        progbar=False,
     ):
         """Contract ``arrays`` with this tree. This function takes *unsliced*
         arrays and handles the slicing, contractions and gathering. The order
@@ -2167,7 +2107,7 @@ class ContractionTree:
         if not self.sliced_inds:
             return self.contract_core(
                 arrays, order=order, prefer_einsum=prefer_einsum,
-                backend=backend, check=check,
+                backend=backend, check=check, progbar=progbar,
             )
 
         slices = (
@@ -2178,7 +2118,7 @@ class ContractionTree:
             for i in range(self.multiplicity)
         )
 
-        return self.gather_slices(slices, backend=backend)
+        return self.gather_slices(slices, backend=backend, progbar=progbar)
 
     def contract_mpi(
         self,
