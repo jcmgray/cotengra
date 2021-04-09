@@ -1,4 +1,4 @@
-<p align="center"><img src="https://i.imgur.com/3C5EAmr.png" alt="cotengra" width="60%" height="60%"></p>
+<p align="center"><img src="https://imgur.com/jMO138y.png" alt="cotengra" width="60%" height="60%"></p>
 
 # `CoTenGra`
 
@@ -70,7 +70,7 @@ If you want to automatically cache paths to disk, you'll need:
 
 * [diskcache](http://www.grantjenks.com/docs/diskcache/index.html)
 
-If you want to perform the contractions using ``cotengra`` itself you'll need: 
+If you want to perform the contractions using ``cotengra`` itself you'll need:
 
 * [autoray](https://github.com/jcmgray/autoray)
 

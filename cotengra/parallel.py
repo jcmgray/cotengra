@@ -16,7 +16,7 @@ def get_pool(n_workers=None, maybe_create=False, backend=None):
         backend = _DEFAULT_BACKEND
 
     if backend == 'concurrent.futures':
-        return _get_pool_cf(n_workers=n_workers, maybe_create=maybe_create)
+        return _get_pool_cf(n_workers=n_workers)
 
     if backend == 'dask':
         return _get_pool_dask(n_workers=n_workers, maybe_create=maybe_create)
@@ -183,9 +183,8 @@ class CachedProcessPoolExecutor:
 PoolHandler = CachedProcessPoolExecutor()
 
 
-def _get_pool_cf(n_workers=None, maybe_create=False):
-    if PoolHandler.is_initialized() or maybe_create:
-        return PoolHandler(n_workers)
+def _get_pool_cf(n_workers=None):
+    return PoolHandler(n_workers)
 
 
 # ---------------------------------- DASK ----------------------------------- #
