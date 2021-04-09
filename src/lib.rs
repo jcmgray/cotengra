@@ -269,10 +269,7 @@ impl HyperGraph {
     }
 
     fn total_node_size(&self) -> u128 {
-        self.nodes
-            .values()
-            .map(|es| self.edges_size(es))
-            .sum()
+        self.nodes.values().map(|es| self.edges_size(es)).sum()
     }
 
     fn get_node(&self, i: Node) -> Vec<String> {
@@ -486,7 +483,7 @@ impl HyperGraph {
 
         let mut loops = Vec::new();
         let mut seen: FxHashSet<Vec<Node>> = FxHashSet::default();
-        let mut queue: VecDeque<Vec<Node>> = (0..n as Node).map(|i| vec![i]).collect();
+        let mut queue: VecDeque<Vec<Node>> = self.nodes.keys().map(|&i| vec![i]).collect();
 
         let mut path: Vec<Node>;
         let mut key: Vec<Node>;
