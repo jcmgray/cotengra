@@ -534,9 +534,12 @@ def plot_tree_tent(tree, **kwargs):
 
 @functools.wraps(plot_tree)
 def plot_tree_span(tree, **kwargs):
-    kwargs.setdefault('edge_colormap', 'YlGnBu')
+    kwargs.setdefault('edge_colormap', 'viridis')
     kwargs.setdefault('edge_scale', 2)
+    kwargs.setdefault('edge_max_width', 3)
+    kwargs.setdefault('node_colormap', 'plasma')
     kwargs.setdefault('node_scale', 2)
+    kwargs.setdefault('node_max_size', 30)
     return plot_tree(tree, 'span', **kwargs)
 
 
