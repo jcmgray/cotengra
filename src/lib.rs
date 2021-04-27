@@ -268,6 +268,15 @@ impl HyperGraph {
         self.edges_size(&self.nodes[&i])
     }
 
+    fn bond_size(&self, i: Node, j: Node) -> u128 {
+        let es: Vec<String> = self.nodes[&i]
+            .iter()
+            .filter(|&e| self.nodes[&j].contains(e))
+            .cloned()
+            .collect();
+        return self.edges_size(&es)
+    }
+
     fn total_node_size(&self) -> u128 {
         self.nodes.values().map(|es| self.edges_size(es)).sum()
     }

@@ -2680,6 +2680,12 @@ class HyperGraph:
         """
         return prod(map(self.size_dict.__getitem__, es))
 
+    def bond_size(self, i, j):
+        """Get the combined, i.e. product, size of edges shared by nodes ``i``
+        and ``j``.
+        """
+        return self.edges_size(set(self.nodes[i]).intersection(self.nodes[j]))
+
     def node_size(self, i):
         """Get the size of the term represented by node ``i``.
         """
