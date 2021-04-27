@@ -1790,6 +1790,7 @@ class ContractionTree:
         priority='flops',
         make_output_contig=True,
         make_contracted_contig=True,
+        reset=True,
     ):
         """Set explicit orders for the contraction indices of this self to
         optimize for one of two things: contiguity in contracted ('k') indices,
@@ -1802,10 +1803,18 @@ class ContractionTree:
             re-sort previous nodes so are more likely to keep their ordering.
             E.g. for 'flops' the mostly costly contracton will be process last
             and thus will be guaranteed to have its indices exactly sorted.
-        make_output_contig
-        make_contracted_contig
+        make_output_contig : bool, optional
+            When processing a pairwise contraction, sort the parent contraction
+            indices so that the order of indices is the order they appear
+            from left to right in the two child (input) tensors.
+        make_contracted_contig : bool, optional
+            When processing a pairwise contraction, sort the child (input)
+            tensor indices so that all contracted indices appear contiguously.
+        reset : bool, optional
+            Reset all indices to the default order before sorting.
         """
-        self.reset_contraction_indices()
+        if reset:
+            self.reset_contraction_indices()
 
         if priority == 'flops':
             nodes = sorted(
