@@ -2210,7 +2210,7 @@ def _slice_and_reconfigure_tree(tree, *args, **kwargs):
 def _get_tree_info(tree):
     return {
         'flops': tree.total_flops(),
-        'write': tree.total_flops(),
+        'write': tree.total_write(),
         'size': tree.max_size(),
         'sliced_inds': frozenset(tree.sliced_inds),
     }
