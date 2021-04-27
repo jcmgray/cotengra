@@ -481,7 +481,7 @@ def rand_equation(
     for _ in range(n_out):
         ind = next(inds)
         output.append(ind)
-        where = np.random.choice(np.arange(n), size=2, replace=False)
+        where = np.random.choice(np.arange(n), size=1, replace=False)
         for i in where:
             inputs[i].append(ind)
 
