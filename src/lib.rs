@@ -360,7 +360,7 @@ impl HyperGraph {
             }
         }
         for (_, es) in self.work_incidences.drain().collect_vec() {
-            if es.len() > 1 {
+            if es.len() == 2 {
                 let new_size = self.edges_size(&es);
                 let mut es_it = es.into_iter();
                 let e0 = es_it.next().unwrap();

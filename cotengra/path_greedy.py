@@ -251,8 +251,8 @@ class GreedyCompressed:
         self.sgsizes = {i: 1 for i in range(len(inputs))}
 
         # populate initial scores with contractions among leaves
-        for _, nodes in self.hg.edges.items():
-            if len(nodes) == 2:
+        for _, edge_nodes in self.hg.edges.items():
+            for nodes in itertools.combinations(edge_nodes, 2):
                 candidate = (self._score(*nodes), *nodes)
                 heapq.heappush(self.candidates, candidate)
 
@@ -280,8 +280,7 @@ class GreedyCompressed:
             # assess / re-assess new and also neighboring contractions
             #     n.b. duplicate scores should be lower and heap-popped first
             for e in self.hg.neighbor_edges(i12):
-                nodes = self.hg.get_edge(e)
-                if len(nodes) == 2:
+                for nodes in itertools.combinations(self.hg.get_edge(e), 2):
                     candidate = (self._score(*nodes), *nodes)
                     heapq.heappush(self.candidates, candidate)
 

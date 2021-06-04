@@ -601,7 +601,7 @@ class ContractionTree:
         return math.log2(self.max_size())
 
     def max_size_compressed(self, chi, order='surface_order',
-                            compress_late=False):
+                            compress_late=True):
         """Compute the maximum sized tensor produced when a compressed
         contraction is performed with maximum bond size ``chi``, ordered by
         ``order``.
@@ -621,6 +621,7 @@ class ContractionTree:
             ri = tree_map[r]
 
             if compress_late:
+                # compress just before we contract tensors
                 hg.compress(chi=chi, edges=hg.get_node(li))
                 hg.compress(chi=chi, edges=hg.get_node(ri))
 
@@ -628,12 +629,13 @@ class ContractionTree:
             size_max = max(size_max, hg.node_size(pi))
 
             if not compress_late:
+                # compress as soon as we can after contracting tensors
                 hg.compress(chi=chi, edges=hg.get_node(pi))
 
         return size_max
 
     def peak_size_compressed(self, chi, order='surface_order',
-                             compress_late=False, accel='auto'):
+                             compress_late=True, accel='auto'):
         """Compute the peak size of combined intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``.
@@ -2812,7 +2814,7 @@ class HyperGraph:
                 incidences[nodes].append(e)
 
         for es in incidences.values():
-            if len(es) > 1:
+            if len(es) == 2:
                 # combine edges into first, capping size at `chi`
                 new_size = self.edges_size(es)
                 e_keep, *es_del = es
