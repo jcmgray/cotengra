@@ -67,10 +67,6 @@ If you want to experiment with other algorithms then the following can be used:
 The latter two are both accessed simply using their command line interface and so the following executables should be placed on the path somewhere:
 [`quickbb_64`, `flow_cutter_pace17`].
 
-If you want to automatically cache paths to disk, you'll need:
-
-* [diskcache](http://www.grantjenks.com/docs/diskcache/index.html)
-
 If you want to perform the contractions using ``cotengra`` itself you'll need:
 
 * [autoray](https://github.com/jcmgray/autoray)

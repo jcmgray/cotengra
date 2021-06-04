@@ -1,7 +1,9 @@
-import operator
-import functools
+import pickle
+import pathlib
 import itertools
 import collections
+from functools import reduce
+from operator import or_
 
 try:
     from cytoolz import groupby, interleave, unique
@@ -294,7 +296,7 @@ class BitMembers:
     def frommembers(cls, bitset, it=()):
         self = object.__new__(cls)
         self.bitset = bitset
-        self.i = functools.reduce(operator.or_, map(self.bitset.asint, it), 0)
+        self.i = reduce(or_, map(self.bitset.asint, it), 0)
         return self
 
     def __int__(self):
@@ -383,8 +385,7 @@ class BitMembers:
     __xor__ = symmetric_difference
 
     def update(self, *others):
-        for other in others:
-            self.i |= other.i
+        self.i = reduce(or_, (o.i for o in others), self.i)
 
     __ior__ = update
 
@@ -407,6 +408,57 @@ try:
 
 except ImportError:
     pass
+
+
+class DiskDict:
+    """A simple persistent dict.
+    """
+
+    __slots__ = ('_directory', '_mem_cache', '_path')
+
+    def __init__(self, directory=None):
+        self._mem_cache = {}
+        self._directory = directory
+        if directory is not None:
+            self._path = pathlib.Path(directory)
+            self._path.mkdir(parents=True, exist_ok=True)
+
+    def clear(self):
+        self._mem_cache.clear()
+        if self._directory is not None:
+            for p in self._path.glob('*'):
+                p.unlink()
+
+    def cleanup(self, delete_dir=False):
+        self.clear()
+        if delete_dir and (self._directory is not None):
+            self._path.rmdir()
+
+    def __contains__(self, k):
+        return (k in self._mem_cache) or (
+            self._directory is not None and
+            self._path.joinpath(k).exists()
+        )
+
+    def __setitem__(self, k, v):
+        self._mem_cache[k] = v
+        if self._directory is not None:
+            fname = self._path.joinpath(k)
+            with open(fname, 'wb+') as f:
+                pickle.dump(v, f)
+
+    def __getitem__(self, k):
+        try:
+            return self._mem_cache[k]
+        except KeyError:
+            if self._directory is None:
+                raise
+            fname = self._path.joinpath(k)
+            if not fname.exists():
+                raise
+            with open(fname, 'rb') as f:
+                self._mem_cache[k] = v = pickle.load(f)
+                return v
 
 
 def rand_equation(

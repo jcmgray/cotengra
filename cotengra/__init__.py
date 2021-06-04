@@ -74,6 +74,7 @@ def ReusableHyperCompressedOptimizer(
     chi,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
     path_order='surface',
+    set_surface_order=True,
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
@@ -81,7 +82,8 @@ def ReusableHyperCompressedOptimizer(
     """
     minimize = f"compressed-{chi}"
     return ReusableHyperOptimizer(
-        methods=methods, path_order=path_order, minimize=minimize, **kwargs)
+        methods=methods, path_order=path_order, minimize=minimize,
+        set_surface_order=set_surface_order, **kwargs)
 
 
 __all__ = (
@@ -133,6 +135,7 @@ __all__ = (
 def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
     optimizer = HyperOptimizer(**opts)
     return optimizer(inputs, output, size_dict, memory_limit)
+
 
 try:
     register_path_fn(

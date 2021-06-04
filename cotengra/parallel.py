@@ -1,3 +1,4 @@
+import atexit
 import inspect
 import numbers
 import warnings
@@ -14,6 +15,10 @@ def get_pool(n_workers=None, maybe_create=False, backend=None):
 
     if backend is None:
         backend = _DEFAULT_BACKEND
+
+    if backend == 'loky':
+        get_reusable_executor = get_loky_get_reusable_executor()
+        return get_reusable_executor(max_workers=n_workers)
 
     if backend == 'concurrent.futures':
         return _get_pool_cf(n_workers=n_workers)
@@ -33,7 +38,10 @@ def _infer_backed_cached(pool_class):
     path = pool_class.__module__.split(".")
 
     if path[0] == "concurrent":
-        return "'concurrent.futures'"
+        return "concurrent.futures"
+
+    if path[0] == "joblib":
+        return "loky"
 
     if path[0] == "distributed":
         return "dask"
@@ -100,6 +108,9 @@ def parse_parallel_arg(parallel):
         return get_pool(n_workers=parallel, maybe_create=True,
                         backend=_DEFAULT_BACKEND)
 
+    if parallel == 'loky':
+        return get_pool(maybe_create=True, backend='loky')
+
     if parallel == 'concurrent.futures':
         return get_pool(maybe_create=True, backend='concurrent.futures')
 
@@ -154,6 +165,18 @@ def should_nest(pool):
     return False
 
 
+# ---------------------------------- loky ----------------------------------- #
+
+
+@functools.lru_cache(1)
+def get_loky_get_reusable_executor():
+    try:
+        from loky import get_reusable_executor
+    except ImportError:
+        from joblib.externals.loky import get_reusable_executor
+    return get_reusable_executor
+
+
 # --------------------------- concurrent.futures ---------------------------- #
 
 
@@ -179,12 +202,21 @@ class CachedProcessPoolExecutor:
             self._pool.shutdown()
             self._pool = None
 
+    def __del__(self):
+        self.shutdown()
+
 
 PoolHandler = CachedProcessPoolExecutor()
 
 
+@atexit.register
+def _shutdown_cached_process_pool():
+    PoolHandler.shutdown()
+
+
 def _get_pool_cf(n_workers=None):
     return PoolHandler(n_workers)
+
 
 
 # ---------------------------------- DASK ----------------------------------- #
@@ -222,7 +254,6 @@ def _get_pool_dask(n_workers=None, maybe_create=False):
         from dask.distributed import LocalCluster, Client
         import tempfile
         import shutil
-        import atexit
 
         local_directory = tempfile.mkdtemp()
         lc = LocalCluster(n_workers=n_workers, threads_per_worker=1,

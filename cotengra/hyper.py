@@ -4,9 +4,10 @@ import warnings
 import importlib
 from math import log2, log10
 
-from opt_einsum.paths import PathOptimizer
+from opt_einsum.paths import PathOptimizer, linear_to_ssa
 
-from .core import get_score_fn
+from .core import ContractionTree, get_score_fn
+from .utils import DiskDict
 from .parallel import parse_parallel_arg, get_n_workers, submit, should_nest
 from .plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 
@@ -202,7 +203,11 @@ class HyperOptimizer(PathOptimizer):
         The maximum number of trial contraction trees to generate.
         Default: 128.
     max_time : None or float, optional
-        The maximum amount of time to run for. Use ``None`` for no limit.
+        The maximum amount of time to run for. Use ``None`` for no limit. You
+        can also set an estimated execution 'rate' here like ``'rate:1e9'``
+        that will terminate the search when the estimated FLOPs of the best
+        contraction found divided by the rate is greater than the time spent
+        searching, allowing quick termination on easy contractions.
     parallel : 'auto', False, True, int, or distributed.Client
         Whether to parallelize the search.
     slicing_opts : dict, optional
@@ -435,6 +440,16 @@ class HyperOptimizer(PathOptimizer):
         # start a timer?
         if self.max_time is not None:
             t0 = time.time()
+            if isinstance(self.max_time, str):
+                rate = float(self.max_time.split(':')[1])
+                def reached_time_limit():
+                    return (time.time() - t0) > (self.best['flops'] / rate)
+            else:
+                def reached_time_limit():
+                    return (time.time() - t0) > self.max_time
+        else:
+            def reached_time_limit():
+                return False
 
         trial_fn, trial_args = self.setup(inputs, output, size_dict)
 
@@ -473,8 +488,7 @@ class HyperOptimizer(PathOptimizer):
                     pbar.set_description(progress_description(self.best))
 
             # check if we have run out of time
-            if (self.max_time is not None) and (time.time() > t0 +
-                                                self.max_time):
+            if reached_time_limit():
                 break
 
         if self.progbar:
@@ -568,21 +582,37 @@ class ReusableHyperOptimizer(PathOptimizer):
     opt_args
         Supplied to ``HyperOptimizer``.
     directory : None or str, optional
-        If specified use this directory as a persistent cache (requires
-        ``diskcache``).
+        If specified use this directory as a persistent cache.
+    overwrite : bool, optional
+        If ``True``, the optimizer will always run, overwriting old results in
+        the cache. This can be used to update paths with deleting the whole
+        cache.
+    set_surface_order : bool, optional
+        If ``True``, when reloading a path to turn into a ``ContractionTree``,
+        the 'surface order' of the path (used for compressed paths), will be
+        set manually to the order the disk path is.
     opt_kwargs
         Supplied to ``HyperOptimizer``.
     """
 
-    def __init__(self, *opt_args, directory=None, **opt_kwargs):
+    def __init__(
+        self,
+        *opt_args,
+        directory=None,
+        overwrite=False,
+        set_surface_order=False,
+        **opt_kwargs
+    ):
+        self._opt = None
         self._opt_args = opt_args
         self._opt_kwargs = opt_kwargs
-        self._cache = dict()
-        self._directory = directory
+        self._cache = DiskDict(directory)
+        self.overwrite = overwrite
+        self._set_surface_order = set_surface_order
 
-        if self._directory is not None:
-            import diskcache
-            self._dcache = diskcache.Cache(self._directory)
+    @property
+    def last_opt(self):
+        return self._opt
 
     def _hash_args(self, inputs, output, size_dict):
         """For space's sake create a condensed hash key.
@@ -597,34 +627,43 @@ class ReusableHyperOptimizer(PathOptimizer):
             sortedtuple(size_dict.items())
         ))).hexdigest()
 
+    def _hash_and_query(self, inputs, output, size_dict):
+        h = self._hash_args(inputs, output, size_dict)
+        missing = (self.overwrite or (h not in self._cache))
+        return h, missing
+
     def _compute_path(self, inputs, output, size_dict):
-        opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
-        path = opt(inputs, output, size_dict)
+        self._opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
+        path = self._opt(inputs, output, size_dict)
         return path
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        h = self._hash_args(inputs, output, size_dict)
-
-        # check the memory cache
-        if h not in self._cache:
-
-            if self._directory is not None:
-                # check the disk cache
-                if h in self._dcache:
-                    path = self._dcache[h]
-                else:
-                    path = self._compute_path(inputs, output, size_dict)
-
-                    # write to disk cache
-                    self._dcache[h] = path
-            else:
-                path = self._compute_path(inputs, output, size_dict)
-
-            # write to memory cache
-            self._cache[h] = path
-
+        h, missing = self._hash_and_query(inputs, output, size_dict)
+        if missing:
+            self._cache[h] = self._compute_path(inputs, output, size_dict)
         return self._cache[h]
 
-    def __del__(self):
-        if self._directory is not None:
-            self._dcache.close()
+    def search(self, inputs, output, size_dict):
+        h, missing = self._hash_and_query(inputs, output, size_dict)
+
+        if missing:
+            # run and immediately retrieve tree directly
+            self._cache[h] = self._compute_path(inputs, output, size_dict)
+            return self._opt.best['tree']
+
+        # reconstruct tree from path
+        path = self._cache[h]
+        if self._set_surface_order:
+            # need ssa_path to set order
+            ssa_path = linear_to_ssa(path)
+            tree = ContractionTree.from_path(
+                inputs, output, size_dict, ssa_path=ssa_path)
+            tree.set_surface_order_from_path(ssa_path)
+        else:
+            tree = ContractionTree.from_path(
+                inputs, output, size_dict, path=path)
+
+        return tree
+
+    def cleanup(self):
+        self._cache.cleanup()
