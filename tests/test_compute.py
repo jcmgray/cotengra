@@ -75,3 +75,29 @@ def test_rand_equation(
 
         y4 = tree.contract(arrays, check=True)
         assert_allclose(x, y4)
+
+
+def test_lazy_sliced_output_reduce():
+    inputs, output, shapes, size_dict = ctg.utils.rand_equation(
+        n=10, reg=5, n_out=3, d_max=2,
+        seed=666,
+    )
+    arrays = [np.random.rand(*s) for s in shapes]
+    opt = ctg.HyperOptimizer(max_repeats=32, methods=['greedy'])
+    tree = opt.search(inputs, output, size_dict)
+
+    # slice both inner and outer indices
+    tree.remove_ind_('g')
+    tree.remove_ind_('b')
+    tree.remove_ind_('y')
+    tree.remove_ind_('a')
+
+    # for such a quantity, sum(f(x)), the inner slice sum must be performed 1st
+    x = (tree.contract(arrays)**2).sum()
+
+    # ... so that the outer sum can be lazily generated correctly
+    y = 0.0
+    for chunk in tree.gen_output_chunks(arrays):
+        y += (chunk**2).sum()
+
+    assert y == pytest.approx(x)

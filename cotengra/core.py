@@ -741,8 +741,16 @@ class ContractionTree:
         tree.already_optimized.clear()
 
         tree.multiplicity = tree.multiplicity * d
-        tree.sliced_inds = tree.sliced_inds + (ind,)
-        tree.sliced_sizes = tree.sliced_sizes + (tree.size_dict[ind],)
+
+        # update the tuples of sliced indices and sliced sizes, but maintain
+        # the order such that output sliced indices always appear first
+        tree.sliced_inds, tree.sliced_sizes = zip(*sorted(
+            zip(
+                itertools.chain(tree.sliced_inds, (ind,)),
+                itertools.chain(tree.sliced_sizes, (tree.size_dict[ind],)),
+            ),
+            key=lambda x: (x[0] not in tree.output, x)
+        ))
 
         return tree
 
@@ -1356,15 +1364,71 @@ class ContractionTree:
     subtree_reconfigure_forest_ = functools.partialmethod(
         subtree_reconfigure_forest, inplace=True)
 
-    def slice(self, max_repeats=16, inplace=False, **slicing_opts):
+    def slice(
+        self,
+        target_size=None,
+        target_overhead=None,
+        target_slices=None,
+        temperature=0.01,
+        minimize='flops',
+        allow_outer=True,
+        max_repeats=16,
+        inplace=False,
+    ):
         """Slice this tree (turn some indices into indices which are explicitly
-        summed over rather than being part of contractions).
+        summed over rather than being part of contractions). The indices are
+        stored in ``tree.sliced_inds``, and the contraction width updated to
+        take account of the slicing. Calling ``tree.contract(arrays)`` moreover
+        which automatically perform the slicing and summation.
+
+        Parameters
+        ----------
+        target_size : int, optional
+            The target number of entries in the largest tensor of the sliced
+            contraction. The search algorithm will terminate after this is
+            reached.
+        target_slices : int, optional
+            The target or minimum number of 'slices' to consider - individual
+            contractions after slicing indices. The search algorithm will
+            terminate after this is breached.
+        target_overhead : float, optional
+            The target increase in total number of floating point operations.
+            For example, a value of ``2.0`` will terminate the search just
+            before the cost of computing all the slices individually breaches
+            twice that of computing the original contraction all at once.
+        temperature : float, optional
+            How much to randomize the repeated search.
+        minimize {'flops', 'size', ...}, optional
+            Which metric to score the overhead increase against.
+        allow_outer : bool, optional
+            Whether to allow slicing of outer indices.
+        max_repeats : int, optional
+            How many times to repeat the search with a slight randomization.
+        inplace : bool, optional
+            Whether the remove the indices from this tree inplace or not.
+
+        Returns
+        -------
+        ContractionTree
+
+        See Also
+        --------
+        SliceFinder, ContractionTree.slice_and_reconfigure
         """
         from .slicer import SliceFinder
 
         tree = self if inplace else self.copy()
 
-        sf = SliceFinder(tree, **slicing_opts)
+        sf = SliceFinder(
+            tree,
+            target_size=target_size,
+            target_overhead=target_overhead,
+            target_slices=target_slices,
+            temperature=temperature,
+            minimize=minimize,
+            allow_outer=allow_outer
+        )
+
         ix_sl, _ = sf.search(max_repeats)
         for ix in ix_sl:
             tree.remove_ind_(ix)
@@ -1379,6 +1443,7 @@ class ContractionTree:
         step_size=2,
         temperature=0.01,
         minimize='flops',
+        allow_outer=True,
         max_repeats=16,
         reconf_opts=None,
         progbar=False,
@@ -1428,6 +1493,7 @@ class ContractionTree:
                     temperature=temperature,
                     target_slices=step_size,
                     minimize=minimize,
+                    allow_outer=allow_outer,
                 )
                 if forested_reconf:
                     tree.subtree_reconfigure_forest_(**reconf_opts)
@@ -1455,6 +1521,7 @@ class ContractionTree:
         temperature=0.02,
         max_repeats=32,
         minimize='flops',
+        allow_outer=True,
         parallel='auto',
         progbar=False,
         inplace=False,
@@ -1535,6 +1602,7 @@ class ContractionTree:
                     'temperature': temperature,
                     'max_repeats': max_repeats,
                     'reconf_opts': reconf_opts,
+                    'allow_outer': allow_outer,
                 } for _ in range(num_trees)]
 
                 if pool is None:
@@ -2078,6 +2146,26 @@ class ContractionTree:
             return do("stack", arrays, axes, like=backend)
 
         return recursively_stack_chunks((), tuple(output_pos))
+
+    def gen_output_chunks(self, arrays, **kwargs):
+        """Generate each output chunk of the contraction - i.e. take care of
+        summing internally sliced indices only first. This assumes that the
+        ``sliced_inds`` are sorted by whether they appear in the output or not
+        (the default order). Useful for performing some kind of reduction over
+        the final tensor object like  ``fn(x).sum()`` without constructing the
+        entire thing.
+        """
+        stepsize = prod(
+            d for ix, d in zip(self.sliced_inds, self.sliced_sizes)
+            if ix not in self.output
+        )
+
+        for o in range(self.nslices // stepsize):
+            chunk = self.contract_slice(arrays, o * stepsize)
+            for j in range(1, stepsize):
+                i = o * stepsize + j
+                chunk = chunk + self.contract_slice(arrays, i, **kwargs)
+            yield chunk
 
     def contract(
         self,

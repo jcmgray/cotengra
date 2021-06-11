@@ -290,10 +290,14 @@ class SliceFinder:
             self.forbidden = set(info.output_subscript)
         else:
             self.cost0 = ContractionCosts.from_contraction_tree(info)
-            self.forbidden = info.output
+            self.forbidden = set(info.output)
 
-        if allow_outer:
-            self.forbidden = {}
+        if allow_outer == 'only':
+            # invert so only outer indices are allowed
+            self.forbidden = set(self.cost0.size_dict) - self.forbidden
+        elif allow_outer:  # is True
+            # no restrictions
+            self.forbidden = ()
 
         # the cache of possible slicings
         self.costs = {frozenset(): self.cost0}
@@ -308,7 +312,6 @@ class SliceFinder:
 
         self.minimize = minimize
         self._minimize_args = score_matcher.findall(self.minimize)[0]
-
 
     def _maybe_default(self, attr, value):
         if value is None:
@@ -395,6 +398,9 @@ class SliceFinder:
                 # penalize forbidden (outer) indices
                 (0 if ix not in self.forbidden else float('inf'))
             )
+            if ix in self.forbidden:
+                raise RuntimeError("Ran out of valid indices to slice.")
+
             next_ix_sl = ix_sl | frozenset([ix])
 
             # cache sliced contraction costs
