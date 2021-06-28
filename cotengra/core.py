@@ -164,10 +164,11 @@ class ContractionTree:
         # ... which we can fill in already for final / top node i.e.
         # the collection of all nodes
         self.root = frozenset(range(self.N))
-        self.add_node(self.root)
-        root_info = self.info[self.root]
-        root_info['keep'] = root_info['legs'] = self.output_legs
-        root_info['size'] = compute_size_by_dict(self.output, size_dict)
+        self.info[self.root] = {
+            'legs': self.output_legs,
+            'keep': self.output_legs,
+            'size': compute_size_by_dict(self.output, size_dict),
+        }
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -196,6 +197,9 @@ class ContractionTree:
         self.sliced_inds = self.sliced_sizes = ()
         self.sliced_inputs = frozenset()
 
+        # cache for compiled contraction cores
+        self.contraction_cores = {}
+
     def set_state_from(self, other):
         """Set the internal state of this tree to that of ``other``.
         """
@@ -206,7 +210,8 @@ class ContractionTree:
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
-        for attr in ('children', 'inputs_legs', 'output_legs'):
+        for attr in ('children', 'inputs_legs',
+                     'output_legs', 'contraction_cores'):
             setattr(self, attr, getattr(other, attr).copy())
 
         # dicts of mutable
@@ -334,7 +339,7 @@ class ContractionTree:
 
         return tree
 
-    def add_node(self, node, check=False):
+    def _add_node(self, node, check=False):
         if check:
             if len(self.info) > 2 * self.N - 1:
                 raise ValueError("There are too many children already.")
@@ -346,7 +351,7 @@ class ContractionTree:
 
         self.info.setdefault(node, dict())
 
-    def remove_node(self, node):
+    def _remove_node(self, node):
         """Remove ``node`` from this tree and update the flops and maximum size
         if tracking them respectively. Inplace operation.
         """
@@ -667,96 +672,7 @@ class ContractionTree:
 
         return size_peak
 
-    def remove_ind(self, ind, inplace=False):
-        """Remove (i.e. slice) index ``ind`` from this contraction tree,
-        taking care to update all relevant information about each node.
-        """
-        tree = self if inplace else self.copy()
-
-        # make sure all flops and size information has been populated
-        tree.total_flops()
-        tree.total_write()
-        tree.max_size()
-
-        d = tree.size_dict[ind]
-        s_ind = self.bitset_edges.frommembers((ind,))
-
-        for node, node_info in tree.info.items():
-
-            # if ind doesn't feature in this node (contraction) nothing to do
-            involved = tree.get_involved(node)
-
-            # inputs can have leg indices that are not involved so
-            legs = tree.get_legs(node)
-
-            if not ((s_ind & involved) or (s_ind & legs)):
-                continue
-
-            # else update all the relevant information about this node
-            node_info['involved'] = involved.difference(s_ind)
-            removed = tree.get_removed(node)
-
-            # update information regarding node indices sets
-            if s_ind & legs:
-                # removing indices changes both flops and size of node
-                node_info['legs'] = legs.difference(s_ind)
-
-                old_size = tree.get_size(node)
-                tree._sizes.discard(old_size)
-                new_size = old_size // d
-                tree._sizes.add(new_size)
-                node_info['size'] = new_size
-                tree._write += (-old_size + new_size)
-
-                # XXX: modifying 'keep' not stricly necessarily as its only
-                #     needed for ``legs = keep.intersection(involved)``?
-                keep = tree.get_keep(node)
-                node_info['keep'] = keep.difference(s_ind)
-            else:
-                # removing indices only changes flops
-                node_info['removed'] = removed.difference(s_ind)
-
-            old_flops = tree.get_flops(node)
-            new_flops = old_flops // d
-            if len(removed) == 1:
-                # if ind was the last contracted index then have outer product
-                new_flops //= 2
-            node_info['flops'] = new_flops
-            tree._flops += (-old_flops + new_flops)
-
-            if len(node) == 1:
-                # its a leaf - corresponding input will be sliced
-                tree.sliced_inputs = tree.sliced_inputs | node
-                i = next(iter(node))
-                tree.inputs_legs[i] = tree.inputs_legs[i] - s_ind
-            elif len(node) == tree.N:
-                # root node
-                tree.output_legs = tree.output_legs - s_ind
-
-            # delete info we can't change
-            for k in ('inds', 'einsum_eq', 'can_dot',
-                      'tensordot_axes', 'tensordot_perm'):
-                tree.info[node].pop(k, None)
-
-        tree.already_optimized.clear()
-
-        tree.multiplicity = tree.multiplicity * d
-
-        # update the tuples of sliced indices and sliced sizes, but maintain
-        # the order such that output sliced indices always appear first
-        tree.sliced_inds, tree.sliced_sizes = zip(*sorted(
-            zip(
-                itertools.chain(tree.sliced_inds, (ind,)),
-                itertools.chain(tree.sliced_sizes, (tree.size_dict[ind],)),
-            ),
-            key=lambda x: (x[0] not in tree.output, x)
-        ))
-
-        return tree
-
-    remove_ind_ = functools.partialmethod(remove_ind, inplace=True)
-
-    def contract_pair(self, x, y, check=False):
+    def contract_nodes_pair(self, x, y, check=False):
         """Contract node ``x`` with node ``y`` in the tree to create a new
         parent node.
         """
@@ -764,7 +680,7 @@ class ContractionTree:
 
         # make sure info entries exist for all (default dict)
         for node in (x, y, parent):
-            self.add_node(node, check=check)
+            self._add_node(node, check=check)
 
         # enforce left ordering of 'heaviest' subtrees
         nx, ny = len(x), len(y)
@@ -801,13 +717,13 @@ class ContractionTree:
             return next(iter(nodes))
 
         if len(nodes) == 2:
-            return self.contract_pair(*nodes, check=check)
+            return self.contract_nodes_pair(*nodes, check=check)
 
         # create the bottom and top nodes
         grandparent = frozenset.union(*nodes)
-        self.add_node(grandparent, check=check)
+        self._add_node(grandparent, check=check)
         for node in nodes:
-            self.add_node(node, check=check)
+            self._add_node(node, check=check)
 
         # if more than two nodes need to find the path to fill in between
         #         \
@@ -1033,6 +949,96 @@ class ContractionTree:
 
         return tuple(sub_leaves), tuple(branches)
 
+    def remove_ind(self, ind, inplace=False):
+        """Remove (i.e. slice) index ``ind`` from this contraction tree,
+        taking care to update all relevant information about each node.
+        """
+        tree = self if inplace else self.copy()
+
+        # make sure all flops and size information has been populated
+        tree.total_flops()
+        tree.total_write()
+        tree.max_size()
+
+        d = tree.size_dict[ind]
+        s_ind = self.bitset_edges.frommembers((ind,))
+
+        for node, node_info in tree.info.items():
+
+            # if ind doesn't feature in this node (contraction) nothing to do
+            involved = tree.get_involved(node)
+
+            # inputs can have leg indices that are not involved so
+            legs = tree.get_legs(node)
+
+            if not ((s_ind & involved) or (s_ind & legs)):
+                continue
+
+            # else update all the relevant information about this node
+            node_info['involved'] = involved.difference(s_ind)
+            removed = tree.get_removed(node)
+
+            # update information regarding node indices sets
+            if s_ind & legs:
+                # removing indices changes both flops and size of node
+                node_info['legs'] = legs.difference(s_ind)
+
+                old_size = tree.get_size(node)
+                tree._sizes.discard(old_size)
+                new_size = old_size // d
+                tree._sizes.add(new_size)
+                node_info['size'] = new_size
+                tree._write += (-old_size + new_size)
+
+                # XXX: modifying 'keep' not stricly necessarily as its only
+                #     needed for ``legs = keep.intersection(involved)``?
+                keep = tree.get_keep(node)
+                node_info['keep'] = keep.difference(s_ind)
+            else:
+                # removing indices only changes flops
+                node_info['removed'] = removed.difference(s_ind)
+
+            old_flops = tree.get_flops(node)
+            new_flops = old_flops // d
+            if len(removed) == 1:
+                # if ind was the last contracted index then have outer product
+                new_flops //= 2
+            node_info['flops'] = new_flops
+            tree._flops += (-old_flops + new_flops)
+
+            if len(node) == 1:
+                # its a leaf - corresponding input will be sliced
+                tree.sliced_inputs = tree.sliced_inputs | node
+                i = next(iter(node))
+                tree.inputs_legs[i] = tree.inputs_legs[i] - s_ind
+            elif len(node) == tree.N:
+                # root node
+                tree.output_legs = tree.output_legs - s_ind
+
+            # delete info we can't change
+            for k in ('inds', 'einsum_eq', 'can_dot',
+                      'tensordot_axes', 'tensordot_perm'):
+                tree.info[node].pop(k, None)
+
+        tree.multiplicity = tree.multiplicity * d
+
+        # update the tuples of sliced indices and sliced sizes, but maintain
+        # the order such that output sliced indices always appear first
+        tree.sliced_inds, tree.sliced_sizes = zip(*sorted(
+            zip(
+                itertools.chain(tree.sliced_inds, (ind,)),
+                itertools.chain(tree.sliced_sizes, (tree.size_dict[ind],)),
+            ),
+            key=lambda x: (x[0] not in tree.output, x)
+        ))
+
+        tree.already_optimized.clear()
+        tree.contraction_cores.clear()
+
+        return tree
+
+    remove_ind_ = functools.partialmethod(remove_ind, inplace=True)
+
     def calc_subtree_candidates(self, pwr=2, what='flops'):
         candidates = list(self.children)
 
@@ -1184,7 +1190,7 @@ class ContractionTree:
                         current_cost = max(current_cost, cost(node))
                     else:
                         current_cost += cost(node)
-                    tree.remove_node(node)
+                    tree._remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap
                 optimizer.cost_cap = current_cost
@@ -1205,6 +1211,9 @@ class ContractionTree:
         finally:
             if progbar:
                 pbar.close()
+
+        # invalidate any compiled contractions
+        tree.contraction_cores.clear()
 
         return tree
 
@@ -1855,6 +1864,9 @@ class ContractionTree:
                       'tensordot_axes', 'tensordot_perm'):
                 self.info[node].pop(k, None)
 
+        # invalidate any compiled contractions
+        self.contraction_cores.clear()
+
     def sort_contraction_indices(
         self,
         priority='flops',
@@ -1938,6 +1950,9 @@ class ContractionTree:
                     r_inds = "".join(sorted(self.get_legs(r), key=rsort))
                     self.info[r]['inds'] = r_inds
 
+        # invalidate any compiled contractions
+        self.contraction_cores.clear()
+
     def print_contractions(self, sort=None, show_brackets=True):
         """Print each pairwise contraction, with colorized indices (if
         `colorama` is installed), and other information.
@@ -2011,7 +2026,7 @@ class ContractionTree:
 
     # --------------------- Performing the Contraction ---------------------- #
 
-    def contract_core(
+    def _contract_core(
         self,
         arrays,
         order=None,
@@ -2020,27 +2035,6 @@ class ContractionTree:
         check=False,
         progbar=False,
     ):
-        """Contract ``arrays`` with this tree. The order of the axes and
-        output is assumed to be that of ``tree.inputs`` and ``tree.output``,
-        but with sliced indices removed. This functon contracts the core tree
-        and thus if indices have been sliced the arrays supplied need to be
-        sliced as well.
-
-        Parameters
-        ----------
-        arrays : sequence of array
-            The arrays to contract.
-        order : str or callable, optional
-            Supplied to :meth:`ContractionTree.traverse`.
-        prefer_einsum : bool, optional
-            Prefer to use ``einsum`` for pairwise contractions, even if
-            ``tensordot`` can perform the contraction.
-        backend : str, optional
-            What library to use for ``einsum`` and ``transpose``, will be
-            automatically inferred from the arrays if not given.
-        check : bool, optional
-            Perform some basic error checks.
-        """
         # temporary storage for intermediates
         temps = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
 
@@ -2080,6 +2074,61 @@ class ContractionTree:
             temps[p] = p_array
 
         return p_array
+
+    def contract_core(
+        self,
+        arrays,
+        order=None,
+        prefer_einsum=False,
+        backend=None,
+        autojit=False,
+        check=False,
+        progbar=False,
+    ):
+        """Contract ``arrays`` with this tree. The order of the axes and
+        output is assumed to be that of ``tree.inputs`` and ``tree.output``,
+        but with sliced indices removed. This functon contracts the core tree
+        and thus if indices have been sliced the arrays supplied need to be
+        sliced as well.
+
+        Parameters
+        ----------
+        arrays : sequence of array
+            The arrays to contract.
+        order : str or callable, optional
+            Supplied to :meth:`ContractionTree.traverse`.
+        prefer_einsum : bool, optional
+            Prefer to use ``einsum`` for pairwise contractions, even if
+            ``tensordot`` can perform the contraction.
+        backend : str, optional
+            What library to use for ``einsum`` and ``transpose``, will be
+            automatically inferred from the arrays if not given.
+        autojit : bool, optional
+            Whether to use ``autoray.autojit`` to jit compile the expression.
+        check : bool, optional
+            Perform some basic error checks.
+        progbar : bool, optional
+            Show progress through the contraction.
+        """
+        if not autojit:
+            return self._contract_core(
+                arrays, order=order, prefer_einsum=prefer_einsum,
+                backend=backend, check=check, progbar=progbar,
+            )
+
+        try:
+            fn = self.contraction_cores[order, prefer_einsum]
+        except KeyError:
+            from autoray import autojit
+            fn = self.contraction_cores[order, prefer_einsum] = autojit(
+                functools.partial(
+                    self._contract_core,
+                    order=order,
+                    prefer_einsum=prefer_einsum,
+                )
+            )
+
+        return fn(arrays, backend=backend)
 
     def slice_arrays(self, arrays, i):
         """Take ``arrays`` and slice the relevant inputs according to
@@ -2147,7 +2196,7 @@ class ContractionTree:
 
         return recursively_stack_chunks((), tuple(output_pos))
 
-    def gen_output_chunks(self, arrays, **kwargs):
+    def gen_output_chunks(self, arrays, **contract_opts):
         """Generate each output chunk of the contraction - i.e. take care of
         summing internally sliced indices only first. This assumes that the
         ``sliced_inds`` are sorted by whether they appear in the output or not
@@ -2155,16 +2204,18 @@ class ContractionTree:
         the final tensor object like  ``fn(x).sum()`` without constructing the
         entire thing.
         """
+        # consecutive slices of size ``stepsize`` all belong to the same output
+        # block because the sliced indices are sorted output first
         stepsize = prod(
             d for ix, d in zip(self.sliced_inds, self.sliced_sizes)
             if ix not in self.output
         )
 
         for o in range(self.nslices // stepsize):
-            chunk = self.contract_slice(arrays, o * stepsize)
+            chunk = self.contract_slice(arrays, o * stepsize, **contract_opts)
             for j in range(1, stepsize):
                 i = o * stepsize + j
-                chunk = chunk + self.contract_slice(arrays, i, **kwargs)
+                chunk = chunk + self.contract_slice(arrays, i, **contract_opts)
             yield chunk
 
     def contract(
@@ -2512,7 +2563,7 @@ class PartitionTreeBuilder:
         rand_size_dict = jitter_dict(size_dict, random_strength)
         leaves = tuple(tree.gen_leaves())
         for node in leaves:
-            tree.add_node(node)
+            tree._add_node(node)
         output = oset(tree.output)
 
         while len(leaves) > groupsize:

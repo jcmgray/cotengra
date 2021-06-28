@@ -146,6 +146,7 @@ class ReconfTrialFn:
         else:
             tree.subtree_reconfigure_(**self.opts)
 
+        tree.already_optimized.clear()
         trial['flops'] = tree.total_flops()
         trial['write'] = tree.total_write()
         trial['size'] = tree.max_size()
@@ -175,6 +176,7 @@ class SlicedReconfTrialFn:
         else:
             tree.slice_and_reconfigure_(**self.opts)
 
+        tree.already_optimized.clear()
         trial['flops'] = tree.total_flops()
         trial['write'] = tree.total_write()
         trial['size'] = tree.max_size()
@@ -332,10 +334,14 @@ class HyperOptimizer(PathOptimizer):
                                     int(1.2 * self._num_workers))
 
     @property
+    def tree(self):
+        return self.best['tree']
+
+    @property
     def path(self):
         if self.path_order == 'surface':
-            return self.best['tree'].path_surface()
-        return self.best['tree'].path()
+            return self.tree.path_surface()
+        return self.tree.path()
 
     def setup(self, inputs, output, size_dict):
         trial_fn = find_tree
@@ -501,12 +507,12 @@ class HyperOptimizer(PathOptimizer):
         path it finds.
         """
         self._search(inputs, output, size_dict,)
-        return self.best['tree']
+        return self.tree
 
     def get_tree(self):
         """Return the ``ContractionTree`` for the best path found.
         """
-        return self.best['tree']
+        return self.tree
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
         """``opt_einsum`` interface, returns direct ``path``.
@@ -634,14 +640,17 @@ class ReusableHyperOptimizer(PathOptimizer):
 
     def _compute_path(self, inputs, output, size_dict):
         self._opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
-        path = self._opt(inputs, output, size_dict)
-        return path
+        self._opt._search(inputs, output, size_dict)
+        return {
+            'path': self._opt.path,
+            'sliced_inds': self._opt.tree.sliced_inds
+        }
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
         h, missing = self._hash_and_query(inputs, output, size_dict)
         if missing:
             self._cache[h] = self._compute_path(inputs, output, size_dict)
-        return self._cache[h]
+        return self._cache[h]['path']
 
     def search(self, inputs, output, size_dict):
         h, missing = self._hash_and_query(inputs, output, size_dict)
@@ -649,19 +658,23 @@ class ReusableHyperOptimizer(PathOptimizer):
         if missing:
             # run and immediately retrieve tree directly
             self._cache[h] = self._compute_path(inputs, output, size_dict)
-            return self._opt.best['tree']
+            return self._opt.tree
 
-        # reconstruct tree from path
-        path = self._cache[h]
+        # reconstruct tree
+        con = self._cache[h]
+
         if self._set_surface_order:
             # need ssa_path to set order
-            ssa_path = linear_to_ssa(path)
+            ssa_path = linear_to_ssa(con['path'])
             tree = ContractionTree.from_path(
                 inputs, output, size_dict, ssa_path=ssa_path)
             tree.set_surface_order_from_path(ssa_path)
         else:
             tree = ContractionTree.from_path(
-                inputs, output, size_dict, path=path)
+                inputs, output, size_dict, path=con['path'])
+
+        for ix in con['sliced_inds']:
+            tree.remove_ind_(ix)
 
         return tree
 
