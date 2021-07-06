@@ -8,8 +8,13 @@ edition = "2018"
 name = "cotengra"
 crate-type = ["cdylib"]
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
 [dependencies.pyo3]
-version = "0.13"
+version = "0.14"
 features = ["extension-module"]
 
 [dependencies.bit-set]

@@ -13,10 +13,11 @@ use FxHashMap as Dict;
 
 // ----------------------------------------------------------------------------
 
-#[pymodule(cotengra)]
+#[pymodule]
+#[pyo3(name = "cotengra")]
 fn cotengra(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(indexes, m)?)?;
     m.add_class::<HyperGraph>()?;
+    m.add_function(wrap_pyfunction!(indexes, m)?)?;
     m.add_function(wrap_pyfunction!(nodes_to_centrality, m)?)?;
     m.add_function(wrap_pyfunction!(edges_to_centrality, m)?)?;
     Ok(())
@@ -36,6 +37,7 @@ fn indexes(s: String) -> PyResult<Vec<usize>> {
 // ----------------------------------------------------------------------------
 
 #[pyclass]
+#[derive(Clone)]
 struct HyperGraph {
     #[pyo3(get)]
     nodes: Dict<Node, Vec<String>>,
@@ -254,6 +256,10 @@ impl HyperGraph {
         size_dict: Option<Dict<String, u128>>,
     ) -> HyperGraph {
         HyperGraph::from_nodes(nodes, output, size_dict)
+    }
+
+    fn copy(&self) -> HyperGraph {
+        self.clone()
     }
 
     fn get_num_nodes(&self) -> usize {

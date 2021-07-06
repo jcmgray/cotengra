@@ -249,6 +249,16 @@ class ContractionTree:
         """
         return self.multiplicity
 
+    @property
+    def nchunks(self):
+        """The number of 'chunks' - determined by the number of sliced output
+        indices.
+        """
+        return prod(
+            d for ix, d in zip(self.sliced_inds, self.sliced_sizes)
+            if ix in self.output
+        )
+
     def node_to_terms(self, node):
         """Turn a node -- a frozen set of ints -- into the corresponding terms
         -- a sequence of sets of str corresponding to input indices.
@@ -651,7 +661,7 @@ class ContractionTree:
         hg = self.get_hypergraph(accel=accel)
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
-        tree_map = dict(zip(self.gen_leaves(), hg.nodes))
+        tree_map = dict(zip(self.gen_leaves(), itertools.count()))
 
         size = hg.total_node_size()
         size_peak = size
@@ -2788,6 +2798,19 @@ class HyperGraph:
 
         self.compressed = set()
         self.node_counter = self.num_nodes - 1
+
+    def copy(self):
+        """Copy this ``HyperGraph``.
+        """
+        new = object.__new__(self.__class__)
+        new.inputs = self.inputs
+        new.output = self.output
+        new.size_dict = self.size_dict.copy()
+        new.nodes = {k: v.copy() for k, v in self.nodes.items()}
+        new.edges = {k: v.copy() for k, v in self.edges.items()}
+        new.compressed = self.compressed.copy()
+        new.node_counter = self.node_counter
+        return new
 
     @classmethod
     def from_edges(cls, edges, output=(), size_dict=()):
