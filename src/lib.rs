@@ -280,11 +280,25 @@ impl HyperGraph {
             .filter(|&e| self.nodes[&j].contains(e))
             .cloned()
             .collect();
-        return self.edges_size(&es)
+        self.edges_size(&es)
     }
 
     fn total_node_size(&self) -> u128 {
         self.nodes.values().map(|es| self.edges_size(es)).sum()
+    }
+
+    fn neighborhood_size(&self, nodes: Vec<Node>) -> u128 {
+        let mut nnodes: Vec<Node> = Vec::new();
+        for i in nodes {
+            for e in self.get_node(i) {
+                for j in self.get_edge(e) {
+                    if !nnodes.contains(&j) {
+                        nnodes.push(j)
+                    }
+                }
+            }
+        }
+        nnodes.into_iter().map(|i| self.node_size(i)).sum()
     }
 
     fn get_node(&self, i: Node) -> Vec<String> {

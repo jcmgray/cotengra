@@ -57,30 +57,35 @@ more 'even' way than purely random - requires ``chocolate``.
 
 
 def HyperCompressedOptimizer(
-    chi,
+    chi=None,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
     path_order='surface',
+    minimize='max-compressed',
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    minimize = f"compressed-{chi}"
+    if chi is not None:
+        minimize += f"-{chi}"
+
     return HyperOptimizer(
         methods=methods, path_order=path_order, minimize=minimize, **kwargs)
 
 
 def ReusableHyperCompressedOptimizer(
-    chi,
+    chi=None,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
     path_order='surface',
     set_surface_order=True,
+    minimize='max-compressed',
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    minimize = f"compressed-{chi}"
+    if chi is not None:
+        minimize += f"-{chi}"
     return ReusableHyperOptimizer(
         methods=methods, path_order=path_order, minimize=minimize,
         set_surface_order=set_surface_order, **kwargs)

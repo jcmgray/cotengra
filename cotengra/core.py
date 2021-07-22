@@ -661,7 +661,7 @@ class ContractionTree:
         hg = self.get_hypergraph(accel=accel)
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
-        tree_map = dict(zip(self.gen_leaves(), itertools.count()))
+        tree_map = {leaf: i for i, leaf in enumerate(self.gen_leaves())}
 
         size = hg.total_node_size()
         size_peak = size
@@ -670,12 +670,15 @@ class ContractionTree:
             li = tree_map[l]
             ri = tree_map[r]
 
+            size -= hg.neighborhood_size((li, ri))
+
             if compress_late:
-                hg.compress(chi=chi, edges=hg.get_node(li))
-                hg.compress(chi=chi, edges=hg.get_node(ri))
+                hg.compress(chi=chi, edges=hg.get_node(li) + hg.get_node(ri))
 
             pi = tree_map[p] = hg.contract(li, ri)
-            size_peak = max(size_peak, hg.total_node_size())
+
+            size += hg.neighborhood_size((pi,))
+            size_peak = max(size_peak, size)
 
             if not compress_late:
                 hg.compress(chi=chi, edges=hg.get_node(pi))
@@ -2425,8 +2428,19 @@ def score_size_compressed(trial, chi='auto'):
     return cr
 
 
+def score_peak_size_compressed(trial, chi='auto'):
+    tree = trial['tree']
+    if chi == 'auto':
+        chi = max(tree.size_dict.values())**2
+    size = tree.peak_size_compressed(chi)
+    cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
+    # overwrite the effective max size
+    trial['size'] = size
+    return cr
+
+
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|compressed)-*(\d*)"
+    r"(flops|size|write|combo|limit|max-compressed|peak-compressed)-*(\d*)"
 )
 
 
@@ -2444,9 +2458,12 @@ def get_score_fn(minimize):
     if which == 'limit':
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_limit, factor=factor)
-    if which == 'compressed':
+    if which == 'max-compressed':
         chi = int(param) if param else 'auto'
         return functools.partial(score_size_compressed, chi=chi)
+    if which == 'peak-compressed':
+        chi = int(param) if param else 'auto'
+        return functools.partial(score_peak_size_compressed, chi=chi)
     raise ValueError(f"No score function '{minimize}' found.")
 
 
@@ -2787,14 +2804,14 @@ class HyperGraph:
         self.size_dict = {} if size_dict is None else dict(size_dict)
 
         if isinstance(inputs, dict):
-            self.nodes = {int(k): list(v) for k, v in inputs.items()}
+            self.nodes = {int(k): tuple(v) for k, v in inputs.items()}
         else:
-            self.nodes = dict(enumerate(map(list, inputs)))
+            self.nodes = dict(enumerate(map(tuple, inputs)))
 
-        self.edges = collections.defaultdict(list)
+        self.edges = collections.defaultdict(tuple)
         for i, term in self.nodes.items():
             for e in term:
-                self.edges[e].append(i)
+                self.edges[e] += (i,)
 
         self.compressed = set()
         self.node_counter = self.num_nodes - 1
@@ -2806,8 +2823,8 @@ class HyperGraph:
         new.inputs = self.inputs
         new.output = self.output
         new.size_dict = self.size_dict.copy()
-        new.nodes = {k: v.copy() for k, v in self.nodes.items()}
-        new.edges = {k: v.copy() for k, v in self.edges.items()}
+        new.nodes = self.nodes.copy()
+        new.edges = self.edges.copy()
         new.compressed = self.compressed.copy()
         new.node_counter = self.node_counter
         return new
@@ -2815,16 +2832,16 @@ class HyperGraph:
     @classmethod
     def from_edges(cls, edges, output=(), size_dict=()):
         self = cls.__new__(cls)
-        self.edges = collections.defaultdict(list)
+        self.edges = collections.defaultdict(tuple)
         for e, e_nodes in edges.items():
-            self.edges[e] = list(e_nodes)
+            self.edges[e] = tuple(e_nodes)
         self.output = output
         self.size_dict = dict(size_dict)
 
-        self.nodes = collections.defaultdict(list)
+        self.nodes = collections.defaultdict(tuple)
         for e, e_nodes in self.edges.items():
             for i in e_nodes:
-                self.nodes[i].append(e)
+                self.nodes[i] += (e,)
 
         self.compressed = set()
         self.node_counter = self.num_nodes - 1
@@ -2863,6 +2880,15 @@ class HyperGraph:
         """Get the size of the term represented by node ``i``.
         """
         return self.edges_size(self.nodes[i])
+
+    def neighborhood_size(self, nodes):
+        """Get the size of nodes in the immediate neighborhood of ``nodes``.
+        """
+        neighborhood = {
+            nn
+            for n in nodes for e in self.get_node(n) for nn in self.get_edge(e)
+        }
+        return sum(map(self.node_size, neighborhood))
 
     def total_node_size(self):
         """Get the total size of all nodes.
@@ -2926,10 +2952,10 @@ class HyperGraph:
         """
         if node is None:
             node = self.next_node()
-        inds = list(inds)
+        inds = tuple(inds)
         self.nodes[node] = inds
         for e in inds:
-            self.edges[e].append(node)
+            self.edges[e] += (node,)
         return node
 
     def remove_node(self, i):
@@ -2937,8 +2963,7 @@ class HyperGraph:
         """
         inds = self.nodes.pop(i)
         for e in inds:
-            e_nodes = self.edges[e]
-            e_nodes.remove(i)
+            e_nodes = self.edges[e] = tuple(j for j in self.edges[e] if j != i)
             if not e_nodes:
                 del self.edges[e]
         return inds
@@ -2947,7 +2972,7 @@ class HyperGraph:
         """Remove edge ``e`` from this hypergraph.
         """
         for i in self.edges[e]:
-            self.nodes[i].remove(e)
+            self.nodes[i] = tuple(d for d in self.nodes[i] if d != e)
         del self.edges[e]
 
     def contract(self, i, j, node=None):
@@ -2970,7 +2995,7 @@ class HyperGraph:
 
         # find edges which are incident to the same set of nodes
         incidences = collections.defaultdict(list)
-        for e in edges:
+        for e in unique(edges):
             if e not in self.output:
                 nodes = frozenset(self.edges[e])
                 incidences[nodes].append(e)
