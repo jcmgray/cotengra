@@ -2440,31 +2440,40 @@ def score_peak_size_compressed(trial, chi='auto'):
 
 
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|max-compressed|peak-compressed)-*(\d*)"
-)
+    r"(flops|size|write|combo|limit|max-compressed|peak-compressed)-*(\d*)")
 
 
 def get_score_fn(minimize):
-    which, param = score_matcher.findall(minimize)[0]
+    match = score_matcher.fullmatch(minimize)
+    if not match:
+        raise ValueError(f"No score function '{minimize}' found.")
+
+    which, param = match.groups()
+
     if which == 'flops':
         return score_flops
+
     if which == 'write':
         return score_write
+
     if which == 'size':
         return score_size
+
     if which == 'combo':
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_combo, factor=factor)
+
     if which == 'limit':
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_limit, factor=factor)
+
     if which == 'max-compressed':
         chi = int(param) if param else 'auto'
         return functools.partial(score_size_compressed, chi=chi)
+
     if which == 'peak-compressed':
         chi = int(param) if param else 'auto'
         return functools.partial(score_peak_size_compressed, chi=chi)
-    raise ValueError(f"No score function '{minimize}' found.")
 
 
 def _describe_tree(tree):
