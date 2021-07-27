@@ -184,6 +184,19 @@ class SlicedReconfTrialFn:
         return trial
 
 
+class ComputeScore:
+
+    def __init__(self, fn, score_fn, score_compression):
+        self.fn = fn
+        self.score_fn = score_fn
+        self.score_compression = score_compression
+
+    def __call__(self, *args, **kwargs):
+        trial = self.fn(*args, **kwargs)
+        trial['score'] = self.score_fn(trial)**self.score_compression
+        return trial
+
+
 def progress_description(best):
     return(f"log2[SIZE]: {log2(best['size']):.2f} "
            f"log10[FLOPs]: {log10(best['flops']):.2f}")
@@ -362,14 +375,19 @@ class HyperOptimizer(PathOptimizer):
             self.reconf_opts.setdefault('parallel', nested_parallel)
             trial_fn = ReconfTrialFn(trial_fn, **self.reconf_opts)
 
+        # make sure score computation is performed worker side
+        trial_fn = ComputeScore(
+            trial_fn,
+            self._score_fn,
+            self.score_compression
+        )
+
         return trial_fn, (inputs, output, size_dict)
 
     def compute_score(self, trial):
         import random
-        trial['score'] = self._score_fn(trial)**self.score_compression
-
         # random smudge is for baytune/scikit-learn nan/inf bug
-        return trial['score'] * random.gauss(1.0, 1e-3)
+        return trial['score'] * random.gauss(1.0, 1e-6)
 
     def _maybe_cancel_futures(self):
         if self._pool is not None:
@@ -448,6 +466,7 @@ class HyperOptimizer(PathOptimizer):
             t0 = time.time()
             if isinstance(self.max_time, str):
                 rate = float(self.max_time.split(':')[1])
+
                 def reached_time_limit():
                     return (time.time() - t0) > (self.best['flops'] / rate)
             else:
