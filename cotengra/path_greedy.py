@@ -257,8 +257,13 @@ class GreedyCompressed:
                 heapq.heappush(self.candidates, candidate)
 
         while self.hg.get_num_nodes() > 2:
-            # get the next best score contraction
-            _, i1, i2 = heapq.heappop(self.candidates)
+
+            if not self.candidates:
+                # this occurs with disconneted sub-graphs -> pick any two
+                i1, i2, *_ = self.hg.nodes
+            else:
+                # get the next best score contraction
+                _, i1, i2 = heapq.heappop(self.candidates)
 
             if not (self.hg.has_node(i1) and self.hg.has_node(i2)):
                 # invalid - either node already contracted
