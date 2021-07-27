@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, BinaryHeap, VecDeque};
 
 use bit_set::BitSet;
 use itertools::Itertools;
@@ -20,6 +20,7 @@ fn cotengra(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(indexes, m)?)?;
     m.add_function(wrap_pyfunction!(nodes_to_centrality, m)?)?;
     m.add_function(wrap_pyfunction!(edges_to_centrality, m)?)?;
+    m.add_function(wrap_pyfunction!(optimal_compressed_path, m)?)?;
     Ok(())
 }
 
@@ -586,4 +587,118 @@ fn edges_to_centrality(
     let hg = HyperGraph::from_edges(edges, None, None);
     let neighbor_map = hg.build_neighbor_map();
     Ok(hg.simple_centrality(smoothness, p, mu, Some(neighbor_map)))
+}
+
+#[pyfunction]
+fn optimal_compressed_path(
+    chi: u128,
+    inputs: Vec<Vec<String>>,
+    output: Vec<String>,
+    size_dict: Dict<String, u128>,
+) -> Vec<(u32, u32)> {
+
+    let nodes: Dict<u32, Vec<String>> = inputs
+        .into_iter()
+        .enumerate()
+        // .map(|(i, term)| (2_u128.pow(i as u32), term))
+        .map(|(i, term)| (2_u32.pow(i as u32), term))
+        .collect();
+
+    let hg = HyperGraph::from_nodes(nodes, Some(output), Some(size_dict));
+    let mut ssa = hg.get_num_nodes() as u32;
+
+    let size0: u128 = hg.nodes.keys().map(|&n| hg.node_size(n)).sum();
+    let mut counter = 1..;
+    let mut c = counter.next().unwrap();
+    let mut queue: BinaryHeap<(usize, i128, u128)> = BinaryHeap::new();
+    queue.push((0, 0, c));
+    let mut cands: Dict<u128, (HyperGraph, Vec<(u32, u32)>, u128, u128)> = Dict::default();
+    cands.insert(c, (hg, Vec::new(), size0, size0));
+
+    let mut best_score: u128 = u128::MAX;
+    let mut best_ssa_path: Vec<(u32, u32)> = Vec::new();
+    let mut seen: Dict<BTreeSet<Node>, u128> = Dict::default();
+
+    let mut ij;
+    let mut i;
+    let mut j;
+    let mut hg_next;
+    let mut edges;
+    let mut i_size;
+    let mut j_size;
+    let mut ij_size;
+    let mut dsize;
+    let mut new_size;
+    let mut new_score;
+    let mut new_ssa_path;
+    let mut new_rank;
+
+    'outer: while let Some((_, _, c_cur)) = queue.pop() {
+        let (hg_cur, ssa_path, size, score) = cands.remove(&c_cur).unwrap();
+
+        // reached a completely contracted graph - check if the best
+        if hg_cur.get_num_nodes() == 1 {
+            if score < best_score {
+                best_score = score;
+                best_ssa_path = ssa_path;
+            }
+            continue;
+        }
+
+        // if we've reached this graph before with better score then skip
+        let key: BTreeSet<Node> = hg_cur.nodes.keys().cloned().collect();
+        if let Some(&seen_size) = seen.get(&key) {
+            if size >= seen_size {
+                continue 'outer;
+            }
+        }
+        seen.insert(key, size);
+
+        'inner: for (_, nodes) in &hg_cur.edges {
+            i = nodes[0];
+            j = nodes[1];
+            hg_next = hg_cur.clone();
+
+            // compress around pair and then contract
+            edges = hg_next
+                .get_node(i)
+                .iter()
+                .chain(hg_next.get_node(j).iter())
+                .cloned()
+                .collect();
+            hg_next.compress(chi, Some(edges));
+            ij = hg_next.contract(i, j, Some(i | j));
+
+            // compute sizes and scores
+            i_size = hg_cur.node_size(i);
+            j_size = hg_cur.node_size(j);
+            ij_size = hg_next.node_size(ij);
+            dsize = ij_size - i_size - j_size;
+            new_size = size + dsize;
+            new_score = score.max(new_size);
+
+            if new_score >= best_score {
+                continue 'inner;
+            }
+
+            // add the new hypergraph to the stack of potential condidates
+            c = counter.next().unwrap();
+            new_ssa_path = ssa_path.clone();
+            new_ssa_path.push((i, j));
+            new_rank = (new_ssa_path.len(), -(dsize as i128), c);
+            queue.push(new_rank);
+            cands.insert(c, (hg_next, new_ssa_path, new_size, new_score));
+        }
+    }
+
+    // convert the best path to the ssa node identifiers
+    let mut ssa_path: Vec<(u32, u32)> = Vec::new();
+    let mut ssa_lookup: Dict<u32, u32> = (0..ssa).map(|i| (2_u32.pow(i), i)).collect();
+    for (i, j) in best_ssa_path {
+        ij = i | j;
+        ssa_lookup.insert(ij, ssa);
+        ssa = ssa + 1;
+        ssa_path.push((ssa_lookup[&i], ssa_lookup[&j]));
+    }
+    ssa_path
 }

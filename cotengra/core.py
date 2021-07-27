@@ -15,6 +15,7 @@ from autoray import do
 from .utils import (
     MaxCounter,
     BitSet,
+    BitMembers,
     oset,
     groupby,
     interleave,
@@ -49,20 +50,6 @@ except ImportError:
     HyperGraphRust = None
 
 
-def is_valid_node(node):
-    """Check ``node`` is of type frozenset[int].
-    """
-    try:
-        if not isinstance(node, frozenset):
-            return False
-        el = next(iter(node))
-        if not isinstance(el, int):
-            return False
-        return True
-    except TypeError:
-        return False
-
-
 def cached_node_property(name):
     """Decorator for caching information about nodes.
     """
@@ -84,11 +71,29 @@ def to_ind_bitset(inds):
     return BitSet(inds)
 
 
-def inds_union(terms):
-    t0, *ts = terms
-    return t0.bitset.fromint(
-        functools.reduce(operator.or_, (t.i for t in ts), t0.i)
+def bitset_union(bs):
+    b0, *bs = bs
+    return b0.bitset.fromint(
+        functools.reduce(operator.or_, (t.i for t in bs), b0.i)
     )
+
+
+def get_bitset_single_node(node):
+    return node.i.bit_length() - 1
+
+
+def is_valid_node(node):
+    """Check ``node`` is of type ``BitMembers``.
+    """
+    try:
+        if not isinstance(node, BitMembers):
+            return False
+        el = next(iter(node))
+        if not isinstance(el, int):
+            return False
+        return True
+    except TypeError:
+        return False
 
 
 def get_with_default(k, obj, default):
@@ -130,12 +135,12 @@ class ContractionTree:
 
     Properties
     ----------
-    info : dict[frozenset[int], dict]
+    info : dict[BitMembers, dict]
         Information about the tree nodes. The key is the set of inputs (a
-        frozenset of inputs indices) the node contains. Or in other words, the
+        BitMembers of inputs indices) the node contains. Or in other words, the
         subgraph of the node. The value is a dictionary to cache information
         about effective 'leg' indices, size, flops of formation etc.
-    children : dict[frozenset[int], tuple[frozenset[int]]
+    children : dict[BitMembers[int], tuple[BitMembers[int]]
         Mapping of each node to two children.
     """
 
@@ -163,7 +168,8 @@ class ContractionTree:
 
         # ... which we can fill in already for final / top node i.e.
         # the collection of all nodes
-        self.root = frozenset(range(self.N))
+        self.bitset_nodes = BitSet(range(self.N))
+        self.root = self.bitset_nodes.supremum
         self.info[self.root] = {
             'legs': self.output_legs,
             'keep': self.output_legs,
@@ -206,7 +212,7 @@ class ContractionTree:
         # immutable properties
         for attr in ('inputs', 'output', 'size_dict', 'N', 'root',
                      'multiplicity', 'sliced_inds', 'sliced_sizes',
-                     'sliced_inputs', 'bitset_edges'):
+                     'sliced_inputs', 'bitset_edges', 'bitset_nodes'):
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
@@ -270,7 +276,7 @@ class ContractionTree:
         of size 1 each corresponding to a single input tensor.
         """
         for i in range(self.N):
-            yield frozenset((i,))
+            yield self.bitset_nodes.fromint(1 << i)
 
     @classmethod
     def from_path(cls, inputs, output, size_dict, *,
@@ -328,7 +334,7 @@ class ContractionTree:
             # filter out the subgraph induced by edge `e` (generally a pair)
             new_terms, merge = [], []
             for node in nodes:
-                term = inds_union(tree.node_to_terms(node))
+                term = bitset_union(tree.node_to_terms(node))
                 if e in term:
                     merge.append(node)
                 else:
@@ -357,7 +363,7 @@ class ContractionTree:
                 raise ValueError("There are too many branches already.")
             if not is_valid_node(node):
                 raise ValueError("{} is not a valid node - should be "
-                                 "frozenset[int].".format(node))
+                                 "BitMembers[int].".format(node))
 
         self.info.setdefault(node, dict())
 
@@ -384,7 +390,7 @@ class ContractionTree:
         """
         nodes_above = self.root.difference(node)
         terms_above = self.node_to_terms(nodes_above)
-        return inds_union((self.output_legs, *terms_above))
+        return bitset_union((self.output_legs, *terms_above))
 
     @cached_node_property('legs')
     def get_legs(self, node):
@@ -392,11 +398,11 @@ class ContractionTree:
         in ``node``.
         """
         if len(node) == 1:
-            return self.inputs_legs[next(iter(node))]
+            return self.inputs_legs[get_bitset_single_node(node)]
         try:
             involved = self.get_involved(node)
         except KeyError:
-            involved = inds_union(self.node_to_terms(node))
+            involved = bitset_union(self.node_to_terms(node))
         keep = self.get_keep(node)
         return involved.intersection(keep)
 
@@ -407,7 +413,7 @@ class ContractionTree:
         if len(node) == 1:
             return self.bitset_edges.infimum
         sub_legs = map(self.get_legs, self.children[node])
-        return inds_union(sub_legs)
+        return bitset_union(sub_legs)
 
     @cached_node_property('removed')
     def get_removed(self, node):
@@ -453,7 +459,7 @@ class ContractionTree:
 
         if len(node) == 1:
             # leaf indices are fixed
-            i, = node
+            i = get_bitset_single_node(node)
             if not self.sliced_inds:
                 return "".join(self.inputs[i])
             legs = self.get_legs(node)
@@ -698,13 +704,20 @@ class ContractionTree:
         # enforce left ordering of 'heaviest' subtrees
         nx, ny = len(x), len(y)
         # deterministically break ties
-        hx, hy = hash(x), hash(y)
+        hx, hy = -x.i, -y.i
 
         if (nx, hx) > (ny, hy):
             lr = (x, y)
         else:
             lr = (y, x)
+
+        lb = len(self.children)
+        if parent in self.children:
+            raise ValueError
         self.children[parent] = lr
+        la = len(self.children)
+        assert lb + 1 == la
+        assert parent == x | y
 
         if self.track_childless:
             self.childless.discard(parent)
@@ -733,7 +746,7 @@ class ContractionTree:
             return self.contract_nodes_pair(*nodes, check=check)
 
         # create the bottom and top nodes
-        grandparent = frozenset.union(*nodes)
+        grandparent = bitset_union(nodes)
         self._add_node(grandparent, check=check)
         for node in nodes:
             self._add_node(node, check=check)
@@ -761,7 +774,7 @@ class ContractionTree:
         temp_nodes = list(nodes)
         for p in path:
             to_contract = [
-                frozenset(temp_nodes.pop(i)) for i in sorted(p, reverse=True)
+                temp_nodes.pop(i) for i in sorted(p, reverse=True)
             ]
             temp_nodes.append(
                 self.contract_nodes(
@@ -841,7 +854,7 @@ class ContractionTree:
 
         Returns
         -------
-        generator[tuple[frozenset[frozenset[str]]]]
+        generator[tuple[BitMembers[int]]]
             The bottom up ordered sequence of tree merges, each a
             tuple of ``(parent, left_child, right_child)``.
 
@@ -882,7 +895,7 @@ class ContractionTree:
 
         Returns
         -------
-        generator[tuple[frozenset[frozenset[str]]]]
+        generator[tuple[BitMembers[int]]
             The top down ordered sequence of tree merges, each a
             tuple of ``(parent, left_child, right_child)``.
 
@@ -909,7 +922,7 @@ class ContractionTree:
 
         Parameters
         ----------
-        node : frozenset[int]
+        node : BitMembers[int]
             The node of the tree to start with.
         size : int
             How many subtree leaves to aim for.
@@ -922,9 +935,9 @@ class ContractionTree:
 
         Returns
         -------
-        sub_leaves : tuple[frozenset[int]]
+        sub_leaves : tuple[BitMembers[int]]
             Nodes which are subtree leaves.
-        branches : tuple[frozenset[int]]
+        branches : tuple[BitMembers[int]]
             Nodes which are between the subtree leaves and root.
         """
         # nodes which are subtree leaves
@@ -953,6 +966,7 @@ class ContractionTree:
             #     if we append it last then ``.pop(-1)`` above perform the
             #     depth first search sorting by node subgraph size
             l, r = self.children[p]
+
             queue.append(r)
             queue.append(l)
             branches.append(p)
@@ -1021,8 +1035,8 @@ class ContractionTree:
 
             if len(node) == 1:
                 # its a leaf - corresponding input will be sliced
-                tree.sliced_inputs = tree.sliced_inputs | node
-                i = next(iter(node))
+                i = get_bitset_single_node(node)
+                tree.sliced_inputs = tree.sliced_inputs | frozenset([i])
                 tree.inputs_legs[i] = tree.inputs_legs[i] - s_ind
             elif len(node) == tree.N:
                 # root node
@@ -1701,9 +1715,9 @@ class ContractionTree:
             (012, 3456789)
             0123456789
 
-        Where each integer represents a leaf (i.e. frozenset[str]).
+        Where each integer represents a leaf (i.e. BitMembers[str]).
         """
-        tups = {frozenset([i]): i for i in range(self.N)}
+        tups = dict(zip(self.gen_leaves(), range(self.N)))
 
         for parent, l, r in self.traverse(order=order):
             tups[parent] = tups[l], tups[r]
@@ -1744,7 +1758,7 @@ class ContractionTree:
         """Generate a ssa path from the contraction tree.
         """
         ssa_path = []
-        pos = {frozenset([i]): i for i in range(self.N)}
+        pos = dict(zip(self.gen_leaves(), range(self.N)))
 
         for parent, l, r in self.traverse(order=order):
             i, j = sorted((pos[l], pos[r]))
@@ -1806,7 +1820,7 @@ class ContractionTree:
         candidates = [
             {
                 # which intermedate nodes map to which leaf nodes
-                'map': {self.root: frozenset([l2])},
+                'map': {self.root: self.bitset_nodes.fromint(l2)},
                 # the leaf nodes in the spanning tree
                 'spine': {l1, l2},
             }
@@ -1834,7 +1848,8 @@ class ContractionTree:
 
                         # valid extension of spanning tree
                         candidates.append({
-                            'map': {child: frozenset([l2]), **cand['map']},
+                            'map': {child: self.bitset_nodes.fromint(l2),
+                                    **cand['map']},
                             'spine': cand['spine'] | {l1, l2},
                         })
 
@@ -2536,8 +2551,10 @@ class PartitionTreeBuilder:
 
             # skip straight to better method
             if subsize <= cutoff:
-                tree.contract_nodes([frozenset([x]) for x in subgraph],
-                                    optimize=sub_optimize, check=check)
+                tree.contract_nodes(
+                    [tree.bitset_nodes.fromint(1 << x) for x in subgraph],
+                    optimize=sub_optimize, check=check
+                )
                 continue
 
             # relative subgraph size
@@ -2570,12 +2587,17 @@ class PartitionTreeBuilder:
             # divide subgraph up e.g. if we enumerate the subgraph index sets
             # (0, 1, 2, 3, 4, 5, 6, 7, 8, ...) ->
             # ({0, 1, 3, 5, 6}, {2, 4}, {7, 8})
-            new_subgs = tuple(map(frozenset, separate(subgraph, membership)))
+            new_subgs = tuple(map(
+                tree.bitset_nodes.frommembers,
+                separate(subgraph, membership)
+            ))
 
             if len(new_subgs) == 1:
                 # no communities found - contract all remaining
-                tree.contract_nodes([frozenset([x]) for x in subgraph],
-                                    optimize=sub_optimize, check=check)
+                tree.contract_nodes(
+                    tuple(map(tree.bitset_nodes.fromint, subgraph)),
+                    optimize=sub_optimize, check=check
+                )
                 continue
 
             tree.contract_nodes(

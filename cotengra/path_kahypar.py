@@ -157,9 +157,11 @@ register_hyper_function(
         'imbalance': {'type': 'FLOAT', 'min': 0.001, 'max': 0.05},
         'mode': {'type': 'STRING', 'options': ['direct', 'recursive']},
         'objective': {'type': 'STRING', 'options': ['cut', 'km1']},
-        'groupsize': {'type': 'INT', 'min': 2, 'max': 10},
+        'groupsize': {'type': 'INT', 'min': 2, 'max': 64},
         'fix_output_nodes': {'type': 'STRING', 'options': ['auto', '']},
-        'compress': {'type': 'STRING', 'options': [0, 3, 10, 30, 100]}
+        'compress': {'type': 'STRING', 'options': [0, 3, 10, 30, 100]},
+        'sub_optimize': {'type': 'STRING', 'options': ['greedy',
+                                                       'greedy-compressed']},
     },
     constants={
         'random_strength': 0.0,

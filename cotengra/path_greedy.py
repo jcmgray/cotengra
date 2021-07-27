@@ -393,6 +393,9 @@ class GreedySpan:
         self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
         self.cents = self.hg.simple_centrality()
 
+        def region_choose_sorter(node):
+            return self.cents[node] + 1e-2 * random.random()
+
         if output:
             region = oset(self.hg.output_nodes())
         elif self.start == 'max':

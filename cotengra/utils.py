@@ -260,7 +260,7 @@ class MaxCounter:
 
 class BitSet:
 
-    __slots__ = ('members', 'map', 'size', 'infimum', 'supremum')
+    __slots__ = ('members', 'map', 'size', 'infimum', 'supremum', 'hashkey')
 
     def __init__(self, it):
         self.members = tuple(unique(it))
@@ -268,6 +268,7 @@ class BitSet:
         self.size = len(self.members)
         self.supremum = self.fromint(2**self.size - 1)
         self.infimum = self.fromint(0)
+        self.hashkey = hash(self.members)
 
     def asint(self, elem):
         return 1 << self.map[elem]
@@ -304,8 +305,14 @@ class BitMembers:
 
     __hash__ = __int__
 
+    # def __hash__(self):
+    #     return hash((self.bitset.hashkey, self.i))
+
     def __eq__(self, other):
-        return (self.bitset is other.bitset) and (self.i == other.i)
+        return (
+            (self.i == other.i) and
+            (self.bitset.hashkey == other.bitset.hashkey)
+        )
 
     def __len__(self):
         return f"{self.i:b}".count("1")
@@ -396,6 +403,9 @@ class BitMembers:
 
     __or__ = union
 
+    def __repr__(self):
+        return f"<BitMembers({list(self)})>"
+
 
 try:
     # accelerated bitmember iteration
@@ -405,6 +415,18 @@ try:
         return map(self.bitset.members.__getitem__, indexes(f"{self.i:b}"))
 
     BitMembers.__iter__ = fast_bitmember_iter
+
+except ImportError:
+    pass
+
+
+try:
+    from gmpy2 import popcount
+
+    def fast_bitmember_len(self):
+        return popcount(self.i)
+
+    BitMembers.__len__ = fast_bitmember_len
 
 except ImportError:
     pass
