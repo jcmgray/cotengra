@@ -301,6 +301,7 @@ def plot_tree(
     iterations=500,
     span=None,
     order=None,
+    order_y_pow=1.0,
     edge_scale=1.0,
     node_scale=1.0,
     highlight=(),
@@ -419,7 +420,7 @@ def plot_tree(
                     coo_i = pos[frozenset([ti])]
                     x_av += coo_i[0] / len(p)
                     y_av += coo_i[1] / len(p)
-                y_av = ymax + (i + 1) * (xmax - xmin) / tree.N
+                y_av = ymax + (xmax - xmin) * ((i + 1) / tree.N)**order_y_pow
                 pos[p] = (x_av, y_av)
 
         else:
