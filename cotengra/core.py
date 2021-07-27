@@ -2237,6 +2237,7 @@ class ContractionTree:
         order=None,
         prefer_einsum=False,
         backend=None,
+        autojit=False,
         check=False,
         progbar=False,
     ):
@@ -2270,13 +2271,13 @@ class ContractionTree:
         if not self.sliced_inds:
             return self.contract_core(
                 arrays, order=order, prefer_einsum=prefer_einsum,
-                backend=backend, check=check, progbar=progbar,
+                backend=backend, autojit=autojit, check=check, progbar=progbar,
             )
 
         slices = (
             self.contract_slice(
                 arrays, i, order=order, prefer_einsum=prefer_einsum,
-                backend=backend, check=check,
+                backend=backend, autojit=autojit, check=check,
             )
             for i in range(self.multiplicity)
         )
