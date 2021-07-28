@@ -683,9 +683,10 @@ class ContractionTree:
 
         # enforce left ordering of 'heaviest' subtrees
         nx, ny = len(x), len(y)
+        hx, hy = hash(x), hash(y)
 
         # deterministically break ties
-        if (nx, x) > (ny, y):
+        if (nx, hx) > (ny, hy):
             lr = (x, y)
         else:
             lr = (y, x)
