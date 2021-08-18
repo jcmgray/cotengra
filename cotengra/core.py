@@ -38,6 +38,7 @@ from .plot import (
     plot_tree_ring,
     plot_tree_tent,
     plot_tree_span,
+    plot_tree_rubberband,
     plot_contractions,
     plot_contractions_alt,
     plot_hypergraph,
@@ -2339,6 +2340,7 @@ class ContractionTree:
     plot_ring = plot_tree_ring
     plot_tent = plot_tree_tent
     plot_span = plot_tree_span
+    plot_rubberband = plot_tree_rubberband
     plot_contractions = plot_contractions
     plot_contractions_alt = plot_contractions_alt
 

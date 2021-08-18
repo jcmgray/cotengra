@@ -905,4 +905,83 @@ def plot_hypergraph(
                   'alpha': 0.5},
         )
 
+    if return_fig == 'info':
+        return fig, ax, pos
+
+    return _return_or_close_fig(fig, return_fig)
+
+
+def tree_to_hypernetx(tree, order=None):
+    import hypernetx as hnx
+    nodes = {}
+    for i, (p, l, r) in enumerate(tree.traverse(order=order)):
+        nodes[str(i)] = list(p)
+    return hnx.Hypergraph(nodes)
+
+
+def plot_tree_rubberband(
+    tree,
+    order=None,
+    colormap='rainbow',
+    with_edge_labels=None,
+    with_node_labels=None,
+    highlight=(),
+    centrality=False,
+    layout=None,
+    node_size=None,
+    node_color=(.5, .5, .5, 1.0),
+    edge_alpha=1 / 3,
+    edge_style='solid',
+    hyperedge_style='dashed',
+    draw_edge_labels=None,
+    edge_labels_font_size=8,
+    edge_labels_font_family='monospace',
+    iterations=500,
+    ax=None,
+    figsize=(5, 5),
+    return_fig=False,
+):
+    """Plot a ``ContractionTree`` using 'rubberbands' to represent intermediate
+    contractions / subgraphs - requires ``hypernetx``. This can be intuitive
+    for small and planar contractions.
+    """
+    import hypernetx as hnx
+    import matplotlib as mpl
+
+    hg = tree_to_hypernetx(tree, order=order)
+    H = tree.get_hypergraph()
+    fig, ax, pos = plot_hypergraph(
+        H,
+        highlight=highlight,
+        centrality=centrality,
+        layout=layout,
+        node_size=node_size,
+        node_color=node_color,
+        edge_alpha=edge_alpha,
+        edge_style=edge_style,
+        hyperedge_style=hyperedge_style,
+        draw_edge_labels=draw_edge_labels,
+        edge_labels_font_size=edge_labels_font_size,
+        edge_labels_font_family=edge_labels_font_family,
+        iterations=iterations,
+        figsize=figsize,
+        return_fig='info',
+    )
+
+    if isinstance(colormap, str):
+        cmap = mpl.cm.get_cmap(colormap)
+    else:
+        cmap = colormap
+
+    hnx.draw(
+        hg,
+        pos=pos,
+        ax=ax,
+        with_node_labels=with_node_labels,
+        with_edge_labels=with_edge_labels,
+        edges_kwargs={
+            'edgecolors': cmap(np.linspace(0.0, 1.0, hg.number_of_edges())),
+        }
+    )
+
     return _return_or_close_fig(fig, return_fig)
