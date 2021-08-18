@@ -117,4 +117,4 @@ def test_compressed_rank(optimize):
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
     info = oe.contract_path(eq, *shapes, shapes=True, optimize=optimize)[1]
     tree = ContractionTree.from_info(info)
-    assert tree.compressed_rank(1) < math.log2(tree.max_size())
+    assert tree.max_size_compressed(1) < tree.max_size()

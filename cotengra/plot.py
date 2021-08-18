@@ -239,6 +239,68 @@ def tree_to_networkx(tree):
     return G
 
 
+def hypergraph_compute_plot_info_G(
+    H,
+    G,
+    highlight=(),
+    node_color=(.5, .5, .5, 1.0),
+    edge_color=(0.0, 0.0, 0.0),
+    edge_alpha=1 / 3,
+    colormap='Spectral_r',
+    centrality=False,
+    sliced_inds=(),
+):
+    """Imbue the networkx representation, ``G``, of hypergraph, ``H`` with
+    relevant plot information as node and edge attributes.
+    """
+    import matplotlib as mpl
+    import matplotlib.cm
+
+    for e in G.edges:
+        ix = G.edges[e]['ind']
+        width = math.log2(H.size_dict.get(ix, 2))
+        color = (
+            (*edge_color[:3], edge_alpha)
+            if ix not in highlight else
+            (1.0, 0.0, 1.0, edge_alpha**0.5)
+        )
+        label = (ix if not G.edges[e]['hyperedge'] else '')
+
+        G.edges[e]['color'] = color
+        G.edges[e]['width'] = width
+        G.edges[e]['label'] = label
+        G.edges[e]['style'] = 'dotted' if ix in sliced_inds else 'solid'
+
+    if centrality:
+        if centrality == 'resistance':
+            Cs = H.resistance_centrality()
+        elif centrality == 'simple':
+            Cs = H.simple_centrality()
+        else:
+            Cs = centrality
+
+        if isinstance(colormap, mpl.colors.Colormap):
+            cmap = colormap
+        else:
+            cmap = getattr(matplotlib.cm, colormap)
+
+    for nd in G.nodes:
+        if G.nodes[nd]['hyperedge']:
+            color = (0., 0., 0., 0.)
+            label = str(nd)
+        else:
+            if centrality:
+                c = Cs[nd]
+                G.nodes[nd]['centrality'] = c
+                color = cmap(c)
+            else:
+                color = node_color
+            label = f'{nd}'  # H.inputs[nd]
+
+        G.nodes[nd]['color'] = color
+        G.nodes[nd]['label'] = label
+
+
 def rotate(xy, theta):
     """Return a rotated set of points.
     """
@@ -361,33 +423,17 @@ def plot_tree(
 
     # plot the raw connectivity of the underlying graph
     if plot_raw_graph:
-        G_tn = nx.Graph()
-        # collect which nodes each edge connects
-        ind_map = collections.defaultdict(list)
-        for nd in leaves:
-            G_tn.add_node(nd)
-            for ix in tree.inputs[next(iter(nd))]:
-                ind_map[ix].append(nd)
-        # turn into another nx graph
-        any_hyper = False
-        for ix, nodes in ind_map.items():
-            width = math.log2(tree.size_dict.get(ix, 2))
-            color = (
-                (*raw_edge_color[:3], raw_edge_alpha)
-                if ix not in highlight else
-                (1.0, 0.0, 1.0, raw_edge_alpha**0.5)
-            )
-            eprops = {'ind': ix, 'width': width, 'color': color,
-                      'style': 'dotted' if ix in tree.sliced_inds else 'solid'}
-            # regular edge
-            if len(nodes) == 2:
-                G_tn.add_edge(*nodes, **eprops)
-            # hyperedge
-            else:
-                any_hyper = True
-                G_tn.add_node(ix)
-                for nd in nodes:
-                    G_tn.add_edge(ix, nd, **eprops)
+        H_tn = tree.get_hypergraph()
+        G_tn = H_tn.to_networkx(as_tree_leaves=True)
+        hypergraph_compute_plot_info_G(
+            H_tn, G_tn,
+            highlight=highlight,
+            edge_color=raw_edge_color,
+            edge_alpha=raw_edge_alpha,
+            centrality=False,
+            sliced_inds=tree.sliced_inds,
+        )
+        any_hyper = G_tn.graph['any_hyper']
 
     if layout == 'tent':
         # place raw graph first
@@ -752,66 +798,6 @@ def plot_slicings_alt(
                         sort='descending'),
         tooltip=list(df.columns)
     ).configure_axis(gridColor='rgb(248,248,248)').interactive()
-
-
-def hypergraph_compute_plot_info_G(
-    H,
-    G,
-    highlight=(),
-    node_color=(.5, .5, .5, 1.0),
-    edge_color=(0.0, 0.0, 0.0),
-    edge_alpha=1 / 3,
-    colormap='Spectral_r',
-    centrality=False,
-):
-    """Imbue the networkx representation, ``G``, of hypergraph, ``H`` with
-    relevant plot information.
-    """
-    import matplotlib as mpl
-    import matplotlib.cm
-
-    for e in G.edges:
-        ix = G.edges[e]['ind']
-        width = math.log2(H.size_dict.get(ix, 2))
-        color = (
-            (*edge_color[:3], edge_alpha)
-            if ix not in highlight else
-            (1.0, 0.0, 1.0, edge_alpha**0.5)
-        )
-        label = (ix if not G.edges[e]['hyperedge'] else '')
-
-        G.edges[e]['color'] = color
-        G.edges[e]['width'] = width
-        G.edges[e]['label'] = label
-
-    if centrality:
-        if centrality == 'resistance':
-            Cs = H.resistance_centrality()
-        elif centrality == 'simple':
-            Cs = H.simple_centrality()
-        else:
-            Cs = centrality
-
-        if isinstance(colormap, mpl.colors.Colormap):
-            cmap = colormap
-        else:
-            cmap = getattr(matplotlib.cm, colormap)
-
-    for nd in G.nodes:
-        if G.nodes[nd]['hyperedge']:
-            color = (0., 0., 0., 0.)
-            label = str(nd)
-        else:
-            if centrality:
-                c = Cs[nd]
-                G.nodes[nd]['centrality'] = c
-                color = cmap(c)
-            else:
-                color = node_color
-            label = f'{nd}'  # H.inputs[nd]
-
-        G.nodes[nd]['color'] = color
-        G.nodes[nd]['label'] = label
 
 
 def plot_hypergraph(
