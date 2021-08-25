@@ -277,7 +277,6 @@ class HyperOptimizer(PathOptimizer):
         slicing_opts=None,
         slicing_reconf_opts=None,
         reconf_opts=None,
-        path_order=None,
         optlib=DEFAULT_OPTLIB,
         space=None,
         score_compression=0.75,
@@ -366,8 +365,6 @@ class HyperOptimizer(PathOptimizer):
 
     @property
     def path(self):
-        if self.path_order == 'surface':
-            return self.tree.path_surface()
         return self.tree.path()
 
     def setup(self, inputs, output, size_dict):
@@ -700,7 +697,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         if self._set_surface_order:
             # need ssa_path to set order
             ssa_path = linear_to_ssa(con['path'])
-            tree = ContractionTree.from_path(
+            tree = ContractionTreeCompressed.from_path(
                 inputs, output, size_dict, ssa_path=ssa_path)
             tree.set_surface_order_from_path(ssa_path)
         else:
