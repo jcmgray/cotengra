@@ -608,9 +608,6 @@ class ContractionTree:
         contraction is performed with maximum bond size ``chi``, ordered by
         ``order``.
         """
-        if order == 'surface_order':
-            order = self.surface_order
-
         hg = self.get_hypergraph(accel='auto')
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
@@ -642,9 +639,6 @@ class ContractionTree:
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``.
         """
-        if order == 'surface_order':
-            order = self.surface_order
-
         hg = self.get_hypergraph(accel=accel)
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
@@ -786,11 +780,17 @@ class ContractionTree:
 
         return True
 
+    def get_default_order(self):
+        return "dfs"
+
     def _traverse_ordered(self, order):
         """Traverse the tree in the order that minimizes ``order(node)``, but
         still contrained to produce children before parents.
         """
         from bisect import bisect
+
+        if order == 'surface_order':
+            order = self.surface_order
 
         seen = set()
         queue = [self.root]
@@ -837,7 +837,10 @@ class ContractionTree:
         --------
         descend
         """
-        if order is not None:
+        if order is None:
+            order = self.get_default_order()
+
+        if order != "dfs":
             yield from self._traverse_ordered(order=order)
             return
 
@@ -1846,7 +1849,7 @@ class ContractionTree:
             'min': min,
         }.get(combine, combine)
 
-        for p, l, r in self.traverse():
+        for p, l, r in self.traverse('dfs'):
             self.info[p]['centrality'] = combine(
                 self.info[l]['centrality'],
                 self.info[r]['centrality'])
@@ -2350,8 +2353,11 @@ class ContractionTree:
         hg.plot(**kwargs)
 
     def __repr__(self):
-        s = "<ContractionTree(N={}, branches={}, complete={})>"
-        return s.format(self.N, len(self.children), self.is_complete())
+        s = "<{}(N={}, branches={}, complete={})>"
+        return s.format(
+            self.__class__.__name__,
+            self.N, len(self.children), self.is_complete()
+        )
 
 
 def _reconfigure_tree(tree, *args, **kwargs):
@@ -2473,6 +2479,15 @@ def _describe_tree(tree):
         f"log2[SIZE]: {math.log2(tree.max_size()):.2f} "
         f"log10[FLOPs]: {math.log10(tree.total_flops()):.2f}"
     )
+
+
+class ContractionTreeCompressed(ContractionTree):
+    """A contraction tree for compressed contractions. Currently the only
+    difference is that this defaults to the 'surface' traversal ordering.
+    """
+
+    def get_default_order(self):
+        return "surface_order"
 
 
 class PartitionTreeBuilder:

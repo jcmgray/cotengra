@@ -6,7 +6,12 @@ from math import log2, log10
 
 from opt_einsum.paths import PathOptimizer, linear_to_ssa
 
-from .core import ContractionTree, get_score_fn
+from .core import (
+    ContractionTree,
+    ContractionTreeCompressed,
+    get_score_fn,
+    score_matcher
+)
 from .utils import DiskDict
 from .parallel import parse_parallel_arg, get_n_workers, submit, should_nest
 from .plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
@@ -186,13 +191,19 @@ class SlicedReconfTrialFn:
 
 class ComputeScore:
 
-    def __init__(self, fn, score_fn, score_compression):
+    def __init__(self, fn, score_fn, score_compression, compressed):
         self.fn = fn
         self.score_fn = score_fn
         self.score_compression = score_compression
+        self.compressed = compressed
 
     def __call__(self, *args, **kwargs):
         trial = self.fn(*args, **kwargs)
+
+        if self.compressed:
+            # convert tree to compressed tree for path ordering
+            trial['tree'].__class__ = ContractionTreeCompressed
+
         trial['score'] = self.score_fn(trial)**self.score_compression
         return trial
 
@@ -295,7 +306,7 @@ class HyperOptimizer(PathOptimizer):
 
         # which score to feed to the hyper optimizer
         self.minimize = minimize
-        self.path_order = path_order
+        self.compressed = ('compressed' in minimize)
         self.score_compression = score_compression
         self.best_score = float('inf')
         self.max_training_steps = max_training_steps
@@ -303,12 +314,15 @@ class HyperOptimizer(PathOptimizer):
         inf = float('inf')
         self.best = {'score': inf, 'size': inf, 'flops': inf}
 
-        self.slicing_opts = (None if slicing_opts is None
-                             else dict(slicing_opts))
-        self.reconf_opts = (None if reconf_opts is None
-                            else dict(reconf_opts))
-        self.slicing_reconf_opts = (None if slicing_reconf_opts is None
-                                    else dict(slicing_reconf_opts))
+        self.slicing_opts = (
+            None if slicing_opts is None else dict(slicing_opts)
+        )
+        self.reconf_opts = (
+            None if reconf_opts is None else dict(reconf_opts)
+        )
+        self.slicing_reconf_opts = (
+            None if slicing_reconf_opts is None else dict(slicing_reconf_opts)
+        )
         self.progbar = progbar
 
         if space is None:
@@ -378,13 +392,14 @@ class HyperOptimizer(PathOptimizer):
         # make sure score computation is performed worker side
         trial_fn = ComputeScore(
             trial_fn,
-            self._score_fn,
-            self.score_compression
+            score_fn=self._score_fn,
+            score_compression=self.score_compression,
+            compressed=self.compressed,
         )
 
         return trial_fn, (inputs, output, size_dict)
 
-    def compute_score(self, trial):
+    def get_score(self, trial):
         import random
         # random smudge is for baytune/scikit-learn nan/inf bug
         return trial['score'] * random.gauss(1.0, 1e-6)
@@ -396,7 +411,7 @@ class HyperOptimizer(PathOptimizer):
                 f.cancel()
 
     def _maybe_report_result(self, setting, trial):
-        score = self.compute_score(trial)
+        score = self.get_score(trial)
 
         new_best = score < self.best_score
         if new_best:

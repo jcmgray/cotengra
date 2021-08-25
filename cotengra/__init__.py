@@ -2,7 +2,12 @@ import functools
 
 from opt_einsum.paths import register_path_fn
 
-from .core import ContractionTree, HyperGraph, get_hypergraph
+from .core import (
+    ContractionTree,
+    ContractionTreeCompressed,
+    HyperGraph,
+    get_hypergraph,
+)
 from .slicer import SliceFinder, SlicedContractor
 
 from . import path_greedy
@@ -59,7 +64,6 @@ more 'even' way than purely random - requires ``chocolate``.
 def HyperCompressedOptimizer(
     chi=None,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
-    path_order='surface',
     minimize='max-compressed',
     **kwargs,
 ):
@@ -69,14 +73,12 @@ def HyperCompressedOptimizer(
     if chi is not None:
         minimize += f"-{chi}"
 
-    return HyperOptimizer(
-        methods=methods, path_order=path_order, minimize=minimize, **kwargs)
+    return HyperOptimizer(methods=methods, minimize=minimize, **kwargs)
 
 
 def ReusableHyperCompressedOptimizer(
     chi=None,
     methods=('greedy-compressed', 'greedy-span', 'kahypar-agglom'),
-    path_order='surface',
     set_surface_order=True,
     minimize='max-compressed',
     **kwargs,
@@ -87,12 +89,13 @@ def ReusableHyperCompressedOptimizer(
     if chi is not None:
         minimize += f"-{chi}"
     return ReusableHyperOptimizer(
-        methods=methods, path_order=path_order, minimize=minimize,
+        methods=methods, minimize=minimize,
         set_surface_order=set_surface_order, **kwargs)
 
 
 __all__ = (
     "ContractionTree",
+    "ContractionTreeCompressed",
     "HyperGraph",
     "get_hypergraph",
     "FlowCutterOptimizer",
@@ -172,8 +175,7 @@ try:
         'hyper-compressed',
         functools.partial(
             hyper_optimize,
-            minimize='compressed-rank',
-            path_order='surface',
+            minimize='peak-compressed',
             methods=('greedy-span', 'greedy-compressed', 'kahypar-agglom'),
         )
     )
