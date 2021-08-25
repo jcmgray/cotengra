@@ -2,7 +2,9 @@ import atexit
 import inspect
 import numbers
 import warnings
+import operator
 import functools
+import collections
 
 
 _AUTO_BACKEND = None
@@ -218,7 +220,6 @@ def _get_pool_cf(n_workers=None):
     return PoolHandler(n_workers)
 
 
-
 # ---------------------------------- DASK ----------------------------------- #
 
 
@@ -305,67 +306,8 @@ def get_ray():
     return ray
 
 
-@functools.lru_cache(2**14)
-def get_remote_fn(fn):
-    """
-    """
-    ray = get_ray()
-    return ray.remote(fn)
-
-
-@functools.lru_cache(None)
-def get_deploy():
-    """Alternative for 'non-function' callables - e.g. partial
-    functions - pass the callable object too.
-    """
-    ray = get_ray()
-
-    def deploy(fn, *args, **kwargs):
-        return fn(*args, **kwargs)
-
-    return ray.remote(deploy)
-
-
-class RayExecutor:
-    """Basic ``concurrent.futures`` like interface using ``ray``.
-    """
-
-    def __init__(self, *args, **kwargs):
-        ray = get_ray()
-        if not ray.is_initialized():
-            ray.init(*args, **kwargs)
-
-    def submit(self, fn, *args, pure=False, **kwargs):
-        # want to pass futures by reference
-        args = tuple(map(_unpack_futures, args))
-        kwargs = {k: _unpack_futures(v) for k, v in kwargs.items()}
-
-        # this is the same test ray uses to accept functions
-        if inspect.isfunction(fn):
-            # can use the faster cached remote function
-            obj = get_remote_fn(fn).remote(*args, **kwargs)
-        else:
-            # TODO: try and use cached ray.put(fn) here?
-            obj = get_deploy().remote(fn, *args, **kwargs)
-
-        return RayFuture(obj)
-
-    def map(self, func, *iterables):
-        remote_fn = get_remote_fn(func)
-        objs = tuple(map(remote_fn.remote, *iterables))
-        ray = get_ray()
-        return map(ray.get, objs)
-
-    def scatter(self, data):
-        ray = get_ray()
-        return ray.put(data)
-
-    def shutdown(self):
-        get_ray().shutdown()
-
-
 class RayFuture:
-    """Basic ``concurrent.futures`` like future wrapping ray ``ObjectRef``.
+    """Basic ``concurrent.futures`` like future wrapping a ray ``ObjectRef``.
     """
 
     __slots__ = ('_obj', '_cancelled')
@@ -388,6 +330,30 @@ class RayFuture:
         self._cancelled = True
 
 
+def _unpack_futures_tuple(x):
+    return tuple(map(_unpack_futures, x))
+
+
+def _unpack_futures_list(x):
+    return list(map(_unpack_futures, x))
+
+
+def _unpack_futures_dict(x):
+    return {k: _unpack_futures(v) for k, v in x.items()}
+
+
+def _unpack_futures_identity(x):
+    return x
+
+
+_unpack_dispatch = collections.defaultdict(lambda: _unpack_futures_identity, {
+    RayFuture: operator.attrgetter('_obj'),
+    tuple: _unpack_futures_tuple,
+    list: _unpack_futures_list,
+    dict: _unpack_futures_dict,
+})
+
+
 def _unpack_futures(x):
     """Allows passing futures by reference - takes e.g. args and kwargs and
     replaces all ``RayFuture`` objects with their underyling ``ObjectRef``
@@ -395,15 +361,103 @@ def _unpack_futures(x):
 
     [Subclassing ``ObjectRef`` might avoid needing this.]
     """
-    if isinstance(x, RayFuture):
-        return x._obj
-    if isinstance(x, tuple):
-        return tuple(map(_unpack_futures, x))
-    if isinstance(x, dict):
-        return {k: _unpack_futures(v) for k, v in x.items()}
-    if isinstance(x, list):
-        return list(map(_unpack_futures, x))
-    return x
+    return _unpack_dispatch[x.__class__](x)
+
+
+@functools.lru_cache(2**14)
+def get_remote_fn(fn, **remote_opts):
+    """Cached retrieval of remote function.
+    """
+    ray = get_ray()
+    if remote_opts:
+        return ray.remote(**remote_opts)(fn)
+    return ray.remote(fn)
+
+
+@functools.lru_cache(2**14)
+def get_fn_as_remote_object(fn):
+    ray = get_ray()
+    return ray.put(fn)
+
+
+@functools.lru_cache(None)
+def get_deploy(**remote_opts):
+    """Alternative for 'non-function' callables - e.g. partial
+    functions - pass the callable object too.
+    """
+    ray = get_ray()
+
+    def deploy(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    if remote_opts:
+        return ray.remote(**remote_opts)(deploy)
+    return ray.remote(deploy)
+
+
+class RayExecutor:
+    """Basic ``concurrent.futures`` like interface using ``ray``.
+    """
+
+    def __init__(self, *args, default_remote_opts=None, **kwargs):
+        ray = get_ray()
+        if not ray.is_initialized():
+            ray.init(*args, **kwargs)
+
+        self.default_remote_opts = (
+            {} if default_remote_opts is None else
+            dict(default_remote_opts)
+        )
+
+    def _maybe_inject_remote_opts(self, remote_opts=None):
+        """Return the default remote options, possibly overriding some with
+        those supplied by a ``submit call``.
+        """
+        ropts = self.default_remote_opts
+        if remote_opts is not None:
+            ropts = {**ropts, **remote_opts}
+        return ropts
+
+    def submit(self, fn, *args, pure=False, remote_opts=None, **kwargs):
+        """Remotely run ``fn(*args, **kwargs)``, returning a ``RayFuture``.
+        """
+        # want to pass futures by reference
+        args = _unpack_futures_tuple(args)
+        kwargs = _unpack_futures_dict(kwargs)
+
+        ropts = self._maybe_inject_remote_opts(remote_opts)
+
+        # this is the same test ray uses to accept functions
+        if inspect.isfunction(fn):
+            # can use the faster cached remote function
+            obj = get_remote_fn(fn, **ropts).remote(*args, **kwargs)
+        else:
+            fn_obj = get_fn_as_remote_object(fn)
+            obj = get_deploy(**ropts).remote(fn_obj, *args, **kwargs)
+
+        return RayFuture(obj)
+
+    def map(self, func, *iterables, remote_opts=None):
+        """Remote map ``func`` over arguments ``iterables``.
+        """
+        ropts = self._maybe_inject_remote_opts(remote_opts)
+        remote_fn = get_remote_fn(func, **ropts)
+        objs = tuple(map(remote_fn.remote, *iterables))
+        ray = get_ray()
+        return map(ray.get, objs)
+
+    def scatter(self, data):
+        """Push ``data`` into the distributed store, returning an ``ObjectRef``
+        that can be supplied to ``submit`` calls for example.
+        """
+        ray = get_ray()
+        return ray.put(data)
+
+    def shutdown(self):
+        """Shutdown the parent ray cluster, this ``RayExecutor`` instance
+        itself does not need any cleanup.
+        """
+        get_ray().shutdown()
 
 
 _RAY_EXECUTOR = None
