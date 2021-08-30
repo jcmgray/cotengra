@@ -657,6 +657,10 @@ class ReusableHyperOptimizer(PathOptimizer):
         import pickle
         import hashlib
 
+        if not isinstance(next(iter(size_dict.values())), int):
+            # hashing e.g. numpy int won't match!
+            size_dict = {k: int(v) for k, v in size_dict.items()}
+
         # note frozenset is hashable but not consistent -> need sortedtuple
         return hashlib.sha1(pickle.dumps((
             tuple(map(sortedtuple, inputs)),
