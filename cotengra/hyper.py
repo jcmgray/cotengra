@@ -1,7 +1,9 @@
 import time
+import pickle
+import hashlib
 import warnings
-
 import importlib
+import collections
 from math import log2, log10
 
 from opt_einsum.paths import PathOptimizer, linear_to_ssa
@@ -638,6 +640,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         directory=None,
         overwrite=False,
         set_surface_order=False,
+        hash_method='a',
         **opt_kwargs
     ):
         self._opt = None
@@ -646,6 +649,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         self._cache = DiskDict(directory)
         self.overwrite = overwrite
         self._set_surface_order = set_surface_order
+        self._hash_method = hash_method
 
     @property
     def last_opt(self):
@@ -654,18 +658,31 @@ class ReusableHyperOptimizer(PathOptimizer):
     def _hash_args(self, inputs, output, size_dict):
         """For space's sake create a condensed hash key.
         """
-        import pickle
-        import hashlib
-
         if not isinstance(next(iter(size_dict.values())), int):
             # hashing e.g. numpy int won't match!
             size_dict = {k: int(v) for k, v in size_dict.items()}
 
         # note frozenset is hashable but not consistent -> need sortedtuple
+        if self._hash_method == 'a':
+            return hashlib.sha1(pickle.dumps((
+                tuple(map(sortedtuple, inputs)),
+                sortedtuple(output),
+                sortedtuple(size_dict.items())
+            ))).hexdigest()
+
+        # label each index as the sorted tuple of nodes it is incident to
+        edges = collections.defaultdict(list)
+        for ix in output:
+            edges[ix].append(-1)
+        for i, term in enumerate(inputs):
+            for ix in term:
+                edges[ix].append(i)
+
+        # then sort edges by each's incidence nodes
+        canonical_edges = sortedtuple(map(sortedtuple, edges.values()))
+
         return hashlib.sha1(pickle.dumps((
-            tuple(map(sortedtuple, inputs)),
-            sortedtuple(output),
-            sortedtuple(size_dict.items())
+            canonical_edges, sortedtuple(size_dict.items())
         ))).hexdigest()
 
     def _hash_and_query(self, inputs, output, size_dict):
