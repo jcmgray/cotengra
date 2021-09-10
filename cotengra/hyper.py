@@ -6,7 +6,7 @@ import importlib
 import collections
 from math import log2, log10
 
-from opt_einsum.paths import PathOptimizer, linear_to_ssa
+from opt_einsum.paths import PathOptimizer
 
 from .core import (
     ContractionTree,
@@ -766,10 +766,8 @@ class ReusableHyperOptimizer(PathOptimizer):
 
         if self._set_surface_order:
             # need ssa_path to set order
-            ssa_path = linear_to_ssa(con['path'])
             tree = ContractionTreeCompressed.from_path(
-                inputs, output, size_dict, ssa_path=ssa_path)
-            tree.set_surface_order_from_path(ssa_path)
+                inputs, output, size_dict, path=con['path'])
         else:
             tree = ContractionTree.from_path(
                 inputs, output, size_dict, path=con['path'])

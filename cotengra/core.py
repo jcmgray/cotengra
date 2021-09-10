@@ -9,7 +9,7 @@ import collections
 from string import ascii_letters
 
 from opt_einsum.helpers import compute_size_by_dict, flop_count
-from opt_einsum.paths import get_path_fn, DynamicProgramming
+from opt_einsum.paths import get_path_fn, DynamicProgramming, linear_to_ssa
 from autoray import do
 
 from .utils import (
@@ -2570,6 +2570,32 @@ class ContractionTreeCompressed(ContractionTree):
     """A contraction tree for compressed contractions. Currently the only
     difference is that this defaults to the 'surface' traversal ordering.
     """
+
+    @classmethod
+    def from_path(cls, inputs, output, size_dict, *,
+                  path=None, ssa_path=None, check=False, **kwargs):
+        """Create a (completed) ``ContractionTreeCompressed`` from the usual
+        inputs plus a standard contraction path or 'ssa_path' - you need to
+        supply one. This also set the default 'surface' traversal ordering to
+        be the initial path.
+        """
+        if int(path is None) + int(ssa_path is None) != 1:
+            raise ValueError("Exactly one of ``path`` or ``ssa_path`` must be "
+                             "supplied.")
+
+        if path is not None:
+            ssa_path = linear_to_ssa(path)
+
+        tree = cls(inputs, output, size_dict, **kwargs)
+        terms = list(tree.gen_leaves())
+
+        for p in ssa_path:
+            merge = [terms[i] for i in p]
+            terms.append(tree.contract_nodes(merge, check=check))
+
+        tree.set_surface_order_from_path(ssa_path)
+
+        return tree
 
     def get_default_order(self):
         return "surface_order"
