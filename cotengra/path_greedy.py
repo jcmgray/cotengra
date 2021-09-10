@@ -361,8 +361,12 @@ class GreedySpan:
     coeff_next_centrality : float, optional
         When considering adding nodes to the span, how to weight the nodes
         centrality.
+    weight_bonds
     temperature : float, optional
         A noise level to apply to the scores when choosing nodes to expand to.
+    score_perm
+    distance_p
+    distance_steal
     """
 
     def __init__(
@@ -372,7 +376,7 @@ class GreedySpan:
         coeff_ndim=1.0,
         coeff_distance=-1.0,
         coeff_next_centrality=0.0,
-        connectivity_weight_bonds=True,
+        weight_bonds=True,
         temperature=0.0,
         score_perm='CNDLTI',
         distance_p=1,
@@ -383,7 +387,7 @@ class GreedySpan:
         self.coeff_ndim = coeff_ndim
         self.coeff_distance = coeff_distance
         self.coeff_next_centrality = coeff_next_centrality
-        self.connectivity_weight_bonds = connectivity_weight_bonds
+        self.weight_bonds = weight_bonds
         self.temperature = temperature
         self.score_perm = score_perm
         self.distance_p = distance_p
@@ -394,7 +398,7 @@ class GreedySpan:
         self.cents = self.hg.simple_centrality()
 
         def region_choose_sorter(node):
-            return self.cents[node] + 1e-2 * random.random()
+            return self.cents[node] + 1e-3 * random.random()
 
         if output:
             region = oset(self.hg.output_nodes())
@@ -448,7 +452,7 @@ class GreedySpan:
                 merges[i_neighbor] = i_surface
                 candidates.append(i_neighbor)
 
-            if self.connectivity_weight_bonds:
+            if self.weight_bonds:
                 connectivity[i_neighbor] += math.log2(
                     self.hg.bond_size(i_surface, i_neighbor)
                 )
@@ -524,7 +528,7 @@ register_hyper_function(
         'coeff_ndim': {'type': 'INT', 'min': -1, 'max': 1},
         'coeff_distance': {'type': 'INT', 'min': -1, 'max': 1},
         'coeff_next_centrality': {'type': 'FLOAT', 'min': -1, 'max': 1},
-        'connectivity_weight_bonds': {'type': 'BOOL'},
+        'weight_bonds': {'type': 'BOOL'},
         'temperature': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
         'distance_p': {'type': 'FLOAT', 'min': -5.0, 'max': 5.0},
         'distance_steal': {'type': 'STRING', 'options': ['', 'abs', 'rel']},

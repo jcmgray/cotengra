@@ -27,6 +27,8 @@ setup(
         'opt_einsum',
         'tqdm',
         'cytoolz',
+        'optuna',
+        'autoray',
     ],
     extras_require={
         'test': [

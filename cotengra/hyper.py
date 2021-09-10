@@ -191,6 +191,30 @@ class SlicedReconfTrialFn:
         return trial
 
 
+class CompressedReconfTrial:
+
+    def __init__(self, trial_fn, chi, **opts):
+        self.trial_fn = trial_fn
+        self.chi = chi
+        self.opts = opts
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+        tree = trial['tree']
+
+        trial.setdefault('original_flops', tree.total_flops())
+        trial.setdefault('original_write', tree.total_write())
+        trial.setdefault('original_size', tree.max_size())
+
+        tree.compressed_reconfigure_(chi=self.chi, **self.opts)
+
+        trial['flops'] = tree.total_flops()
+        trial['write'] = tree.total_write()
+        trial['size'] = tree.max_size()
+
+        return trial
+
+
 class ComputeScore:
 
     def __init__(self, fn, score_fn, score_compression, compressed):
@@ -384,9 +408,16 @@ class HyperOptimizer(PathOptimizer):
                 trial_fn, **self.slicing_reconf_opts)
 
         if self.reconf_opts is not None:
-            self.reconf_opts.setdefault('minimize', self.minimize)
-            self.reconf_opts.setdefault('parallel', nested_parallel)
-            trial_fn = ReconfTrialFn(trial_fn, **self.reconf_opts)
+
+            if self.compressed:
+                match = score_matcher.fullmatch(self.minimize)
+                _, param = match.groups()
+                self.reconf_opts.setdefault('chi', int(param))
+                trial_fn = CompressedReconfTrial(trial_fn, **self.reconf_opts)
+            else:
+                self.reconf_opts.setdefault('minimize', self.minimize)
+                self.reconf_opts.setdefault('parallel', nested_parallel)
+                trial_fn = ReconfTrialFn(trial_fn, **self.reconf_opts)
 
         # make sure score computation is performed worker side
         trial_fn = ComputeScore(
@@ -685,7 +716,10 @@ class ReusableHyperOptimizer(PathOptimizer):
             canonical_edges, sortedtuple(size_dict.items())
         ))).hexdigest()
 
-    def _hash_and_query(self, inputs, output, size_dict):
+    def hash_query(self, inputs, output, size_dict):
+        """Hash the contraction specification, returning this and whether the
+        contraction is already present as a tuple.
+        """
         h = self._hash_args(inputs, output, size_dict)
         missing = (self.overwrite or (h not in self._cache))
         return h, missing
@@ -698,14 +732,29 @@ class ReusableHyperOptimizer(PathOptimizer):
             'sliced_inds': self._opt.tree.sliced_inds
         }
 
+    def update_from_tree(self, tree, overwrite=True):
+        """Explicitly add the contraction that ``tree`` represents into the
+        cache. For example, if you have manually improved it via reconfing.
+        If ``overwrite=False`` and the contracton is present already then do
+        nothing.
+        """
+        h, missing = self.hash_query(
+            tree.inputs, tree.output, tree.size_dict
+        )
+        if overwrite or missing:
+            self._cache[h] = {
+                'path': tree.path(),
+                'sliced_inds': tree.sliced_inds
+            }
+
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        h, missing = self._hash_and_query(inputs, output, size_dict)
+        h, missing = self.hash_query(inputs, output, size_dict)
         if missing:
             self._cache[h] = self._compute_path(inputs, output, size_dict)
         return self._cache[h]['path']
 
     def search(self, inputs, output, size_dict):
-        h, missing = self._hash_and_query(inputs, output, size_dict)
+        h, missing = self.hash_query(inputs, output, size_dict)
 
         if missing:
             # run and immediately retrieve tree directly

@@ -1679,6 +1679,91 @@ class ContractionTree:
     slice_and_reconfigure_forest_ = functools.partialmethod(
         slice_and_reconfigure_forest, inplace=True)
 
+    def compressed_reconfigure(
+        self,
+        chi,
+        order_only=False,
+        max_nodes='auto',
+        max_time=None,
+        local_score=None,
+        exploration_power=0,
+        best_score=None,
+        progbar=False,
+        inplace=False,
+    ):
+        """Reconfigure this tree according to ``peak_size_compressed``.
+
+        Parameters
+        ----------
+        chi : int
+            The maximum bond dimension to consider.
+        order_only : bool, optional
+            Whether to only consider the ordering of the current tree
+            contractions, or all possible contractions, starting with the
+            current.
+        max_nodes : int, optional
+            Set the maximum number of contraction steps to consider.
+        max_time : float, optional
+            Set the maximum time to spend on the search.
+        local_score : callable, optional
+            A function that assigns a score to a potential contraction, with a
+            lower score giving more priority to explore that contraction
+            earlier. It should have signature::
+
+                local_score(step, new_score, dsize, new_size)
+
+            where ``step`` is the number of steps so far, ``new_score`` is the
+            score of the contraction so far, ``dsize`` is the change in memory
+            by the current step, and ``new_size`` is the new memory size after
+            contraction.
+        exploration_power : float, optional
+            If not ``0.0``, the inverse power to which the step is raised in
+            the default local score function. Higher values favor exploring
+            more promising branches early on - at the cost of increased memory.
+            Ignored if ``local_score`` is supplied.
+        best_score : float, optional
+            Manually specify an upper bound for best score found so far.
+        progbar : bool, optional
+            If ``True``, display a progress bar.
+        inplace : bool, optional
+            Whether to perform the reconfiguration inplace on this tree.
+
+        Returns
+        -------
+        ContractionTree
+        """
+        from .path_compressed import CompressedExhaustive
+
+        if max_nodes == 'auto':
+            if max_time is None:
+                max_nodes = max(10_000, self.N**2)
+            else:
+                max_nodes = float('inf')
+
+        opt = CompressedExhaustive(
+            chi=chi,
+            local_score=local_score,
+            max_nodes=max_nodes,
+            max_time=max_time,
+            exploration_power=exploration_power,
+            best_score=best_score,
+            progbar=progbar,
+        )
+        opt.setup(self.inputs, self.output, self.size_dict)
+        opt.explore_path(self.path_surface(), restrict=order_only)
+        ssa_path = opt(self.inputs, self.output, self.size_dict)
+        rtree = ContractionTree.from_path(
+            self.inputs, self.output, self.size_dict, ssa_path=ssa_path,
+        )
+        if inplace:
+            self.set_state_from(rtree)
+            rtree = self
+        rtree.set_surface_order_from_path(ssa_path)
+        return rtree
+
+    compressed_reconfigure_ = functools.partialmethod(
+        compressed_reconfigure, inplace=True)
+
     def flat_tree(self, order=None):
         """Create a nested tuple representation of the contraction tree like::
 
