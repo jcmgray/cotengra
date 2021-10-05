@@ -689,7 +689,7 @@ class ReusableHyperOptimizer(PathOptimizer):
     def _hash_args(self, inputs, output, size_dict):
         """For space's sake create a condensed hash key.
         """
-        if not isinstance(next(iter(size_dict.values())), int):
+        if not isinstance(next(iter(size_dict.values()), 1), int):
             # hashing e.g. numpy int won't match!
             size_dict = {k: int(v) for k, v in size_dict.items()}
 
