@@ -48,7 +48,7 @@ from .plot import (
 try:
     from opt_einsum.paths import DEFAULT_COMBO_FACTOR
 except ImportError:
-    DEFAULT_COMBO_FACTOR = 256
+    DEFAULT_COMBO_FACTOR = 64
 
 try:
     from cotengra.cotengra import HyperGraph as HyperGraphRust
@@ -586,6 +586,16 @@ class ContractionTree:
             peak = max(peak, tot_size)
         return peak
 
+    def total_size(self):
+        """Get the total sum of all intermediate tensor sizes, this is relevant
+        when, for example, using autodiff on a contraction without
+        checkpointing.
+        """
+        tot_size = sum(self.get_size(node) for node in self.gen_leaves())
+        for node, _, _ in self.traverse():
+            tot_size += self.get_size(node)
+        return tot_size
+
     def arithmetic_intensity(self):
         """The ratio of total flops to total write - the higher the better for
         extracting good computational performance.
@@ -602,22 +612,30 @@ class ContractionTree:
         """
         return math.log2(self.max_size())
 
-    def max_size_compressed(self, chi, order='surface_order',
-                            compress_late=True):
-        """Compute the maximum sized tensor produced when a compressed
-        contraction is performed with maximum bond size ``chi``, ordered by
-        ``order``.
-        """
+    def compressed_contract_stats(
+        self,
+        chi,
+        order='surface_order',
+        compress_late=True,
+    ):
         hg = self.get_hypergraph(accel='auto')
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), range(hg.get_num_nodes())))
 
-        size_max = max(map(hg.node_size, range(hg.get_num_nodes())))
+        max_size = 0
+        current_size = 0
+        for i in range(hg.get_num_nodes()):
+            s = hg.node_size(i)
+            max_size = max(max_size, s)
+            current_size += s
+        total_size = peak_size = current_size
 
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
+
+            current_size -= hg.neighborhood_size((li, ri))
 
             if compress_late:
                 # compress just before we contract tensors
@@ -625,46 +643,61 @@ class ContractionTree:
                 hg.compress(chi=chi, edges=hg.get_node(ri))
 
             pi = tree_map[p] = hg.contract(li, ri)
-            size_max = max(size_max, hg.node_size(pi))
+
+            pi_size = hg.node_size(pi)
+            max_size = max(max_size, pi_size)
+            current_size += hg.neighborhood_size((pi,))
+            peak_size = max(peak_size, current_size)
+            total_size += pi_size
 
             if not compress_late:
                 # compress as soon as we can after contracting tensors
                 hg.compress(chi=chi, edges=hg.get_node(pi))
 
-        return size_max
+        return {
+            'max_size': max_size,
+            'total_size': total_size,
+            'peak_size': peak_size,
+        }
+
+    def max_size_compressed(self, chi, order='surface_order',
+                            compress_late=True):
+        """Compute the maximum sized tensor produced when a compressed
+        contraction is performed with maximum bond size ``chi``, ordered by
+        ``order``. This is close to the ideal space complexity if only
+        tensors that are being directly operated on are kept in memory.
+        """
+        return self.compressed_contract_stats(
+            chi=chi,
+            order=order,
+            compress_late=compress_late,
+        )['max_size']
 
     def peak_size_compressed(self, chi, order='surface_order',
                              compress_late=True, accel='auto'):
         """Compute the peak size of combined intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
-        ordered by ``order``.
+        ordered by ``order``. This is the practical space complexity if one is
+        not swapping intermediates in and out of memory.
         """
-        hg = self.get_hypergraph(accel=accel)
+        return self.compressed_contract_stats(
+            chi=chi,
+            order=order,
+            compress_late=compress_late,
+        )['peak_size']
 
-        # conversion between tree nodes <-> hypergraph nodes during contraction
-        tree_map = {leaf: i for i, leaf in enumerate(self.gen_leaves())}
-
-        size = hg.total_node_size()
-        size_peak = size
-
-        for p, l, r in self.traverse(order):
-            li = tree_map[l]
-            ri = tree_map[r]
-
-            size -= hg.neighborhood_size((li, ri))
-
-            if compress_late:
-                hg.compress(chi=chi, edges=hg.get_node(li) + hg.get_node(ri))
-
-            pi = tree_map[p] = hg.contract(li, ri)
-
-            size += hg.neighborhood_size((pi,))
-            size_peak = max(size_peak, size)
-
-            if not compress_late:
-                hg.compress(chi=chi, edges=hg.get_node(pi))
-
-        return size_peak
+    def total_size_compressed(self, chi, order='surface_order',
+                              compress_late=True, accel='auto'):
+        """Compute the total size of all intermediate tensors when a
+        compressed contraction is performed with maximum bond size ``chi``,
+        ordered by ``order``. This is relevant maybe for time complexity and
+        e.g. autodiff space complexity (since every intermediate is kept).
+        """
+        return self.compressed_contract_stats(
+            chi=chi,
+            order=order,
+            compress_late=compress_late,
+        )['total_size']
 
     def contract_nodes_pair(self, x, y, check=False):
         """Contract node ``x`` with node ``y`` in the tree to create a new
@@ -2502,10 +2535,7 @@ def score_size_compressed(trial, chi='auto'):
     if chi == 'auto':
         chi = max(tree.size_dict.values())**2
     size = tree.max_size_compressed(chi)
-    cr = (
-        math.log2(size) +
-        math.log2(tree.max_size())**0.5 / 1000
-    )
+    cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
     # overwrite the effective max size
     trial['size'] = size
     return cr
@@ -2522,8 +2552,21 @@ def score_peak_size_compressed(trial, chi='auto'):
     return cr
 
 
+def score_total_size_compressed(trial, chi='auto'):
+    tree = trial['tree']
+    if chi == 'auto':
+        chi = max(tree.size_dict.values())**2
+    size = tree.total_size_compressed(chi)
+    cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
+    # overwrite the effective max size
+    trial['size'] = size
+    return cr
+
+
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|max-compressed|peak-compressed)-*(\d*)")
+    r"(flops|size|write|combo|limit|max-compressed|"
+    r"peak-compressed|total-compressed)-*(\d*)"
+)
 
 
 def get_score_fn(minimize):
@@ -2557,6 +2600,10 @@ def get_score_fn(minimize):
     if which == 'peak-compressed':
         chi = int(param) if param else 'auto'
         return functools.partial(score_peak_size_compressed, chi=chi)
+
+    if which == 'total-compressed':
+        chi = int(param) if param else 'auto'
+        return functools.partial(score_total_size_compressed, chi=chi)
 
 
 def _describe_tree(tree):
