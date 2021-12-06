@@ -600,7 +600,7 @@ class ContractionTree:
         """The ratio of total flops to total write - the higher the better for
         extracting good computational performance.
         """
-        return self.total_flops() / self.total_write()
+        return self.total_flops(dtype=None) / self.total_write()
 
     def contraction_cost(self):
         """Get the total number of scalar operations ~ time complexity.
