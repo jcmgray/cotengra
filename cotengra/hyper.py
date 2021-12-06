@@ -661,6 +661,12 @@ class ReusableHyperOptimizer(PathOptimizer):
         If ``True``, when reloading a path to turn into a ``ContractionTree``,
         the 'surface order' of the path (used for compressed paths), will be
         set manually to the order the disk path is.
+    hash_method : {'a', ...}, optional
+        The method used to hash the contraction tree. The default, ``'a'``, is
+        faster but doesn't recognize when indices are permuted.
+    cache_only : bool, optional
+        If ``True``, the optimizer will only use the cache, and will raise
+        ``KeyError`` if a contraction is not found.
     opt_kwargs
         Supplied to ``HyperOptimizer``.
     """
@@ -672,6 +678,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         overwrite=False,
         set_surface_order=False,
         hash_method='a',
+        cache_only=False,
         **opt_kwargs
     ):
         self._opt = None
@@ -681,6 +688,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         self.overwrite = overwrite
         self._set_surface_order = set_surface_order
         self._hash_method = hash_method
+        self.cache_only = cache_only
 
     @property
     def last_opt(self):
@@ -750,6 +758,8 @@ class ReusableHyperOptimizer(PathOptimizer):
     def __call__(self, inputs, output, size_dict, memory_limit=None):
         h, missing = self.hash_query(inputs, output, size_dict)
         if missing:
+            if self.cache_only:
+                raise KeyError("Contraction missing from cache.")
             self._cache[h] = self._compute_path(inputs, output, size_dict)
         return self._cache[h]['path']
 
@@ -757,6 +767,8 @@ class ReusableHyperOptimizer(PathOptimizer):
         h, missing = self.hash_query(inputs, output, size_dict)
 
         if missing:
+            if self.cache_only:
+                raise KeyError("Contraction missing from cache.")
             # run and immediately retrieve tree directly
             self._cache[h] = self._compute_path(inputs, output, size_dict)
             return self._opt.tree
