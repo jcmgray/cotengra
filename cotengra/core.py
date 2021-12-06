@@ -2155,12 +2155,15 @@ class ContractionTree:
         arrays,
         order=None,
         prefer_einsum=False,
+        strip_exponent=False,
         backend=None,
         check=False,
         progbar=False,
     ):
         # temporary storage for intermediates
         temps = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
+
+        exponent = 0.0 if (strip_exponent is not False) else None
 
         if progbar:
             from tqdm import tqdm
@@ -2194,8 +2197,16 @@ class ContractionTree:
                 if perm:
                     p_array = do('transpose', p_array, perm, like=backend)
 
+            if exponent is not None:
+                factor = do('max', do('abs', p_array))
+                exponent = exponent + do('log10', factor)
+                p_array = p_array / factor
+
             # insert the new intermediate array
             temps[p] = p_array
+
+        if exponent is not None:
+            return p_array, exponent
 
         return p_array
 
@@ -2204,6 +2215,7 @@ class ContractionTree:
         arrays,
         order=None,
         prefer_einsum=False,
+        strip_exponent=False,
         backend=None,
         autojit=False,
         check=False,
@@ -2235,24 +2247,42 @@ class ContractionTree:
             Show progress through the contraction.
         """
         if not autojit:
-            return self._contract_core(
-                arrays, order=order, prefer_einsum=prefer_einsum,
-                backend=backend, check=check, progbar=progbar,
+            result = self._contract_core(
+                arrays,
+                order=order,
+                prefer_einsum=prefer_einsum,
+                check=check,
+                strip_exponent=strip_exponent,
+                backend=backend,
+                progbar=progbar,
             )
-
-        try:
-            fn = self.contraction_cores[order, prefer_einsum]
-        except KeyError:
-            from autoray import autojit
-            fn = self.contraction_cores[order, prefer_einsum] = autojit(
-                functools.partial(
-                    self._contract_core,
-                    order=order,
-                    prefer_einsum=prefer_einsum,
+        else:
+            try:
+                fn = self.contraction_cores[order, prefer_einsum]
+            except KeyError:
+                from autoray import autojit
+                fn = self.contraction_cores[order, prefer_einsum] = autojit(
+                    functools.partial(
+                        self._contract_core,
+                        order=order,
+                        strip_exponent=strip_exponent,
+                        prefer_einsum=prefer_einsum,
+                    )
                 )
-            )
+            result = fn(arrays, backend=backend)
 
-        return fn(arrays, backend=backend)
+        # handle exponent outside of potential jit
+        if isinstance(strip_exponent, dict):
+            result, exponent = result
+            if 'exponent' not in strip_exponent:
+                # set the exponent (e.g. first slice)
+                strip_exponent['exponent'] = exponent
+            else:
+                # match the exponent (e.g. subsequent slices)
+                target = strip_exponent['exponent']
+                result = result * 10**(exponent - target)
+
+        return result
 
     def slice_arrays(self, arrays, i):
         """Take ``arrays`` and slice the relevant inputs according to
@@ -2347,6 +2377,7 @@ class ContractionTree:
         arrays,
         order=None,
         prefer_einsum=False,
+        strip_exponent=False,
         backend=None,
         autojit=False,
         check=False,
@@ -2381,19 +2412,39 @@ class ContractionTree:
 
         if not self.sliced_inds:
             return self.contract_core(
-                arrays, order=order, prefer_einsum=prefer_einsum,
-                backend=backend, autojit=autojit, check=check, progbar=progbar,
+                arrays,
+                order=order,
+                prefer_einsum=prefer_einsum,
+                strip_exponent=strip_exponent,
+                backend=backend,
+                autojit=autojit,
+                check=check,
+                progbar=progbar,
             )
+
+        if strip_exponent:
+            # first slice will set the exponent for others to match
+            strip_exponent = {}
 
         slices = (
             self.contract_slice(
-                arrays, i, order=order, prefer_einsum=prefer_einsum,
-                backend=backend, autojit=autojit, check=check,
+                arrays, i,
+                order=order,
+                prefer_einsum=prefer_einsum,
+                strip_exponent=strip_exponent,
+                backend=backend,
+                autojit=autojit,
+                check=check,
             )
             for i in range(self.multiplicity)
         )
 
-        return self.gather_slices(slices, backend=backend, progbar=progbar)
+        result = self.gather_slices(slices, backend=backend, progbar=progbar)
+
+        if strip_exponent:
+            return result, strip_exponent['exponent']
+
+        return result
 
     def contract_mpi(
         self,
