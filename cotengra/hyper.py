@@ -1,3 +1,4 @@
+import re
 import time
 import pickle
 import hashlib
@@ -510,15 +511,28 @@ class HyperOptimizer(PathOptimizer):
         if self.max_time is not None:
             t0 = time.time()
             if isinstance(self.max_time, str):
-                rate = float(self.max_time.split(':')[1])
 
-                def reached_time_limit():
-                    return (time.time() - t0) > (self.best['flops'] / rate)
+                which, amount = re.match(
+                    r"(rate|equil):(.+)", self.max_time
+                ).groups()
+
+                if which == 'rate':
+                    rate = float(amount)
+
+                    def should_stop():
+                        return (time.time() - t0) > (self.best['flops'] / rate)
+
+                elif which == 'equil':
+                    amount = int(amount)
+
+                    def should_stop():
+                        return self.trials_since_best > amount
+
             else:
-                def reached_time_limit():
+                def should_stop():
                     return (time.time() - t0) > self.max_time
         else:
-            def reached_time_limit():
+            def should_stop():
                 return False
 
         trial_fn, trial_args = self.setup(inputs, output, size_dict)
@@ -550,6 +564,7 @@ class HyperOptimizer(PathOptimizer):
 
             # check if we have found a new best
             if trial['score'] < self.best['score']:
+                self.trials_since_best = 0
                 self.best = trial
                 self.best['params'] = dict(self.param_choices[-1])
                 self.best['params']['method'] = self.method_choices[-1]
@@ -557,8 +572,11 @@ class HyperOptimizer(PathOptimizer):
                 if self.progbar:
                     pbar.set_description(progress_description(self.best))
 
+            else:
+                self.trials_since_best += 1
+
             # check if we have run out of time
-            if reached_time_limit():
+            if should_stop():
                 break
 
         if self.progbar:
