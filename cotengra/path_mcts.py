@@ -1,21 +1,22 @@
-import random
 import math
-import heapq
+import random
 
-from cotengra.core import get_hypergraph
+from .core import get_hypergraph
 
 
 class Node:
 
     __slots__ = (
         'hg',
+        'n',
+        'graph_key',
         'ssa_path',
         'size',
         'local_score',
         'forward_score',
-        'backward_score',
-        'n',
-        '_key',
+        'mean',
+        'count',
+        'leaf_score',
     )
 
     def __init__(
@@ -27,44 +28,45 @@ class Node:
         forward_score,
     ):
         self.hg = hg
+        self.n = hg.get_num_nodes()
+        self.graph_key = hash(frozenset(hg.nodes))
         self.ssa_path = ssa_path
         self.size = size
         self.local_score = local_score
         self.forward_score = forward_score
-        self.n = 1
 
-        if hg.get_num_nodes() > 1:
-            self.backward_score = float('inf')
-        else:
-            self.backward_score = forward_score
+        self.count = 0
+        # self.mean = float('inf')
+        self.mean = 0.0
+        self.leaf_score = None
 
-        self._key = None
+    def update(self, x):
+        """Report the score ``x``, presumably from a child node, updating this
+        nodes score.
+        """
+        self.count += 1
+        delta = x - self.mean
+        self.mean += delta / self.count
+        # self.mean = min(self.mean, x)
 
-    @property
-    def key(self):
-        k = self._key
-        if k is None:
-            k = self._key = hash(frozenset(self.hg.nodes))
-        return k
+        phi = math.log2(self.mean)
+        phi -= (phi / self.count)**0.5
+        self.leaf_score = phi
 
-    def update(self, other):
-        self.backward_score = min(self.backward_score, other.backward_score)
-        self.n += 1
-
-    @property
-    def score(self):
-        ls = math.log2(self.backward_score)
-        ls -= (ls / self.n)**0.5
-        return (ls, self.hg.get_num_nodes())
+    def __hash__(self):
+        return hash((self.graph_key, self.size))
 
     def __lt__(self, other):
-        return self.score < other.score
+        return self.leaf_score < other.leaf_score
 
     def __repr__(self):
-        return (f"<Node(|V|={self.hg.get_num_nodes()}, "
-                f"fscore={self.forward_score}, "
-                f"bscore={self.backward_score}, "
-                f"id={id(self)})>")
+        return (
+            f"<Node(|V|={self.n}, "
+            f"fscore={math.log2(self.forward_score)}, "
+            f"lscore={self.leaf_score}, "
+            f"count={self.count}, "
+            f"id={id(self)})>"
+        )
 
 
 def gumbel():
@@ -76,30 +78,43 @@ class MCTS:
     __slots__ = (
         'chi',
         'T',
+        'prune',
+        'optimize',
         'best_score',
         'best_ssa_path',
         'children',
         'parents',
         'seen',
-        'hits',
         'leaves',
         'root',
         'N',
         'pbar',
+        'to_delete',
     )
 
-    def __init__(self, chi, T=0.1):
+    def __init__(self, chi, T=0.1, prune=True, optimize=None):
         self.chi = chi
         self.T = T
+        self.prune = prune
+        self.optimize = optimize
         self.best_score = float('inf')
         self.best_ssa_path = None
         self.children = {}
         self.parents = {}
         self.seen = {}
-        self.hits = 0
+        self.to_delete = set()
         self.leaves = None
         self.root = None
         self.N = None
+
+    def __repr__(self):
+        return (
+            "<MCTS("
+            f"bs: {self.best_score}, "
+            f"nT: {len(self.parents)}, "
+            f"lq: {len(self.leaves)}"
+            ")>"
+        )
 
     def setup(self, inputs, output, size_dict):
         """
@@ -123,11 +138,9 @@ class MCTS:
                 forward_score=size0,
             )
 
-            self.add_node(root)
-            self.seen[root.key] = size0
             self.root = root
-            self.leaves = [root]
-            self.simulate_node(root)
+            self.leaves = set()
+            self.check_node(root)
 
     def get_ssa_path(self):
         """Convert unique node identifiers to ssa.
@@ -142,134 +155,191 @@ class MCTS:
             ssa_path.append((ssa_lookup[i], ssa_lookup[j]))
         return ssa_path
 
-    def add_node(self, node):
+    def check_node(self, node):
         """
         """
         if node in self.children:
-
-            # if (
-            #     (node.forward_score >= self.best_score) or
-            #     (node.forward_score) > self.seen[node.key]
-            # ):
-            #     self.kill(node)
-
             return
 
         hg = node.hg
-        cnodes = set()
+        cnodes = self.children[node] = set()
 
+        # for all possible next contractions
         for e, (i, j) in hg.edges.items():
             hg_next = hg.copy()
 
-            hg_next.compress(self.chi,
-                             hg_next.get_node(i) + hg_next.get_node(j))
+            # compress then contract
+            hg_next.compress(
+                self.chi, hg_next.get_node(i) + hg_next.get_node(j)
+            )
             ij = hg_next.contract(i, j, node=i | j)
 
-            dsize = hg_next.neighborhood_size([ij]) - hg.neighborhood_size(
-                [i, j])
+            # measure change in total memory
+            dsize = (
+                hg_next.neighborhood_size([ij]) -
+                hg.neighborhood_size([i, j])
+            )
+
+            # score is peak total size encountered
             new_size = node.size + dsize
             new_score = max(node.forward_score, new_size)
-            if new_score >= self.best_score:
-                # all subsequent paths with be worse - terminate
+
+            if self.prune and (new_score >= self.best_score):
+                # all subsequent paths will be worse - skip
                 continue
 
-            new_ssa_path = node.ssa_path + ((i, j), )
             new_node = Node(
                 hg=hg_next,
-                ssa_path=new_ssa_path,
+                ssa_path=node.ssa_path + ((i, j),),
                 size=new_size,
                 local_score=dsize,
                 forward_score=new_score,
             )
 
-            key = new_node.key
-            if new_score >= self.seen.get(key, float('inf')):
-                self.hits += 1
+            graph_key = new_node.graph_key
+            if self.prune and (new_score >=
+                               self.seen.get(graph_key, float('inf'))):
+                # we've reached this graph before with better score
                 continue
+            self.seen[graph_key] = min(new_score,
+                                       self.seen.get(graph_key, float('inf')))
 
-            self.seen[key] = new_score
+            # add to tree
             cnodes.add(new_node)
             self.parents[new_node] = node
 
-        self.children[node] = cnodes
-        # if not cnodes:
-        #     self.kill(node)
+        # hypergraph only needed to generate children
+        # node.hg = None
 
-    def kill(self, node):
+    def delete_node(self, node):
         """
         """
-        self.children[node].clear()
-        try:
-            pnode = self.parents.pop(node)
-            self.children[pnode].discard(node)
-            self.maybe_prune(pnode)
-        except KeyError:
-            pass
+        if node is self.root:
+            raise
 
-    def maybe_prune(self, node):
-        """
-        """
-        if not self.children[node]:
-            self.kill(node)
+        dnodes = []
+
+        # get all children
+        queue = [node]
+        while queue:
+            cnode = queue.pop()
+            queue.extend(self.children.get(cnode, ()))
+            dnodes.append(cnode)
+
+        while node is not self.root:
+            # get childless parents
+            pnode = self.parents[node]
+            siblings = self.children[pnode]
+            siblings.remove(node)
+
+            # NB: could also contract single children?
+            if siblings:
+                break
+
+            dnodes.append(pnode)
+            node = pnode
+
+        # wipe nodes
+        for dnode in dnodes:
+            self.children.pop(dnode, None)
+            self.parents.pop(dnode, None)
+            self.seen.pop(dnode.graph_key, None)
+            self.leaves.discard(dnode)
+
+        return pnode
+
+    def backprop(self, node):
+        final_score = node.forward_score
+        if final_score < self.best_score:
+            self.best_score = final_score
+            self.best_ssa_path = node.ssa_path
+        self.pbar.update()
+        self.pbar.set_description(
+            f"lq:{len(self.leaves) if self.leaves is not None else None} "
+            f"best:{math.log2(self.best_score):.2f} "
+            f"tree:{len(self.parents)} "
+        )
+        # back track upwards updating backward_score
+        while node is not self.root:
+            pnode = self.parents[node]
+            pnode.update(final_score)
+            node = pnode
 
     def simulate_node(self, node):
         """
         """
-        # make sure we know node
-        self.add_node(node)
-
         # greedily descend to bottom based on heuristic local_score
-        while node.hg.get_num_nodes() > 1:
-
-            # if all children are bad, kill this node
-            cnodes = self.children[node]
-            if not cnodes:
-                # self.kill(node)
-                return
-
+        while True:
+            self.check_node(node)
+            if node.n == 1:
+                # we've reached a fully contracted graph
+                break
+            if self.prune and self.is_deadend(node):
+                node = self.delete_node(node)
+                continue
             node = min(
-                cnodes,
+                self.children[node],
                 key=lambda node: node.local_score - self.T * gumbel()
             )
+        self.backprop(node)
 
-            # make sure we know node
-            self.add_node(node)
-
-        # we've reached a fully contracted graph
-        self.pbar.update()
-        if node.backward_score < self.best_score:
-            self.best_score = node.backward_score
-            self.best_ssa_path = node.ssa_path
-            self.pbar.set_description(
-                f"lq:{len(self.leaves) if self.leaves is not None else None} "
-                f"best:{math.log2(self.best_score):.2f} "
-                f"hits:{self.hits} ")
-
-        # back track upwards updating backward_score
-        while True:
+    def simulate_optimized(self, node):
+        H = node.hg
+        path = self.optimize(
+            inputs=tuple(H.nodes.values()),
+            output=H.output,
+            size_dict=H.size_dict,
+        )
+        nids = list(H.nodes.keys())
+        for (i, j) in path:
+            self.check_node(node)
+            ni, nj = map(nids.pop, sorted((i, j), reverse=True))
+            nids.append(ni | nj)
             try:
-                pnode = self.parents[node]
-                pnode.update(node)
-                node = pnode
-            except KeyError:
-                break
-
-    def explore(self):
-        """
-        """
-        while self.leaves:
-            # get the most favourable leaf node
-            heapq.heapify(self.leaves)
-            leaf = heapq.heappop(self.leaves)
-
-            # simulate all its children
-            for node in tuple(self.children[leaf]):
+                node = next(iter((
+                    x for x in self.children[node]
+                    if set(x.ssa_path[-1]) == {ni, nj}
+                )))
+            except StopIteration:
+                # next path node already pruned
                 self.simulate_node(node)
-                if self.children[node]:
-                    heapq.heappush(self.leaves, node)
+                return
 
-            # if all children were bad then remove
-            # self.maybe_prune(leaf)
+        self.backprop(node)
+
+    def is_deadend(self, node):
+        """
+        """
+        return (
+            not bool(self.children[node]) or
+            node.forward_score >= self.best_score or
+            node.forward_score > self.seen.get(node.graph_key, float('inf'))
+        )
+
+    def descend(self):
+        """
+        """
+        if self.optimize is not None:
+            simulate = self.simulate_optimized
+        else:
+            simulate = self.simulate_node
+
+        node = self.root
+        while node in self.leaves:
+            node = min(self.children[node])
+            if self.prune and self.is_deadend(node):
+                node = self.delete_node(node)
+                continue
+        for cnode in tuple(self.children[node]):
+            if cnode in self.children[node]:
+                simulate(cnode)
+        self.leaves.add(node)
+        for node in tuple(self.children):
+            try:
+                if self.is_deadend(node):
+                    self.delete_node(node)
+            except KeyError:
+                pass
 
     def __call__(self, inputs, output, size_dict):
         """
@@ -279,10 +349,10 @@ class MCTS:
         self.setup(inputs, output, size_dict)
 
         try:
-            self.explore()
+            while self.children:
+                self.descend()
         except KeyboardInterrupt:
             pass
         finally:
             self.pbar.close()
-
         return self.get_ssa_path()
