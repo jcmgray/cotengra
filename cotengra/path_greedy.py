@@ -398,14 +398,14 @@ class GreedySpan:
         self.cents = self.hg.simple_centrality()
 
         def region_choose_sorter(node):
-            return self.cents[node] + 1e-3 * random.random()
+            return self.cents[node] + 1e-6 * random.random()
 
         if output:
             region = oset(self.hg.output_nodes())
         elif self.start == 'max':
-            region = oset([max(self.cents.keys(), key=self.cents.__getitem__)])
+            region = oset([max(self.cents.keys(), key=region_choose_sorter)])
         elif self.start == 'min':
-            region = oset([min(self.cents.keys(), key=self.cents.__getitem__)])
+            region = oset([min(self.cents.keys(), key=region_choose_sorter)])
         else:
             region = oset(self.start)
 
