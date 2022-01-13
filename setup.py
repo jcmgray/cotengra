@@ -20,8 +20,10 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
     ],
-    keywords='tensor network contraction graph partition',
+    keywords='tensor network contraction graph hypergraph partition einsum',
     packages=find_packages(exclude=['docs', 'tests']),
     install_requires=[
         'opt_einsum',
