@@ -40,6 +40,12 @@ setup(
             'autoray',
             'ray',
         ],
+        'docs': [
+            'sphinx',
+            'sphinx-autoapi',
+            'myst-nb',
+            'furo',
+        ],
         'test': [
             'numpy',
             'kahypar',
