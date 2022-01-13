@@ -1,8 +1,30 @@
 import math
 import functools
-import collections
 
 import numpy as np
+
+
+DEFAULT_DRAW_COLOR = (0.5, 0.5, 0.5)
+DEFAULT_STYLE = {
+    'text.color': DEFAULT_DRAW_COLOR,
+    'axes.labelcolor': DEFAULT_DRAW_COLOR,
+    'axes.edgecolor': DEFAULT_DRAW_COLOR,
+    'axes.facecolor': (1, 1, 1, 0),
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'xtick.color': DEFAULT_DRAW_COLOR,
+    'ytick.color': DEFAULT_DRAW_COLOR,
+}
+
+
+def use_default_style(fn):
+    import matplotlib as mpl
+
+    def new_fn(*args, **kwargs):
+        with mpl.rc_context(DEFAULT_STYLE):
+            return fn(*args, **kwargs)
+
+    return new_fn
 
 
 def _return_or_close_fig(fig, return_fig):
@@ -12,70 +34,6 @@ def _return_or_close_fig(fig, return_fig):
     else:
         plt.show()
         plt.close(fig)
-
-
-def plot_trials(
-    self,
-    y='score',
-    color_scheme='Set2',
-    figsize=(8, 3),
-    return_fig=False,
-):
-    from matplotlib import pyplot as plt
-    import seaborn as sns
-
-    df = self.to_df()
-
-    if y is None:
-        y = self.minimize
-
-    if y == 'score':
-        best_y = min(self.scores)
-        ylabel = 'Score'
-    if y == 'size':
-        best_y = math.log2(self.best[y])
-        ylabel = 'log2[SIZE]'
-    if y == 'flops':
-        best_y = math.log10(self.best[y])
-        ylabel = 'log10[FLOPS]'
-    if y == 'write':
-        best_y = math.log10(self.best[y])
-        ylabel = 'log10[WRITE]'
-    if y == 'combo':
-        best_y = math.log2(self.best['flops']) + math.log2(self.best['size'])
-        ylabel = 'log10[FLOPS + 256 * WRITE]'
-        df['combo'] = [math.log10(f + 256 * m)
-                       for f, m in zip(self.costs_flops, self.costs_write)]
-
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-    ax.axhline(best_y, color=(0, 0, 1, 0.1), linestyle=':')
-    sns.scatterplot(
-        y=y,
-        x='run',
-        data=df,
-        ax=ax,
-        style='method',
-        hue='method',
-        palette=color_scheme,
-    )
-
-    ax.set(ylabel=ylabel)
-    ax.grid(True, c=(0.98, 0.98, 0.98))
-    ax.set_axisbelow(True)
-
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(
-        handles=handles,
-        labels=labels,
-        bbox_to_anchor=(0.5, 1.0),
-        ncol=(len(labels) * 6) // len(labels),
-        loc='lower center',
-        columnspacing=1,
-        handletextpad=0,
-        frameon=False,
-    )
-
-    return _return_or_close_fig(fig, return_fig)
 
 
 def plot_trials_alt(self, y=None, width=800, height=300):
@@ -135,48 +93,101 @@ _scatter_labels = {
 }
 
 
+@use_default_style
 def plot_scatter(
     self,
     x='size',
     y='flops',
-    hue='method',
-    style='method',
-    color_scheme='Set2',
-    figsize=(6, 4),
+    figsize=(5, 5),
     return_fig=False,
 ):
-    from matplotlib import pyplot as plt
-    import seaborn as sns
+    import math
+    import itertools
+    import collections
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    import cotengra as ctg
 
-    df = self.to_df()
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-    sns.scatterplot(
-        x=x,
-        y=y,
-        hue=hue,
-        style=style,
-        data=df,
-        palette=color_scheme,
-    )
+    factor = None
+    if x != 'trial':
+        x, factor = ctg.core.parse_minimize(x)
+    if y != 'trial':
+        y, factor = ctg.core.parse_minimize(y)
+    if factor:
+        factor = int(factor)
+    else:
+        factor = 64
 
-    ax.set(ylabel=_scatter_labels[y], xlabel=_scatter_labels[x],
-           xlim=(min(df[x] - 1), max(df[x] + 1)))
-    ax.grid(True, c=(0.98, 0.98, 0.98))
-    ax.set_axisbelow(True)
+    N = len(self.scores)
+    data = collections.defaultdict(lambda: collections.defaultdict(list))
 
-    handles, labels = ax.get_legend_handles_labels()
-    handles, labels = handles[1:], labels[1:]
-    ax.legend(
-        handles=handles,
-        labels=labels,
-        bbox_to_anchor=(1.0, 0.5),
-        loc='center left',
-        columnspacing=1,
-        handletextpad=0,
-        frameon=False,
-    )
+    for i in range(N):
+        method = self.method_choices[i]
+        data[method]['trial'].append(i)
+        data[method]['score'].append(self.scores[i])
+        data[method]['size'].append(math.log2(self.costs_size[i]))
+        f = self.costs_flops[i]
+        w = self.costs_write[i]
+        data[method]['flops'].append(math.log10(f))
+        data[method]['write'].append(math.log10(w))
+        data[method]['combo'].append(math.log10(f + factor * w))
+
+    def parse_label(z):
+        if z == 'size':
+            return 'log2[SIZE]'
+        if z in ('flops', 'write'):
+            return f'log10[{z.upper()}]'
+        if z == 'combo':
+            return f'log10[FLOPS + {factor} * WRITE]'
+        return z.upper()
+
+    xlabel = parse_label(x)
+    ylabel = parse_label(y)
+
+    markers = itertools.cycle('oXsvPD^h*p<d8>H')
+
+    with mpl.rc_context(DEFAULT_STYLE):
+        fig, ax = plt.subplots(figsize=figsize)
+
+        for method, datum in sorted(data.items()):
+            ax.scatter(
+                datum[x],
+                datum[y],
+                marker=next(markers),
+                label=method,
+                edgecolor='white',
+            )
+
+        ax.grid(True, color=DEFAULT_DRAW_COLOR, which='major', alpha=0.1)
+        ax.set_axisbelow(True)
+
+        ax.legend(
+            loc='lower center',
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=(len(data) * 6) // len(data),
+            framealpha=0,
+            handlelength=0,
+        )
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
 
     return _return_or_close_fig(fig, return_fig)
+
+
+def plot_trials(
+    self,
+    y='score',
+    figsize=(8, 3),
+    **kwargs,
+):
+    return plot_scatter(
+        self,
+        x='trial',
+        y=y,
+        figsize=figsize,
+        **kwargs,
+    )
 
 
 def plot_scatter_alt(
@@ -355,6 +366,7 @@ def get_nice_pos(G, k=0.01, iterations=500, layout=None, flatten=False):
     return massage_pos(pos, flatten=flatten)
 
 
+@use_default_style
 def plot_tree(
     tree,
     layout='ring',
@@ -375,6 +387,7 @@ def plot_tree(
     return_fig=False,
     raw_edge_color=None,
     raw_edge_alpha=None,
+    tree_root_height=True,
     tree_alpha=0.8,
     colorbars=True,
     plot_raw_graph=True,
@@ -391,9 +404,9 @@ def plot_tree(
 
     isdark = sum(to_rgb(mpl.rcParams['figure.facecolor'])) / 3 < 0.5
     if raw_edge_color is None:
-        raw_edge_color = (1.0, 1.0, 1.0) if isdark else (0.0, 0.0, 0.0)
+        raw_edge_color = (.5, .5, .5)
     if raw_edge_alpha is None:
-        raw_edge_alpha = 0.2 if isdark else 0.05
+        raw_edge_alpha = 0.5
 
     # draw the contraction tree
     G_tree = tree_to_networkx(tree)
@@ -466,12 +479,16 @@ def plot_tree(
                     coo_i = pos[frozenset([ti])]
                     x_av += coo_i[0] / len(p)
                     y_av += coo_i[1] / len(p)
-                y_av = ymax + (xmax - xmin) * ((i + 1) / tree.N)**order_y_pow
+                y_av = (
+                    ymax +
+                    float(tree_root_height) * (xmax - xmin) *
+                    ((i + 1) / tree.N)**order_y_pow
+                )
                 pos[p] = (x_av, y_av)
 
         else:
             # place the top of the tree
-            pos[tree.root] = (0, 1.0 * (xmax - xmin))
+            pos[tree.root] = (0, float(tree_root_height) * (xmax - xmin))
             # layout the tree nodes between bottom and top
             # first need to filter out TN nodes not appearing in tree
             tree_pos = {k: v for k, v in pos.items() if k in G_tree.nodes}
@@ -556,9 +573,9 @@ def plot_tree(
         ax_r.yaxis.tick_right()
         ax_r.set(title='log10[FLOPS]')
 
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', UserWarning)
-        plt.tight_layout()
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter('ignore', UserWarning)
+    #     plt.tight_layout()
 
     return _return_or_close_fig(fig, return_fig)
 
@@ -566,14 +583,14 @@ def plot_tree(
 @functools.wraps(plot_tree)
 def plot_tree_ring(tree, **kwargs):
     kwargs.setdefault('tree_alpha', 0.97)
-    kwargs.setdefault('raw_edge_alpha', 0.03)
+    kwargs.setdefault('raw_edge_alpha', 1 / 10)
     return plot_tree(tree, 'ring', **kwargs)
 
 
 @functools.wraps(plot_tree)
 def plot_tree_tent(tree, **kwargs):
     kwargs.setdefault('tree_alpha', 0.7)
-    kwargs.setdefault('raw_edge_alpha', 0.07)
+    kwargs.setdefault('raw_edge_alpha', 1 / 5)
     kwargs.setdefault('edge_scale', 1 / 2)
     kwargs.setdefault('node_scale', 1 / 3)
     return plot_tree(tree, 'tent', **kwargs)
@@ -666,9 +683,9 @@ def plot_contractions(
     cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=color_scheme)
     cb.outline.set_visible(False)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', UserWarning)
-        plt.tight_layout()
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter('ignore', UserWarning)
+    #     plt.tight_layout()
 
     return _return_or_close_fig(fig, return_fig)
 
@@ -769,9 +786,9 @@ def plot_slicings(
     cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=color_scheme, norm=nm)
     cb.outline.set_visible(False)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', UserWarning)
-        plt.tight_layout()
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter('ignore', UserWarning)
+    #     plt.tight_layout()
 
     return _return_or_close_fig(fig, return_fig)
 
@@ -825,11 +842,7 @@ def plot_hypergraph(
     from matplotlib import pyplot as plt
     from matplotlib.colors import to_rgb
 
-    isdark = sum(to_rgb(mpl.rcParams['figure.facecolor'])) / 3 < 0.5
-    if isdark:
-        font_color = edge_color = (1.0, 1.0, 1.0, 1.0)
-    else:
-        font_color = edge_color = (0.0, 0.0, 0.0, 1.0)
+    font_color = edge_color = (.5, .5, .5, .9)
 
     # set the size of the nodes
     if node_size is None:
@@ -891,7 +904,7 @@ def plot_hypergraph(
             font_color=font_color,
             font_family=edge_labels_font_family,
             bbox={'color': to_rgb(mpl.rcParams['figure.facecolor']),
-                  'alpha': 0.5},
+                  'alpha': 0.0},
         )
         nx.draw_networkx_edge_labels(
             G, pos=pos, ax=ax,
@@ -902,7 +915,7 @@ def plot_hypergraph(
             font_color=font_color,
             font_family=edge_labels_font_family,
             bbox={'color': to_rgb(mpl.rcParams['figure.facecolor']),
-                  'alpha': 0.5},
+                  'alpha': 0.0},
         )
 
     if return_fig == 'info':
@@ -912,11 +925,11 @@ def plot_hypergraph(
 
 
 def tree_to_hypernetx(tree, order=None):
-    import hypernetx as hnx
+    from hypernetx import Hypergraph
     nodes = {}
     for i, (p, l, r) in enumerate(tree.traverse(order=order)):
         nodes[str(i)] = list(p)
-    return hnx.Hypergraph(nodes)
+    return Hypergraph(nodes)
 
 
 def plot_tree_rubberband(
@@ -945,7 +958,7 @@ def plot_tree_rubberband(
     contractions / subgraphs - requires ``hypernetx``. This can be intuitive
     for small and planar contractions.
     """
-    import hypernetx as hnx
+    from hypernetx.drawing import draw
     import matplotlib as mpl
 
     hg = tree_to_hypernetx(tree, order=order)
@@ -973,7 +986,7 @@ def plot_tree_rubberband(
     else:
         cmap = colormap
 
-    hnx.draw(
+    draw(
         hg,
         pos=pos,
         ax=ax,

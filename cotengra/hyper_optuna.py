@@ -1,3 +1,6 @@
+
+import warnings
+
 from .hyper import register_hyper_optlib
 
 
@@ -60,11 +63,17 @@ def optuna_init_optimizers(
 
 
 def optuna_get_setting(self):
-    otrial = self._study.ask()
-    return {
-        "trial_number": otrial.number,
-        **self._retrieve_params(otrial),
-    }
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            action='ignore',
+            message='.*divide by zero.*'
+        )
+
+        otrial = self._study.ask()
+        return {
+            "trial_number": otrial.number,
+            **self._retrieve_params(otrial),
+        }
 
 
 def optuna_report_result(self, settings, trial, score):

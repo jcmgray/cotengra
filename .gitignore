@@ -60,7 +60,7 @@ target/
 .pytest_cache
 .vscode
 
-examples/.ipynb_checkpoints/
+**/.ipynb_checkpoints/
 
 
 # Added by cargo

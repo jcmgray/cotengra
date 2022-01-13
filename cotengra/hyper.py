@@ -241,8 +241,8 @@ def progress_description(best):
 
 
 class HyperOptimizer(PathOptimizer):
-    """Users Bayesian optimization to hyper-optimizer the settings used to
-    optimize the path.
+    """A path optimizer that samples a series of contraction trees
+    while optimizing the hyper parameters used to generate them.
 
     Parameters
     ----------
@@ -392,7 +392,7 @@ class HyperOptimizer(PathOptimizer):
 
     @property
     def path(self):
-        return self.tree.path()
+        return self.tree.get_path()
 
     def setup(self, inputs, output, size_dict):
         trial_fn = find_tree
@@ -769,7 +769,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         )
         if overwrite or missing:
             self._cache[h] = {
-                'path': tree.path(),
+                'path': tree.get_path(),
                 'sliced_inds': tree.sliced_inds
             }
 

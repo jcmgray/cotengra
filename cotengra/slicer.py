@@ -245,7 +245,7 @@ class SliceFinder:
 
     Parameters
     ----------
-    info : PathInfo
+    tree_or_info : ContractionTree or PathInfo
         Object describing the target full contraction to slice, generated for
         example from a call to :func:`~opt_einsum.contract_path`.
     target_size : int, optional
@@ -267,7 +267,7 @@ class SliceFinder:
 
     def __init__(
         self,
-        info,
+        tree_or_info,
         target_size=None,
         target_overhead=None,
         target_slices=None,
@@ -282,15 +282,15 @@ class SliceFinder:
                 "You need to specify at least one of `target_size`, "
                 "`target_overhead` or `target_slices`.")
 
-        self.info = info
+        self.info = tree_or_info
 
         # the unsliced cost
-        if isinstance(info, PathInfo):
-            self.cost0 = ContractionCosts.from_info(info)
-            self.forbidden = set(info.output_subscript)
+        if isinstance(tree_or_info, PathInfo):
+            self.cost0 = ContractionCosts.from_info(tree_or_info)
+            self.forbidden = set(tree_or_info.output_subscript)
         else:
-            self.cost0 = ContractionCosts.from_contraction_tree(info)
-            self.forbidden = set(info.output)
+            self.cost0 = ContractionCosts.from_contraction_tree(tree_or_info)
+            self.forbidden = set(tree_or_info.output)
 
         if allow_outer == 'only':
             # invert so only outer indices are allowed

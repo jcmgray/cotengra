@@ -390,10 +390,6 @@ class CompressedTreeRefiner:
             sleep(1e-3)
 
     def _process_result(self, tree, key, time, old, new):
-        # if self.plot:
-        #     print(f"T:{time} {old:.2f}->", end='')
-        #     print(f"{new:.2f} , ", end='')
-
         if old == new:
             self.times[key] *= 2
         else:

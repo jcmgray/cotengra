@@ -14,6 +14,17 @@ except ImportError:
 __all__ = ('groupby', 'interleave', 'unique')
 
 
+def deprecated(fn, old_name, new_name):
+
+    def new_fn(*args, **kwargs):
+        import warnings
+        warnings.warn(f"The {old_name} function is deprecated in favor "
+                      f"of {new_name}", Warning)
+        return fn(*args, **kwargs)
+
+    return new_fn
+
+
 def prod(it):
     """Compute the product of sequence of numbers ``it``.
     """
@@ -711,5 +722,58 @@ def rand_equation(
     shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
 
     output = list(np.random.permutation(output))
+
+    return inputs, output, shapes, size_dict
+
+
+def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
+    import numpy as np
+    import opt_einsum as oe
+
+    if d_max is None:
+        d_max = d_min
+
+    ndim = len(dims)
+    try:
+        cyclics = tuple(cyclic)
+    except TypeError:
+        cyclics = (cyclic,) * ndim
+
+    symbol_map = collections.defaultdict(
+        map(oe.get_symbol, itertools.count()).__next__
+    )
+
+    terms = []
+    for coo_a in itertools.product(*(range(n) for n in dims)):
+        term = []
+        for s in range(ndim):
+            for step in (-1, +1):
+                coo_b = list(coo_a)
+                coo_b[s] += step
+                if cyclics[s]:
+                    # wrap-around
+                    coo_b[s] %= dims[s]
+                elif coo_b[s] < 0 or coo_b[s] >= dims[s]:
+                    continue
+                coo_b = tuple(coo_b)
+
+                edge = (coo_a, coo_b) if (coo_a < coo_b) else (coo_b, coo_a)
+                ix = symbol_map[edge]
+
+                term.append(ix)
+        terms.append(term)
+
+    inputs = tuple(map("".join, terms))
+    output = ()
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    size_dict = {
+        ix: np.random.randint(d_min, d_max + 1)
+        for ix in symbol_map.values()
+    }
+
+    shapes = tuple(tuple(size_dict[ix] for ix in term) for term in terms)
 
     return inputs, output, shapes, size_dict

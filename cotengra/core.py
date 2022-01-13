@@ -13,6 +13,7 @@ from opt_einsum.paths import get_path_fn, DynamicProgramming, linear_to_ssa
 from autoray import do
 
 from .utils import (
+    deprecated,
     MaxCounter,
     BitSet,
     node_from_seq,
@@ -33,6 +34,8 @@ from .parallel import (
     maybe_leave_pool,
     maybe_rejoin_pool,
     submit,
+    scatter,
+    can_scatter,
 )
 from .plot import (
     plot_tree_ring,
@@ -85,19 +88,7 @@ def get_with_default(k, obj, default):
 
 
 class ContractionTree:
-    """Binary tree representing a tensor contraction order. Currently useful
-    for:
-
-        1. Building paths with hybrid methods - e.g. community + greedy/dp.
-        2. Keeping dynamic track of path cost for early pruning.
-        3. Checking equivalency of two paths.
-        4. Making sure contraction of tree is depth first
-
-    Might in fugure be useful for:
-
-        5. Grafting the best bits of many trees into each other.
-        6. Reordering paths to e.g. put as many constant contractions first.
-        7. Plotting and exploring what contraction paths are actually doing.
+    """Binary tree representing a tensor network contraction.
 
     Parameters
     ----------
@@ -117,15 +108,15 @@ class ContractionTree:
         Whether to dynamically keep track of the largest tensor so far. If
         ``False`` You can still compute this once the tree is complete.
 
-    Properties
+    Attributes
     ----------
+    children : dict[node, tuple[node]
+        Mapping of each node to two children.
     info : dict[node, dict]
         Information about the tree nodes. The key is the set of inputs (a
         set of inputs indices) the node contains. Or in other words, the
         subgraph of the node. The value is a dictionary to cache information
         about effective 'leg' indices, size, flops of formation etc.
-    children : dict[node, tuple[node]
-        Mapping of each node to two children.
     """
 
     def __init__(
@@ -298,6 +289,13 @@ class ContractionTree:
     def from_eq(cls, eq, size_dict, **kwargs):
         """Create a empty ``ContractionTree`` directly from an equation and set
         of shapes.
+
+        Parameters
+        ----------
+        eq : str
+            The einsum string equation.
+        size_dict : dict[str, int]
+            The size of each index.
         """
         lhs, output = eq.split('->')
         inputs = lhs.split(',')
@@ -1335,10 +1333,11 @@ class ContractionTree:
 
         # set up the initial 'forest' and parallel machinery
         pool = parse_parallel_arg(parallel)
-        if pool is not None:
+        is_scatter_pool = can_scatter(pool)
+        if is_scatter_pool:
             is_worker = maybe_leave_pool(pool)
             # store the trees as futures for the entire process
-            forest = [pool.scatter(tree)]
+            forest = [scatter(pool, tree)]
             maxiter = subtree_maxiter // parallel_maxiter_steps
         else:
             forest = [tree]
@@ -1370,6 +1369,13 @@ class ContractionTree:
                 if pool is None:
                     forest = [_reconfigure_tree(**s) for s in saplings]
                     res = [{'tree': t, **_get_tree_info(t)} for t in forest]
+                elif not is_scatter_pool:
+                    forest_futures = [
+                        submit(pool, _reconfigure_tree, **s)
+                        for s in saplings
+                    ]
+                    forest = [f.result() for f in forest_futures]
+                    res = [{'tree': t, **_get_tree_info(t)} for t in forest]
                 else:
                     # submit in smaller steps to saturate processes
                     for _ in range(parallel_maxiter_steps):
@@ -1377,12 +1383,19 @@ class ContractionTree:
                             s['tree'] = submit(pool, _reconfigure_tree, **s)
 
                     # compute scores remotely then gather
-                    forest_futures = [s['tree'] for s in saplings]
-                    res_futures = [submit(pool, _get_tree_info, t)
-                                   for t in forest_futures]
-                    res = [{'tree': tree_future, **res_future.result()}
-                           for tree_future, res_future in
-                           zip(forest_futures, res_futures)]
+                    forest_futures = [
+                        s['tree']
+                        for s in saplings
+                    ]
+                    res_futures = [
+                        submit(pool, _get_tree_info, t)
+                        for t in forest_futures
+                    ]
+                    res = [
+                        {'tree': tree_future, **res_future.result()}
+                        for tree_future, res_future in
+                        zip(forest_futures, res_futures)
+                    ]
 
                 # update the order of the new forest
                 res.sort(key=score)
@@ -1400,11 +1413,11 @@ class ContractionTree:
             if progbar:
                 pbar.close()
 
-        if pool is None:
-            tree.set_state_from(forest[0])
-        else:
+        if is_scatter_pool:
             tree.set_state_from(forest[0].result())
             maybe_rejoin_pool(is_worker, pool)
+        else:
+            tree.set_state_from(forest[0])
 
         return tree
 
@@ -1445,7 +1458,7 @@ class ContractionTree:
             twice that of computing the original contraction all at once.
         temperature : float, optional
             How much to randomize the repeated search.
-        minimize {'flops', 'size', ...}, optional
+        minimize : {'flops', 'size', ...}, optional
             Which metric to score the overhead increase against.
         allow_outer : bool, optional
             Whether to allow slicing of outer indices.
@@ -1621,10 +1634,11 @@ class ContractionTree:
 
         # set up the initial 'forest' and parallel machinery
         pool = parse_parallel_arg(parallel)
-        if pool is not None:
+        is_scatter_pool = can_scatter(pool)
+        if is_scatter_pool:
             is_worker = maybe_leave_pool(pool)
             # store the trees as futures for the entire process
-            forest = [pool.scatter(tree)]
+            forest = [scatter(pool, tree)]
         else:
             forest = [tree]
 
@@ -1658,7 +1672,17 @@ class ContractionTree:
                     ]
                     res = [{'tree': t, **_get_tree_info(t)} for t in forest]
 
+                elif not is_scatter_pool:
+                    # simple pool with no pass by reference
+                    forest_futures = [
+                        submit(pool, _slice_and_reconfigure_tree, **s)
+                        for s in saplings
+                    ]
+                    forest = [f.result() for f in forest_futures]
+                    res = [{'tree': t, **_get_tree_info(t)} for t in forest]
+
                 else:
+
                     forest_futures = [
                         submit(pool, _slice_and_reconfigure_tree, **s)
                         for s in saplings
@@ -1670,7 +1694,10 @@ class ContractionTree:
                         for t in forest_futures
                     ]
                     res = [
-                        {'tree': tree_future, **res_future.result()}
+                        {
+                            'tree': tree_future,
+                            **res_future.result()
+                        }
                         for tree_future, res_future in
                         zip(forest_futures, res_futures)
                     ]
@@ -1701,11 +1728,11 @@ class ContractionTree:
             if progbar:
                 pbar.close()
 
-        if pool is None:
-            tree.set_state_from(forest[0])
-        else:
+        if is_scatter_pool:
             tree.set_state_from(forest[0].result())
             maybe_rejoin_pool(is_worker, pool)
+        else:
+            tree.set_state_from(forest[0])
 
         return tree
 
@@ -1783,7 +1810,7 @@ class ContractionTree:
             progbar=progbar,
         )
         opt.setup(self.inputs, self.output, self.size_dict)
-        opt.explore_path(self.path_surface(), restrict=order_only)
+        opt.explore_path(self.get_path_surface(), restrict=order_only)
         ssa_path = opt(self.inputs, self.output, self.size_dict)
         rtree = ContractionTree.from_path(
             self.inputs, self.output, self.size_dict, ssa_path=ssa_path,
@@ -1835,7 +1862,7 @@ class ContractionTree:
             if len(nd) == 1
         )
 
-    def path(self, order=None):
+    def get_path(self, order=None):
         """Generate a standard path from the contraction tree.
         """
         path = []
@@ -1850,7 +1877,15 @@ class ContractionTree:
 
         return tuple(path)
 
-    def ssa_path(self, order=None):
+    path = deprecated(get_path, 'path', 'get_path')
+
+    def get_numpy_path(self, order=None):
+        """Generate a path compatible with the `optimize` kwarg of
+        `numpy.einsum`.
+        """
+        return ['einsum_path', *self.get_path(order=order)]
+
+    def get_ssa_path(self, order=None):
         """Generate a ssa path from the contraction tree.
         """
         ssa_path = []
@@ -1862,6 +1897,8 @@ class ContractionTree:
             pos[parent] = len(ssa_path) + self.N - 1
 
         return tuple(ssa_path)
+
+    ssa_path = deprecated(get_ssa_path, 'ssa_path', 'get_ssa_path')
 
     def surface_order(self, node):
         return (len(node), self.get_centrality(node))
@@ -1878,11 +1915,17 @@ class ContractionTree:
         self.surface_order = functools.partial(
             get_with_default, obj=o, default=float('inf'))
 
-    def path_surface(self):
-        return self.path(order=self.surface_order)
+    def get_path_surface(self):
+        return self.get_path(order=self.surface_order)
 
-    def ssa_path_surface(self):
-        return self.ssa_path(order=self.surface_order)
+    path_surface = deprecated(
+        get_path_surface, 'path_surface', 'get_path_surface')
+
+    def get_ssa_path_surface(self):
+        return self.get_ssa_path(order=self.surface_order)
+
+    ssa_path_surface = deprecated(
+        get_ssa_path_surface, 'ssa_path_surface', 'get_ssa_path_surface')
 
     def get_spans(self):
         """Get all (which could mean none) potential embeddings of this
@@ -2397,11 +2440,31 @@ class ContractionTree:
         prefer_einsum : bool, optional
             Prefer to use ``einsum`` for pairwise contractions, even if
             ``tensordot`` can perform the contraction.
+        strip_exponent : bool, optional
+            If ``True``, eagerly strip the exponent (in log10) from
+            intermediate tensors to control numerical problems from leaving the
+            range of the datatype. This method then returns the scaled
+            'mantissa' output array and the exponent separately.
         backend : str, optional
-            What library to use for ``einsum`` and ``transpose``, will be
-            automatically inferred from the arrays if not given.
+            What library to use for ``tensordot``, ``einsum`` and
+            ``transpose``, it will be automatically inferred from the input
+            arrays if not given.
+        autojit : bool, optional
+            Whether to use the 'autojit' feature of `autoray` to compile the
+            contraction expression.
         check : bool, optional
             Perform some basic error checks.
+        progbar : bool, optional
+            Whether to show a progress bar.
+
+        Returns
+        -------
+        output : array
+            The contracted output, it will be scaled if
+            ``strip_exponent==True``.
+        exponent : float
+            The exponent of the output in base 10, returned only if
+            ``strip_exponent==True``.
 
         See Also
         --------
@@ -2620,12 +2683,17 @@ score_matcher = re.compile(
 )
 
 
-def get_score_fn(minimize):
+def parse_minimize(minimize):
     match = score_matcher.fullmatch(minimize)
     if not match:
         raise ValueError(f"No score function '{minimize}' found.")
 
     which, param = match.groups()
+    return which, param
+
+
+def get_score_fn(minimize):
+    which, param = parse_minimize(minimize)
 
     if which == 'flops':
         return score_flops

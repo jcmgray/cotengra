@@ -80,7 +80,7 @@ def greconf_rf(inputs, output, size_dict, memory_limit=None):
     tree = ContractionTree.from_path(
         inputs, output, size_dict, ssa_path=ssa_path)
     tree.subtree_reconfigure_(subtree_size=6, minimize='flops')
-    return tree.path()
+    return tree.get_path()
 
 
 register_path_fn('greedy-rf', greconf_rf)
@@ -94,7 +94,7 @@ def greconf_rw(inputs, output, size_dict, memory_limit=None):
     tree = ContractionTree.from_path(
         inputs, output, size_dict, ssa_path=ssa_path)
     tree.subtree_reconfigure_(subtree_size=6, minimize='write')
-    return tree.path()
+    return tree.get_path()
 
 
 register_path_fn('greedy-rw', greconf_rw)
@@ -108,7 +108,7 @@ def greconf_rc(inputs, output, size_dict, memory_limit=None):
     tree = ContractionTree.from_path(
         inputs, output, size_dict, ssa_path=ssa_path)
     tree.subtree_reconfigure_(subtree_size=6, minimize='combo')
-    return tree.path()
+    return tree.get_path()
 
 
 register_path_fn('greedy-rc', greconf_rc)
@@ -241,7 +241,7 @@ class GreedyCompressed:
             return sum(scores.values())
         return tuple(scores[p] for p in self.score_perm)
 
-    def ssa_path(self, inputs, output, size_dict):
+    def get_ssa_path(self, inputs, output, size_dict):
         self.candidates = []
         self.ssapath = []
         self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
@@ -294,7 +294,7 @@ class GreedyCompressed:
         return self.ssapath
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        return ssa_to_linear(self.ssa_path(inputs, output, size_dict))
+        return ssa_to_linear(self.get_ssa_path(inputs, output, size_dict))
 
 
 def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
@@ -304,7 +304,7 @@ def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
 
 def trial_greedy_compressed(inputs, output, size_dict, **kwargs):
     opt = GreedyCompressed(**kwargs)
-    ssa_path = opt.ssa_path(inputs, output, size_dict)
+    ssa_path = opt.get_ssa_path(inputs, output, size_dict)
     tree = ContractionTree.from_path(
         inputs, output, size_dict, ssa_path=ssa_path)
     tree.set_surface_order_from_path(ssa_path)
@@ -393,7 +393,7 @@ class GreedySpan:
         self.distance_p = distance_p
         self.distance_steal = distance_steal
 
-    def ssa_path(self, inputs, output, size_dict):
+    def get_ssa_path(self, inputs, output, size_dict):
         self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
         self.cents = self.hg.simple_centrality()
 
@@ -497,7 +497,7 @@ class GreedySpan:
         return ssapath
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        return ssa_to_linear(self.ssa_path(inputs, output, size_dict))
+        return ssa_to_linear(self.get_ssa_path(inputs, output, size_dict))
 
 
 def greedy_span(inputs, output, size_dict, memory_limit=None, **kwargs):
@@ -506,7 +506,7 @@ def greedy_span(inputs, output, size_dict, memory_limit=None, **kwargs):
 
 def trial_greedy_span(inputs, output, size_dict, **kwargs):
     opt = GreedySpan(**kwargs)
-    ssa_path = opt.ssa_path(inputs, output, size_dict)
+    ssa_path = opt.get_ssa_path(inputs, output, size_dict)
     tree = ContractionTree.from_path(
         inputs, output, size_dict, ssa_path=ssa_path)
     tree.set_surface_order_from_path(ssa_path)

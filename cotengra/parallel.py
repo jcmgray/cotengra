@@ -156,6 +156,20 @@ def submit(pool, fn, *args, **kwargs):
     return pool.submit(fn, *args, **kwargs)
 
 
+def scatter(pool, data):
+    """Interface for maybe turning ``data`` into a remote object or reference.
+    """
+    if _infer_backend(pool) in ('dask', 'ray'):
+        return pool.scatter(data)
+    return data
+
+
+def can_scatter(pool):
+    """Whether ``pool`` can make objects remote.
+    """
+    return _infer_backend(pool) in ('dask', 'ray')
+
+
 def should_nest(pool):
     """Given argument ``pool`` should we try nested parallelism.
     """

@@ -51,7 +51,7 @@ def test_reconfigure(forested, parallel, requires):
     assert tree_gr.total_flops() < info_gr.opt_cost
 
     info_tsr = oe.contract_path(
-        eq, *shapes, shapes=True, optimize=tree_gr.path())[1]
+        eq, *shapes, shapes=True, optimize=tree_gr.get_path())[1]
 
     assert tree_gr.total_flops() == info_tsr.opt_cost
 

@@ -31,6 +31,13 @@ setup(
         'autoray',
     ],
     extras_require={
+        'recommended': [
+            'kahypar',
+            'optuna',
+            'networkx',
+            'autoray',
+            'ray',
+        ],
         'test': [
             'numpy',
             'kahypar',

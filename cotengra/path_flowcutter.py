@@ -74,7 +74,7 @@ class FlowCutterOptimizer(PathOptimizer):
         return self.tree
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        return self.build_tree(inputs, output, size_dict).path()
+        return self.build_tree(inputs, output, size_dict).get_path()
 
 
 def optimize_flowcutter(inputs, output, size_dict, memory_limit=None,
