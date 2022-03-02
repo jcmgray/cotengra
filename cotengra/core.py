@@ -218,7 +218,7 @@ class ContractionTree:
     def copy(self):
         """Create a copy of this ``ContractionTree``.
         """
-        tree = object.__new__(ContractionTree)
+        tree = object.__new__(self.__class__)
         tree.set_state_from(self)
         return tree
 
@@ -623,6 +623,7 @@ class ContractionTree:
 
         max_size = 0
         current_size = 0
+        contract_flops = 0
         for i in range(hg.get_num_nodes()):
             s = hg.node_size(i)
             max_size = max(max_size, s)
@@ -640,6 +641,9 @@ class ContractionTree:
                 hg.compress(chi=chi, edges=hg.get_node(li))
                 hg.compress(chi=chi, edges=hg.get_node(ri))
 
+            # compute the contraction flops (= prod of involved indices)
+            contract_flops += hg.contract_pair_cost(li, ri)
+
             pi = tree_map[p] = hg.contract(li, ri)
 
             pi_size = hg.node_size(pi)
@@ -656,6 +660,7 @@ class ContractionTree:
             'max_size': max_size,
             'total_size': total_size,
             'peak_size': peak_size,
+            'contract_flops': contract_flops,
         }
 
     def max_size_compressed(self, chi, order='surface_order',
@@ -1179,6 +1184,10 @@ class ContractionTree:
             def cost(node):
                 return max(tree.get_flops(node) // 2,
                            factor * tree.get_size(node))
+        else:
+            # default to a very small cost cap
+            def cost(node):
+                return 2
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -2648,10 +2657,13 @@ def score_size_compressed(trial, chi='auto'):
     tree = trial['tree']
     if chi == 'auto':
         chi = max(tree.size_dict.values())**2
-    size = tree.max_size_compressed(chi)
+    stats = tree.compressed_contract_stats(chi)
+
+    size = stats['max_size']
     cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
     # overwrite the effective max size
     trial['size'] = size
+    trial['flops'] = stats['contract_flops']
     return cr
 
 
@@ -2659,10 +2671,13 @@ def score_peak_size_compressed(trial, chi='auto'):
     tree = trial['tree']
     if chi == 'auto':
         chi = max(tree.size_dict.values())**2
-    size = tree.peak_size_compressed(chi)
+    stats = tree.compressed_contract_stats(chi)
+
+    size = stats['peak_size']
     cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
     # overwrite the effective max size
     trial['size'] = size
+    trial['flops'] = stats['contract_flops']
     return cr
 
 
@@ -2670,16 +2685,51 @@ def score_total_size_compressed(trial, chi='auto'):
     tree = trial['tree']
     if chi == 'auto':
         chi = max(tree.size_dict.values())**2
-    size = tree.total_size_compressed(chi)
+    stats = tree.compressed_contract_stats(chi)
+
+    size = stats['total_size']
     cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
     # overwrite the effective max size
     trial['size'] = size
+    trial['flops'] = stats['contract_flops']
+    return cr
+
+
+def score_flops_compressed(trial, chi='auto'):
+    tree = trial['tree']
+    if chi == 'auto':
+        chi = max(tree.size_dict.values())**2
+    stats = tree.compressed_contract_stats(chi)
+
+    flops = stats['contract_flops']
+    cr = (math.log2(flops) + math.log2(tree.max_size())**0.5 / 1000)
+    # overwrite the effective max size
+    trial['size'] = stats['max_size']
+    trial['flops'] = flops
+    return cr
+
+
+def score_combo_compressed(trial, chi='auto', factor=DEFAULT_COMBO_FACTOR):
+    tree = trial['tree']
+    if chi == 'auto':
+        chi = max(tree.size_dict.values())**2
+    stats = tree.compressed_contract_stats(chi)
+
+    flops = stats['contract_flops']
+    size = stats['total_size']
+
+    cr = (math.log2(flops) + factor * math.log2(size))
+    # overwrite the effective max size
+    trial['size'] = size
+    trial['flops'] = flops
     return cr
 
 
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|max-compressed|"
-    r"peak-compressed|total-compressed)-*(\d*)"
+    r"(flops|size|write|combo|limit|"
+    r"max-compressed|peak-compressed|total-compressed|flops-compressed|"
+    r"combo-compressed"
+    r")-*(\d*)"
 )
 
 
@@ -2692,6 +2742,7 @@ def parse_minimize(minimize):
     return which, param
 
 
+@functools.lru_cache(maxsize=128)
 def get_score_fn(minimize):
     which, param = parse_minimize(minimize)
 
@@ -2723,6 +2774,16 @@ def get_score_fn(minimize):
     if which == 'total-compressed':
         chi = int(param) if param else 'auto'
         return functools.partial(score_total_size_compressed, chi=chi)
+
+    if which == 'flops-compressed':
+        chi = int(param) if param else 'auto'
+        return functools.partial(score_flops_compressed, chi=chi)
+
+    if which == 'combo-compressed':
+        chi = int(param) if param else 'auto'
+        return functools.partial(score_combo_compressed, chi=chi)
+
+    raise ValueError(f"No score function '{minimize}' found.")
 
 
 def _describe_tree(tree):
@@ -3188,6 +3249,12 @@ class HyperGraph:
             for n in nodes for e in self.get_node(n) for nn in self.get_edge(e)
         }
         return sum(map(self.node_size, neighborhood))
+
+    def contract_pair_cost(self, i, j):
+        """Get the cost of contracting nodes ``i`` and ``j`` - the product of
+        the dimensions of the indices involved.
+        """
+        return self.edges_size(set(self.get_node(i) + self.get_node(j)))
 
     def total_node_size(self):
         """Get the total size of all nodes.

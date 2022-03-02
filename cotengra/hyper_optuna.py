@@ -68,6 +68,10 @@ def optuna_get_setting(self):
             action='ignore',
             message='.*divide by zero.*'
         )
+        warnings.filterwarnings(
+            action='ignore',
+            message='.*invalid value encountered in subtract.*'
+        )
 
         otrial = self._study.ask()
         return {

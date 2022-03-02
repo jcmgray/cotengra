@@ -302,6 +302,13 @@ impl HyperGraph {
         nnodes.into_iter().map(|i| self.node_size(i)).sum()
     }
 
+    fn contract_pair_cost(&self, i: Node, j: Node) -> u128 {
+        let mut inds = self.get_node(i);
+        inds.extend(self.get_node(j));
+        inds = inds.into_iter().unique().collect();
+        self.edges_size(&inds)
+    }
+
     fn get_node(&self, i: Node) -> Vec<String> {
         self.nodes[&i].clone()
     }
