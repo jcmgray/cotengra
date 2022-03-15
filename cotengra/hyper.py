@@ -12,6 +12,7 @@ from opt_einsum.paths import PathOptimizer
 from .core import (
     ContractionTree,
     ContractionTreeCompressed,
+    ContractionTreeMulti,
     get_score_fn,
     score_matcher
 )
@@ -107,6 +108,22 @@ def find_tree(*args, **kwargs):
         'write': tree.total_write(),
         'size': tree.max_size(),
     }
+
+
+class TrialConvertTree:
+
+    def __init__(self, trial_fn, cls):
+        self.trial_fn = trial_fn
+        self.cls = cls
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+
+        tree = trial['tree']
+        if not isinstance(tree, self.cls):
+            tree.__class__ = self.cls
+
+        return trial
 
 
 class SlicedTrialFn:
@@ -218,19 +235,18 @@ class CompressedReconfTrial:
 
 class ComputeScore:
 
-    def __init__(self, fn, score_fn, score_compression, compressed):
+    def __init__(
+        self,
+        fn,
+        score_fn,
+        score_compression,
+    ):
         self.fn = fn
         self.score_fn = score_fn
         self.score_compression = score_compression
-        self.compressed = compressed
 
     def __call__(self, *args, **kwargs):
         trial = self.fn(*args, **kwargs)
-
-        if self.compressed:
-            # convert tree to compressed tree for path ordering
-            trial['tree'].__class__ = ContractionTreeCompressed
-
         trial['score'] = self.score_fn(trial)**self.score_compression
         return trial
 
@@ -308,6 +324,8 @@ class HyperOptimizer(PathOptimizer):
         space=None,
         score_compression=0.75,
         max_training_steps=None,
+        compressed=False,
+        multicontraction=False,
         progbar=False,
         **optlib_opts
     ):
@@ -332,7 +350,8 @@ class HyperOptimizer(PathOptimizer):
 
         # which score to feed to the hyper optimizer
         self.minimize = minimize
-        self.compressed = ('compressed' in minimize)
+        self.compressed = compressed
+        self.multicontraction = multicontraction
         self.score_compression = score_compression
         self.best_score = float('inf')
         self.max_training_steps = max_training_steps
@@ -398,6 +417,14 @@ class HyperOptimizer(PathOptimizer):
         trial_fn = find_tree
         nested_parallel = should_nest(self._pool)
 
+        if self.compressed:
+            assert not self.multicontraction
+            trial_fn = TrialConvertTree(trial_fn, ContractionTreeCompressed)
+
+        if self.multicontraction:
+            assert not self.compressed
+            trial_fn = TrialConvertTree(trial_fn, ContractionTreeMulti)
+
         if self.slicing_opts is not None:
             self.slicing_opts.setdefault('minimize', self.minimize)
             trial_fn = SlicedTrialFn(trial_fn, **self.slicing_opts)
@@ -412,8 +439,9 @@ class HyperOptimizer(PathOptimizer):
 
             if self.compressed:
                 match = score_matcher.fullmatch(self.minimize)
-                _, param = match.groups()
+                minimize, param = match.groups()
                 self.reconf_opts.setdefault('chi', int(param))
+                self.reconf_opts.setdefault('minimize', minimize)
                 trial_fn = CompressedReconfTrial(trial_fn, **self.reconf_opts)
             else:
                 self.reconf_opts.setdefault('minimize', self.minimize)
@@ -425,7 +453,6 @@ class HyperOptimizer(PathOptimizer):
             trial_fn,
             score_fn=self._score_fn,
             score_compression=self.score_compression,
-            compressed=self.compressed,
         )
 
         return trial_fn, (inputs, output, size_dict)

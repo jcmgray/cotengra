@@ -73,7 +73,12 @@ def HyperCompressedOptimizer(
     if chi is not None:
         minimize += f"-{chi}"
 
-    return HyperOptimizer(methods=methods, minimize=minimize, **kwargs)
+    return HyperOptimizer(
+        methods=methods,
+        minimize=minimize,
+        compressed=True,
+        **kwargs
+    )
 
 
 def ReusableHyperCompressedOptimizer(
@@ -93,9 +98,14 @@ def ReusableHyperCompressedOptimizer(
         set_surface_order=set_surface_order, **kwargs)
 
 
+def HyperMultiOptimizer(*args, **kwargs):
+    return HyperOptimizer(*args, multicontraction=True, **kwargs)
+
+
 __all__ = (
     "ContractionTree",
     "ContractionTreeCompressed",
+    "ContractionTreeMulti",
     "HyperGraph",
     "get_hypergraph",
     "FlowCutterOptimizer",
@@ -109,6 +119,7 @@ __all__ = (
     "hyper_optuna",
     "HyperOptimizer",
     "HyperCompressedOptimizer",
+    "HyperMultiOptimizer",
     "ReusableHyperOptimizer",
     "ReusableHyperCompressedOptimizer",
     "list_hyper_functions",

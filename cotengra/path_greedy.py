@@ -13,6 +13,7 @@ from opt_einsum.paths import (
 from opt_einsum.path_random import thermal_chooser
 
 from .core import (
+    ContractionTreeCompressed,
     jitter_dict,
     ContractionTree,
     get_hypergraph,
@@ -134,11 +135,11 @@ def gumbel():
     return -math.log(-math.log(random.uniform(0.0, 1.0)))
 
 
-try:
-    import numba as nb
-    gumbel = nb.njit(gumbel)
-except ImportError:
-    pass
+# try:
+#    import numba as nb
+#    gumbel = nb.njit(gumbel)
+# except ImportError:
+#    pass
 
 
 class GreedyCompressed:
@@ -495,6 +496,12 @@ class GreedySpan:
             ssa += 1
 
         return ssapath
+
+    def search(self, inputs, output, size_dict):
+        ssa_path = self.get_ssa_path(inputs, output, size_dict)
+        return ContractionTreeCompressed.from_path(
+            inputs, output, size_dict, ssa_path=ssa_path
+        )
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
         return ssa_to_linear(self.get_ssa_path(inputs, output, size_dict))

@@ -621,20 +621,13 @@ class ContractionTree:
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), range(hg.get_num_nodes())))
 
-        max_size = 0
-        current_size = 0
-        contract_flops = 0
-        for i in range(hg.get_num_nodes()):
-            s = hg.node_size(i)
-            max_size = max(max_size, s)
-            current_size += s
-        total_size = peak_size = current_size
+        tracker = CompressedStatsTracker(hg)
 
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
 
-            current_size -= hg.neighborhood_size((li, ri))
+            tracker.update_pre_compress(hg, li, ri)
 
             if compress_late:
                 # compress just before we contract tensors
@@ -642,26 +635,17 @@ class ContractionTree:
                 hg.compress(chi=chi, edges=hg.get_node(ri))
 
             # compute the contraction flops (= prod of involved indices)
-            contract_flops += hg.contract_pair_cost(li, ri)
+            tracker.update_pre_contract(hg, li, ri)
 
             pi = tree_map[p] = hg.contract(li, ri)
 
-            pi_size = hg.node_size(pi)
-            max_size = max(max_size, pi_size)
-            current_size += hg.neighborhood_size((pi,))
-            peak_size = max(peak_size, current_size)
-            total_size += pi_size
+            tracker.update_post_contract(hg, pi)
 
             if not compress_late:
                 # compress as soon as we can after contracting tensors
                 hg.compress(chi=chi, edges=hg.get_node(pi))
 
-        return {
-            'max_size': max_size,
-            'total_size': total_size,
-            'peak_size': peak_size,
-            'contract_flops': contract_flops,
-        }
+        return tracker
 
     def max_size_compressed(self, chi, order='surface_order',
                             compress_late=True):
@@ -674,7 +658,7 @@ class ContractionTree:
             chi=chi,
             order=order,
             compress_late=compress_late,
-        )['max_size']
+        ).max_size
 
     def peak_size_compressed(self, chi, order='surface_order',
                              compress_late=True, accel='auto'):
@@ -687,7 +671,7 @@ class ContractionTree:
             chi=chi,
             order=order,
             compress_late=compress_late,
-        )['peak_size']
+        ).peak_size
 
     def total_size_compressed(self, chi, order='surface_order',
                               compress_late=True, accel='auto'):
@@ -700,7 +684,7 @@ class ContractionTree:
             chi=chi,
             order=order,
             compress_late=compress_late,
-        )['total_size']
+        ).write
 
     def contract_nodes_pair(self, x, y, check=False):
         """Contract node ``x`` with node ``y`` in the tree to create a new
@@ -1751,6 +1735,7 @@ class ContractionTree:
     def compressed_reconfigure(
         self,
         chi,
+        minimize='peak',
         order_only=False,
         max_nodes='auto',
         max_time=None,
@@ -1803,6 +1788,8 @@ class ContractionTree:
         """
         from .path_compressed import CompressedExhaustive
 
+        minimize = minimize.replace('-compressed', '')
+
         if max_nodes == 'auto':
             if max_time is None:
                 max_nodes = max(10_000, self.N**2)
@@ -1811,6 +1798,7 @@ class ContractionTree:
 
         opt = CompressedExhaustive(
             chi=chi,
+            minimize=minimize,
             local_score=local_score,
             max_nodes=max_nodes,
             max_time=max_time,
@@ -1820,8 +1808,13 @@ class ContractionTree:
         )
         opt.setup(self.inputs, self.output, self.size_dict)
         opt.explore_path(self.get_path_surface(), restrict=order_only)
-        ssa_path = opt(self.inputs, self.output, self.size_dict)
-        rtree = ContractionTree.from_path(
+
+        # rtree = opt.search(self.inputs, self.output, self.size_dict)
+
+        opt.run(self.inputs, self.output, self.size_dict)
+        ssa_path = opt.ssa_path
+        # ssa_path = opt(self.inputs, self.output, self.size_dict)
+        rtree = self.__class__.from_path(
             self.inputs, self.output, self.size_dict, ssa_path=ssa_path,
         )
         if inplace:
@@ -2659,11 +2652,13 @@ def score_size_compressed(trial, chi='auto'):
         chi = max(tree.size_dict.values())**2
     stats = tree.compressed_contract_stats(chi)
 
-    size = stats['max_size']
+    size = stats.max_size
     cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
-    # overwrite the effective max size
+
+    # overwrite stats with compressed versions
     trial['size'] = size
-    trial['flops'] = stats['contract_flops']
+    trial['flops'] = stats.flops
+    trial['write'] = stats.write
     return cr
 
 
@@ -2673,25 +2668,29 @@ def score_peak_size_compressed(trial, chi='auto'):
         chi = max(tree.size_dict.values())**2
     stats = tree.compressed_contract_stats(chi)
 
-    size = stats['peak_size']
+    size = stats.peak_size
     cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
-    # overwrite the effective max size
+
+    # overwrite stats with compressed versions
     trial['size'] = size
-    trial['flops'] = stats['contract_flops']
+    trial['flops'] = stats.flops
+    trial['write'] = stats.write
     return cr
 
 
-def score_total_size_compressed(trial, chi='auto'):
+def score_write_compressed(trial, chi='auto'):
     tree = trial['tree']
     if chi == 'auto':
         chi = max(tree.size_dict.values())**2
     stats = tree.compressed_contract_stats(chi)
 
-    size = stats['total_size']
+    size = stats.write
     cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
-    # overwrite the effective max size
-    trial['size'] = size
-    trial['flops'] = stats['contract_flops']
+
+    # overwrite stats with compressed versions
+    trial['size'] = stats.max_size
+    trial['flops'] = stats.flops
+    trial['write'] = stats.write
     return cr
 
 
@@ -2701,11 +2700,13 @@ def score_flops_compressed(trial, chi='auto'):
         chi = max(tree.size_dict.values())**2
     stats = tree.compressed_contract_stats(chi)
 
-    flops = stats['contract_flops']
+    flops = stats.flops
     cr = (math.log2(flops) + math.log2(tree.max_size())**0.5 / 1000)
-    # overwrite the effective max size
-    trial['size'] = stats['max_size']
+
+    # overwrite stats with compressed versions
+    trial['size'] = stats.max_size
     trial['flops'] = flops
+    trial['write'] = stats.write
     return cr
 
 
@@ -2715,19 +2716,32 @@ def score_combo_compressed(trial, chi='auto', factor=DEFAULT_COMBO_FACTOR):
         chi = max(tree.size_dict.values())**2
     stats = tree.compressed_contract_stats(chi)
 
-    flops = stats['contract_flops']
-    size = stats['total_size']
+    flops = stats.flops
+    write = stats.write
 
-    cr = (math.log2(flops) + factor * math.log2(size))
-    # overwrite the effective max size
-    trial['size'] = size
+    cr = math.log2(flops + factor * write)
+
+    # overwrite stats with compressed versions
+    trial['size'] = stats.max_size
     trial['flops'] = flops
+    trial['write'] = write
     return cr
 
 
 score_matcher = re.compile(
-    r"(flops|size|write|combo|limit|"
-    r"max-compressed|peak-compressed|total-compressed|flops-compressed|"
+    # exact scoring functions
+    r"("
+    r"flops|"
+    r"size|"
+    r"write|"
+    r"combo|"
+    r"limit|"
+    # compressed scoring functions
+    r"flops-compressed|"
+    r"size-compressed|"
+    r"max-compressed|"
+    r"peak-compressed|"
+    r"write-compressed|"
     r"combo-compressed"
     r")-*(\d*)"
 )
@@ -2763,7 +2777,7 @@ def get_score_fn(minimize):
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_limit, factor=factor)
 
-    if which == 'max-compressed':
+    if which in ('max-compressed', 'size-compressed'):
         chi = int(param) if param else 'auto'
         return functools.partial(score_size_compressed, chi=chi)
 
@@ -2771,9 +2785,9 @@ def get_score_fn(minimize):
         chi = int(param) if param else 'auto'
         return functools.partial(score_peak_size_compressed, chi=chi)
 
-    if which == 'total-compressed':
+    if which == 'write-compressed':
         chi = int(param) if param else 'auto'
-        return functools.partial(score_total_size_compressed, chi=chi)
+        return functools.partial(score_write_compressed, chi=chi)
 
     if which == 'flops-compressed':
         chi = int(param) if param else 'auto'
@@ -2791,6 +2805,164 @@ def _describe_tree(tree):
         f"log2[SIZE]: {math.log2(tree.max_size()):.2f} "
         f"log10[FLOPs]: {math.log10(tree.total_flops()):.2f}"
     )
+
+
+class CompressedStatsTracker:
+
+    __slots__ = (
+        'flops',
+        'max_size',
+        'peak_size',
+        'write',
+        'current_size',
+        'last_size_change',
+    )
+
+    def __init__(self, hg):
+        self.flops = 0
+        self.max_size = 0
+        self.current_size = 0
+        self.last_size_change = 0
+
+        # initial tensors contribute to size
+        for i in hg.nodes:
+            sz_i = hg.node_size(i)
+            self.max_size = max(self.max_size, sz_i)
+            self.current_size += sz_i
+
+        self.write = self.peak_size = self.current_size
+
+    def copy(self):
+        new = object.__new__(self.__class__)
+        new.flops = self.flops
+        new.max_size = self.max_size
+        new.peak_size = self.peak_size
+        new.write = self.write
+        new.current_size = self.current_size
+        new.last_size_change = self.last_size_change
+        return new
+
+    def update_peak_size_pre_compress(self, hg, i, j):
+        """Subtract tensors size and also their neighbors size (since both will
+        change with compression).
+        """
+        self.last_size_change = -hg.neighborhood_size([i, j])
+
+    def update_flops_pre_contract(self, hg, i, j):
+        """Compute the flops just of the contraction.
+        """
+        self.flops += hg.contract_pair_cost(i, j)
+
+    def update_peak_size_post_contract(self, hg, ij):
+        """Add new tensors size and also its neighbors (since these will have
+        changed with compression).
+        """
+        self.last_size_change += hg.neighborhood_size([ij])
+        self.current_size += self.last_size_change
+        self.peak_size = max(self.peak_size, self.current_size)
+
+    def update_size_post_contract(self, hg, ij):
+        """Compute the size just of the new tensor.
+        """
+        sz_ij = hg.node_size(ij)
+        self.max_size = max(self.max_size, sz_ij)
+        self.write += sz_ij
+
+    def update_pre_compress(self, hg, i, j):
+        """Default method computes everything.
+        """
+        self.update_peak_size_pre_compress(hg, i, j)
+
+    def update_pre_contract(self, hg, i, j):
+        """Default method computes everything.
+        """
+        self.update_flops_pre_contract(hg, i, j)
+
+    def update_post_contract(self, hg, ij):
+        """Default method computes everything.
+        """
+        self.update_peak_size_post_contract(hg, ij)
+        self.update_size_post_contract(hg, ij)
+
+    @property
+    def score(self):
+        raise NotImplementedError
+
+    def __repr__(self):
+        return (
+            f"<{self.__class__.__name__}("
+            f"max_size={math.log2(self.max_size):.2f}, "
+            f"peak_size={math.log2(self.peak_size):.2f}, "
+            f"write={math.log2(self.write):.2f}, "
+            f"flops={math.log10(self.flops):.2f}"
+            f")>"
+        )
+
+
+class CompressedStatsTrackerSize(CompressedStatsTracker):
+
+    @property
+    def score(self):
+        return (
+            math.log2(self.max_size) +
+            math.log2(self.flops + 1) / 1000
+        )
+
+
+class CompressedStatsTrackerPeak(CompressedStatsTracker):
+
+    @property
+    def score(self):
+        return (
+            math.log2(self.peak_size) +
+            math.log2(self.flops + 1) / 1000
+        )
+
+
+class CompressedStatsTrackerWrite(CompressedStatsTracker):
+
+    @property
+    def score(self):
+        return (
+            math.log2(self.write) +
+            math.log2(self.flops + 1) / 1000
+        )
+
+
+class CompressedStatsTrackerFlops(CompressedStatsTracker):
+
+    @property
+    def score(self):
+        return (
+            math.log10(self.flops + 1) +
+            math.log10(self.peak_size) / 1000
+        )
+
+
+class CompressedStatsTrackerCombo(CompressedStatsTracker):
+
+    factor = DEFAULT_COMBO_FACTOR
+
+    @property
+    def score(self):
+        return (
+            math.log2(self.flops + self.factor * self.write + 1)
+        )
+
+_trackers = {
+    'size': CompressedStatsTrackerSize,
+    'peak': CompressedStatsTrackerPeak,
+    'write': CompressedStatsTrackerWrite,
+    'flops': CompressedStatsTrackerFlops,
+    'combo': CompressedStatsTrackerCombo,
+}
+
+
+def get_compressed_stats_tracker(minimize):
+    """Get the correct ``CompressedStatsTracker`` class for the given
+    ``minimize`` target.
+    """
+    return _trackers[minimize]
 
 
 class ContractionTreeCompressed(ContractionTree):
@@ -2826,6 +2998,21 @@ class ContractionTreeCompressed(ContractionTree):
 
     def get_default_order(self):
         return "surface_order"
+
+
+class ContractionTreeMulti(ContractionTree):
+
+    def set_varmults(self, varmults):
+        self._varmults = varmults
+
+    def get_varmults(self):
+        return self._varmults
+
+    def set_numconfigs(self, numconfigs):
+        self._numconfigs = numconfigs
+
+    def get_numconfigs(self):
+        return self._numconfigs
 
 
 class PartitionTreeBuilder:

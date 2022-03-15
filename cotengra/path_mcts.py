@@ -1,7 +1,9 @@
 import math
 import random
 
-from .core import get_hypergraph
+from opt_einsum.paths import ssa_to_linear
+
+from .core import ContractionTreeCompressed, get_hypergraph
 
 
 class Node:
@@ -10,7 +12,7 @@ class Node:
         'hg',
         'n',
         'graph_key',
-        'ssa_path',
+        'nid_path',
         'size',
         'local_score',
         'forward_score',
@@ -22,7 +24,7 @@ class Node:
     def __init__(
         self,
         hg,
-        ssa_path,
+        nid_path,
         size,
         local_score,
         forward_score,
@@ -30,7 +32,7 @@ class Node:
         self.hg = hg
         self.n = hg.get_num_nodes()
         self.graph_key = hash(frozenset(hg.nodes))
-        self.ssa_path = ssa_path
+        self.nid_path = nid_path
         self.size = size
         self.local_score = local_score
         self.forward_score = forward_score
@@ -80,8 +82,9 @@ class MCTS:
         'T',
         'prune',
         'optimize',
+        'optimize_factory',
         'best_score',
-        'best_ssa_path',
+        'best_nid_path',
         'children',
         'parents',
         'seen',
@@ -92,13 +95,21 @@ class MCTS:
         'to_delete',
     )
 
-    def __init__(self, chi, T=0.1, prune=True, optimize=None):
+    def __init__(
+        self,
+        chi,
+        T=0.1,
+        prune=True,
+        optimize=None,
+        optimize_factory=False,
+    ):
         self.chi = chi
         self.T = T
         self.prune = prune
         self.optimize = optimize
+        self.optimize_factory = optimize_factory
         self.best_score = float('inf')
-        self.best_ssa_path = None
+        self.best_nid_path = None
         self.children = {}
         self.parents = {}
         self.seen = {}
@@ -132,7 +143,7 @@ class MCTS:
 
             root = Node(
                 hg=H,
-                ssa_path=(),
+                nid_path=(),
                 size=size0,
                 local_score=0,
                 forward_score=size0,
@@ -148,7 +159,7 @@ class MCTS:
         ssa_path = []
         ssa = self.N
         ssa_lookup = {1 << i: i for i in range(ssa)}
-        for i, j in self.best_ssa_path:
+        for i, j in self.best_nid_path:
             ij = i | j
             ssa_lookup[ij] = ssa
             ssa += 1
@@ -190,7 +201,7 @@ class MCTS:
 
             new_node = Node(
                 hg=hg_next,
-                ssa_path=node.ssa_path + ((i, j),),
+                nid_path=node.nid_path + ((i, j),),
                 size=new_size,
                 local_score=dsize,
                 forward_score=new_score,
@@ -252,7 +263,7 @@ class MCTS:
         final_score = node.forward_score
         if final_score < self.best_score:
             self.best_score = final_score
-            self.best_ssa_path = node.ssa_path
+            self.best_nid_path = node.nid_path
         self.pbar.update()
         self.pbar.set_description(
             f"lq:{len(self.leaves) if self.leaves is not None else None} "
@@ -285,7 +296,13 @@ class MCTS:
 
     def simulate_optimized(self, node):
         H = node.hg
-        path = self.optimize(
+
+        if self.optimize_factory:
+            optimize = self.optimize()
+        else:
+            optimize = self.optimize
+
+        path = optimize(
             inputs=tuple(H.nodes.values()),
             output=H.output,
             size_dict=H.size_dict,
@@ -298,7 +315,7 @@ class MCTS:
             try:
                 node = next(iter((
                     x for x in self.children[node]
-                    if set(x.ssa_path[-1]) == {ni, nj}
+                    if set(x.nid_path[-1]) == {ni, nj}
                 )))
             except StopIteration:
                 # next path node already pruned
@@ -341,7 +358,19 @@ class MCTS:
             except KeyError:
                 pass
 
-    def __call__(self, inputs, output, size_dict):
+    @property
+    def ssa_path(self):
+        """
+        """
+        return self.get_ssa_path()
+
+    @property
+    def path(self):
+        """
+        """
+        return ssa_to_linear(self.ssa_path)
+
+    def run(self, inputs, output, size_dict):
         """
         """
         import tqdm
@@ -355,4 +384,17 @@ class MCTS:
             pass
         finally:
             self.pbar.close()
-        return self.get_ssa_path()
+
+    def search(self, inputs, output, size_dict):
+        """
+        """
+        self.run(inputs, output, size_dict)
+        return ContractionTreeCompressed.from_path(
+            inputs, output, size_dict, ssa_path=self.ssa_path,
+        )
+
+    def __call__(self, inputs, output, size_dict):
+        """
+        """
+        self.run(inputs, output, size_dict)
+        return self.path
