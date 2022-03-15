@@ -724,7 +724,13 @@ class ContractionTree:
 
         return parent
 
-    def contract_nodes(self, nodes, optimize='auto-hq', check=False):
+    def contract_nodes(
+        self,
+        nodes,
+        optimize='auto-hq',
+        check=False,
+        extra_opts=None,
+    ):
         """Contract an arbitrary number of ``nodes`` in the tree to build up a
         subtree. The root of this subtree (a new intermediate) is returned.
         """
@@ -757,7 +763,14 @@ class ContractionTree:
         else:
             path_fn = optimize
 
-        path = path_fn(path_inputs, path_output, self.size_dict)
+        if extra_opts is None:
+            path = path_fn(
+                path_inputs, path_output, self.size_dict
+            )
+        else:
+            path = path_fn(
+                path_inputs, path_output, self.size_dict, **extra_opts
+            )
 
         # now we have path create the nodes in between
         temp_nodes = list(nodes)
@@ -1094,6 +1107,7 @@ class ContractionTree:
         maxiter=500,
         seed=None,
         minimize='flops',
+        optimize=None,
         inplace=False,
         progbar=False,
     ):
@@ -1148,7 +1162,11 @@ class ContractionTree:
         tree.total_flops()
         tree.max_size()
 
-        optimizer = DynamicProgramming(minimize=minimize)
+        if optimize is None:
+            opt = DynamicProgramming(minimize=minimize)
+        else:
+            opt = optimize
+
         minimize, param = score_matcher.findall(minimize)[0]
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
 
@@ -1170,8 +1188,8 @@ class ContractionTree:
                            factor * tree.get_size(node))
         else:
             # default to a very small cost cap
-            def cost(node):
-                return 2
+            def cost(_):
+                return 1
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -1222,10 +1240,10 @@ class ContractionTree:
                     tree._remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap
-                optimizer.cost_cap = current_cost
+                opt.cost_cap = current_cost
 
                 # and reoptimize the leaves
-                tree.contract_nodes(sub_leaves, optimize=optimizer)
+                tree.contract_nodes(sub_leaves, optimize=opt)
                 already_optimized.add(sub_leaves)
 
                 r += 1

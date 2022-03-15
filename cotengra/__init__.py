@@ -5,6 +5,7 @@ from opt_einsum.paths import register_path_fn
 from .core import (
     ContractionTree,
     ContractionTreeCompressed,
+    ContractionTreeMulti,
     HyperGraph,
     get_hypergraph,
 )
