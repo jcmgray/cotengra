@@ -126,6 +126,25 @@ class TrialConvertTree:
         return trial
 
 
+class TrialTreeMulti:
+    def __init__(self, trial_fn, varmults, numconfigs):
+        self.trial_fn = trial_fn
+        self.varmults = varmults
+        self.numconfigs = numconfigs
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+
+        tree = trial['tree']
+        if not isinstance(tree, ContractionTreeMulti):
+            tree.__class__ = ContractionTreeMulti
+
+        tree.set_varmults(self.varmults)
+        tree.set_numconfigs(self.numconfigs)
+
+        return trial
+
+
 class SlicedTrialFn:
 
     def __init__(self, trial_fn, **opts):
@@ -423,7 +442,7 @@ class HyperOptimizer(PathOptimizer):
 
         if self.multicontraction:
             assert not self.compressed
-            trial_fn = TrialConvertTree(trial_fn, ContractionTreeMulti)
+            trial_fn = TrialTreeMulti(trial_fn, self.varmults, self.numconfigs)
 
         if self.slicing_opts is not None:
             self.slicing_opts.setdefault('minimize', self.minimize)
@@ -688,6 +707,45 @@ def sortedtuple(x):
     return tuple(sorted(x))
 
 
+def hash_contraction_a(inputs, output, size_dict):
+    if not isinstance(next(iter(size_dict.values()), 1), int):
+            # hashing e.g. numpy int won't match!
+            size_dict = {k: int(v) for k, v in size_dict.items()}
+
+    return hashlib.sha1(pickle.dumps((
+        tuple(map(sortedtuple, inputs)),
+        sortedtuple(output),
+        sortedtuple(size_dict.items())
+    ))).hexdigest()
+
+
+def hash_contraction_b(inputs, output, size_dict):
+    # label each index as the sorted tuple of nodes it is incident to
+    edges = collections.defaultdict(list)
+    for ix in output:
+        edges[ix].append(-1)
+    for i, term in enumerate(inputs):
+        for ix in term:
+            edges[ix].append(i)
+
+    # then sort edges by each's incidence nodes
+    canonical_edges = sortedtuple(map(sortedtuple, edges.values()))
+
+    return hashlib.sha1(pickle.dumps((
+        canonical_edges, sortedtuple(size_dict.items())
+    ))).hexdigest()
+
+def hash_contraction(inputs, output, size_dict, method='a'):
+    """Compute a hash for a particular contraction geometry.
+    """
+    if method == 'a':
+        return hash_contraction_a(inputs, output, size_dict)
+    elif method == 'b':
+        return hash_contraction_b(inputs, output, size_dict)
+    else:
+        raise ValueError("Unknown hash method: {}".format(method))
+
+
 class ReusableHyperOptimizer(PathOptimizer):
     """Like ``HyperOptimizer`` but it will re-instantiate the optimizer
     whenever a new contraction is detected, and also cache the paths found.
@@ -739,41 +797,11 @@ class ReusableHyperOptimizer(PathOptimizer):
     def last_opt(self):
         return self._opt
 
-    def _hash_args(self, inputs, output, size_dict):
-        """For space's sake create a condensed hash key.
-        """
-        if not isinstance(next(iter(size_dict.values()), 1), int):
-            # hashing e.g. numpy int won't match!
-            size_dict = {k: int(v) for k, v in size_dict.items()}
-
-        # note frozenset is hashable but not consistent -> need sortedtuple
-        if self._hash_method == 'a':
-            return hashlib.sha1(pickle.dumps((
-                tuple(map(sortedtuple, inputs)),
-                sortedtuple(output),
-                sortedtuple(size_dict.items())
-            ))).hexdigest()
-
-        # label each index as the sorted tuple of nodes it is incident to
-        edges = collections.defaultdict(list)
-        for ix in output:
-            edges[ix].append(-1)
-        for i, term in enumerate(inputs):
-            for ix in term:
-                edges[ix].append(i)
-
-        # then sort edges by each's incidence nodes
-        canonical_edges = sortedtuple(map(sortedtuple, edges.values()))
-
-        return hashlib.sha1(pickle.dumps((
-            canonical_edges, sortedtuple(size_dict.items())
-        ))).hexdigest()
-
     def hash_query(self, inputs, output, size_dict):
         """Hash the contraction specification, returning this and whether the
         contraction is already present as a tuple.
         """
-        h = self._hash_args(inputs, output, size_dict)
+        h = hash_contraction(inputs, output, size_dict, self._hash_method)
         missing = (self.overwrite or (h not in self._cache))
         return h, missing
 

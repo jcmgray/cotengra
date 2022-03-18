@@ -31,6 +31,7 @@ from .hyper import (
     get_hyper_space,
     HyperOptimizer,
     ReusableHyperOptimizer,
+    hash_contraction,
 )
 
 
@@ -95,8 +96,12 @@ def ReusableHyperCompressedOptimizer(
     if chi is not None:
         minimize += f"-{chi}"
     return ReusableHyperOptimizer(
-        methods=methods, minimize=minimize,
-        set_surface_order=set_surface_order, **kwargs)
+        methods=methods,
+        minimize=minimize,
+        compressed=True,
+        set_surface_order=set_surface_order,
+        **kwargs
+    )
 
 
 def HyperMultiOptimizer(*args, **kwargs):
@@ -123,6 +128,7 @@ __all__ = (
     "HyperMultiOptimizer",
     "ReusableHyperOptimizer",
     "ReusableHyperCompressedOptimizer",
+    "hash_contraction",
     "list_hyper_functions",
     "optimize_flowcutter",
     "optimize_quickbb",
