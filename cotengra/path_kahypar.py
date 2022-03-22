@@ -1,4 +1,5 @@
 import random
+import functools
 import itertools
 from os.path import join, abspath, dirname
 
@@ -6,8 +7,15 @@ from .core import PartitionTreeBuilder, get_hypergraph
 from .hyper import register_hyper_function
 
 
-# needed to supply kahypar profile files
-KAHYPAR_PROFILE_DIR = join(abspath(dirname(__file__)), 'kahypar_profiles')
+@functools.lru_cache(1)
+def get_kahypar_profile_dir():
+    # needed to supply kahypar profile files
+    import kahypar
+    version = tuple(map(int, kahypar.__version__.split('.')))
+    if version <= (1, 1, 6):
+        return join(abspath(dirname(__file__)), 'kahypar_profiles', 'old')
+    else:
+        return join(abspath(dirname(__file__)), 'kahypar_profiles')
 
 
 def to_sparse(hg, weight_nodes='const', weight_edges='log'):
@@ -100,7 +108,7 @@ def kahypar_subgraph_find_membership(
         profile = f"{objective}_{profile_mode}KaHyPar_sea20.ini"
 
     context = kahypar.Context()
-    context.loadINIconfiguration(join(KAHYPAR_PROFILE_DIR, profile))
+    context.loadINIconfiguration(join(get_kahypar_profile_dir(), profile))
     context.setK(parts)
     context.setSeed(seed)
     context.suppressOutput(quiet)

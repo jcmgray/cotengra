@@ -28,10 +28,6 @@ kahypar tqdm optuna loky networkx autoray
 ```
 ````
 
-```{warning}
-Version 1.1.7 of `kahypar` seems to cause errors with `cotengra` currently.
-```
-
 ## Optimization
 
 * [`kahypar`](https://github.com/SebastianSchlag/kahypar) - **Karlsruhe Hypergraph Partitioning** for high quality divisive tree building ([available via pip](https://pypi.org/project/kahypar/), unfortunately not yet via `conda` or for windows)
