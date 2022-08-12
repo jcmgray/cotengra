@@ -353,7 +353,8 @@ class ContractionTree:
         if self._track_flops:
             self._flops -= self.get_flops(node)
 
-        if self._track_write:
+        if self._track_write and len(node) > 1:
+            # only non-leaf nodes contribute to write
             self._write -= self.get_size(node)
 
         if self._track_size:
@@ -539,14 +540,13 @@ class ContractionTree:
     def total_write(self):
         """Sum the total amount of memory that will be created and operated on.
         """
-        if self._track_write:
-            return self.multiplicity * self._write
+        if not self._track_write:
+            self._write = 0
+            for node, _, _ in self.traverse():
+                self._write += self.get_size(node)
 
-        self._write = 0
-        for node, _, _ in self.traverse():
-            self._write += self.get_size(node)
+            self._track_write = True
 
-        self._track_write = True
         return self.multiplicity * self._write
 
     def total_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum):
@@ -1026,7 +1026,10 @@ class ContractionTree:
                 new_size = old_size // d
                 tree._sizes.add(new_size)
                 node_info['size'] = new_size
-                tree._write += (-old_size + new_size)
+
+                if len(node) > 1:
+                    # only non-leaf nodes contribute to write
+                    tree._write += (-old_size + new_size)
 
                 # XXX: modifying 'keep' not stricly necessarily as its only
                 #     needed for ``legs = keep.intersection(involved)``?
