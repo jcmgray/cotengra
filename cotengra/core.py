@@ -1240,7 +1240,7 @@ class ContractionTree:
                     tree._remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap
-                opt.cost_cap = current_cost
+                opt.cost_cap = max(1, current_cost)
 
                 # and reoptimize the leaves
                 tree.contract_nodes(sub_leaves, optimize=opt)
