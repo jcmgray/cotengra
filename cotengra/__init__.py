@@ -9,6 +9,8 @@ from .core import (
     HyperGraph,
     get_hypergraph,
 )
+from .interface import contract_expression
+
 from .slicer import SliceFinder, SlicedContractor
 
 from . import path_greedy
@@ -114,6 +116,7 @@ __all__ = (
     "ContractionTreeMulti",
     "HyperGraph",
     "get_hypergraph",
+    "contract_expression",
     "FlowCutterOptimizer",
     "get_hyper_space",
     "hyper_baytune",
