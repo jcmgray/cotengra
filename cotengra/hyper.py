@@ -707,6 +707,17 @@ def sortedtuple(x):
     return tuple(sorted(x))
 
 
+def make_hashable(x):
+    """Make ``x`` hashable by recursively turning list into tuples and dicts
+    into sorted tuples of key-value pairs.
+    """
+    if isinstance(x, list):
+        return tuple(map(make_hashable, x))
+    if isinstance(x, dict):
+        return tuple(sorted((k, make_hashable(v)) for k, v in x.items()))
+    return x
+
+
 def hash_contraction_a(inputs, output, size_dict):
     if not isinstance(next(iter(size_dict.values()), 1), int):
             # hashing e.g. numpy int won't match!
@@ -752,10 +763,11 @@ class ReusableHyperOptimizer(PathOptimizer):
 
     Parameters
     ----------
-    opt_args
-        Supplied to ``HyperOptimizer``.
-    directory : None or str, optional
-        If specified use this directory as a persistent cache.
+    directory : None, True, or str, optional
+        If specified use this directory as a persistent cache. If ``True`` auto
+        generate a directory in the current working directory based on the
+        options which are most likely to affect the path (see
+        `ReusableHyperOptimizer.get_path_relevant_opts`).
     overwrite : bool, optional
         If ``True``, the optimizer will always run, overwriting old results in
         the cache. This can be used to update paths with deleting the whole
@@ -776,7 +788,7 @@ class ReusableHyperOptimizer(PathOptimizer):
 
     def __init__(
         self,
-        *opt_args,
+        *,
         directory=None,
         overwrite=False,
         set_surface_order=False,
@@ -785,8 +797,10 @@ class ReusableHyperOptimizer(PathOptimizer):
         **opt_kwargs
     ):
         self._opt = None
-        self._opt_args = opt_args
         self._opt_kwargs = opt_kwargs
+        if directory is True:
+            # automatically generate the directory
+            directory = f'ctg_cache_{self.auto_hash_path_relevant_opts()}'
         self._cache = DiskDict(directory)
         self.overwrite = overwrite
         self._set_surface_order = set_surface_order
@@ -797,6 +811,34 @@ class ReusableHyperOptimizer(PathOptimizer):
     def last_opt(self):
         return self._opt
 
+    def get_path_relevant_opts(self):
+        """Get a frozenset of the options that are most likely to affect the
+        path. These are the options that we use when the directory name is not
+        manually specified.
+        """
+        return tuple(
+            (key, make_hashable(self._opt_kwargs.get(key, default)))
+            for key, default in [
+                ('methods', None),
+                ('minimize', 'flops'),
+                ('max_repeats', 128),
+                ('max_time', None),
+                ('slicing_opts', None),
+                ('slicing_reconf_opts', None),
+                ('reconf_opts', None),
+                ('compressed', False),
+                ('multicontraction', False),
+            ]
+        )
+
+    def auto_hash_path_relevant_opts(self):
+        """Automatically hash the path relevant options used to create the
+        optimizer.
+        """
+        return hashlib.sha1(pickle.dumps(
+            self.get_path_relevant_opts()
+        )).hexdigest()
+
     def hash_query(self, inputs, output, size_dict):
         """Hash the contraction specification, returning this and whether the
         contraction is already present as a tuple.
@@ -806,7 +848,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         return h, missing
 
     def _compute_path(self, inputs, output, size_dict):
-        self._opt = HyperOptimizer(*self._opt_args, **self._opt_kwargs)
+        self._opt = HyperOptimizer(**self._opt_kwargs)
         self._opt._search(inputs, output, size_dict)
         return {
             'path': self._opt.path,

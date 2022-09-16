@@ -18,7 +18,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'cotengra'
-copyright = '2021, Johnnie Gray'
+copyright = '2020-2022, Johnnie Gray'
 author = 'Johnnie Gray'
 
 # The full version, including alpha/beta/rc tags
@@ -36,7 +36,7 @@ extensions = [
     'sphinx.ext.napoleon',
 ]
 
-jupyter_execute_notebooks = "off"
+nb_execution_mode = "off"
 myst_heading_anchors = 4
 
 # sphinx-autoapi
