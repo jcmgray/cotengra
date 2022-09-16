@@ -15,11 +15,11 @@ def make_getter(name, param):
         return lambda trial: trial.suggest_categorical(
             name, param['options'])
     if param['type'] == 'FLOAT':
-        return lambda trial: trial.suggest_uniform(
+        return lambda trial: trial.suggest_float(
             name, param['min'], param['max'])
     if param['type'] == 'FLOAT_EXP':
-        return lambda trial: trial.suggest_loguniform(
-            name, param['min'], param['max'])
+        return lambda trial: trial.suggest_float(
+            name, param['min'], param['max'], log=True)
     raise ValueError("Didn't understand space {}.".format(param))
 
 
@@ -54,11 +54,16 @@ def optuna_init_optimizers(
     self,
     methods,
     space,
+    sampler='TPESampler',
     **create_study_opts,
 ):
     import optuna
+
+    if isinstance(sampler, str):
+        sampler = getattr(optuna.samplers, sampler)()
+
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    self._study = optuna.create_study(**create_study_opts)
+    self._study = optuna.create_study(sampler=sampler, **create_study_opts)
     self._retrieve_params = make_retriever(methods, space)
 
 
