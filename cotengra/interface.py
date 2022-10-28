@@ -36,7 +36,7 @@ def contract_expression(
     ``shapes`` according to equation ``eq``. The ``optimize`` kwarg can be a
     path, optimizer or also a contraction tree. In the latter case sliced
     indices for example will be used if present. The same is true if
-    ``optimize`` is an optimizer that can directly product ``ContractionTree``
+    ``optimize`` is an optimizer that can directly produce ``ContractionTree``
     instances (i.e. has a ``.search()`` method).
 
     Parameters
@@ -84,7 +84,7 @@ def contract_expression(
 
     else:
         size_dict = {
-            ix: d for ix, d in zip(
+            ix: int(d) for ix, d in zip(
                 itertools.chain.from_iterable(inputs),
                 itertools.chain.from_iterable(
                     s.shape if i in constants else s

@@ -18,9 +18,10 @@ DEFAULT_STYLE = {
 
 
 def use_default_style(fn):
-    import matplotlib as mpl
+    """Decorator to use the default style above for plotting functions."""
 
     def new_fn(*args, **kwargs):
+        import matplotlib as mpl
         with mpl.rc_context(DEFAULT_STYLE):
             return fn(*args, **kwargs)
 
@@ -29,6 +30,8 @@ def use_default_style(fn):
 
 def _return_or_close_fig(fig, return_fig):
     from matplotlib import pyplot as plt
+    # always make transparent
+    fig.patch.set_alpha(0.0)
     if return_fig:
         return fig
     else:

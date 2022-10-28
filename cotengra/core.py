@@ -128,7 +128,14 @@ class ContractionTree:
     ):
         self.inputs = inputs
         self.output = output
-        self.size_dict = size_dict
+
+        if not isinstance(next(iter(size_dict.values())), int):
+            # make sure we are working with python integers to avoid overflow
+            # comparison errors with inf etc.
+            self.size_dict = {k: int(v) for k, v in size_dict.items()}
+        else:
+            self.size_dict = size_dict
+
         self.N = len(self.inputs)
 
         self.bitset_edges = BitSet(size_dict.keys())
