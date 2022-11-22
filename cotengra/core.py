@@ -129,7 +129,7 @@ class ContractionTree:
         self.inputs = inputs
         self.output = output
 
-        if not isinstance(next(iter(size_dict.values())), int):
+        if not isinstance(next(iter(size_dict.values()), 1), int):
             # make sure we are working with python integers to avoid overflow
             # comparison errors with inf etc.
             self.size_dict = {k: int(v) for k, v in size_dict.items()}
@@ -633,21 +633,14 @@ class ContractionTree:
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
-
             tracker.update_pre_compress(hg, li, ri)
-
             if compress_late:
                 # compress just before we contract tensors
                 hg.compress(chi=chi, edges=hg.get_node(li))
                 hg.compress(chi=chi, edges=hg.get_node(ri))
-
-            # compute the contraction flops (= prod of involved indices)
             tracker.update_pre_contract(hg, li, ri)
-
             pi = tree_map[p] = hg.contract(li, ri)
-
             tracker.update_post_contract(hg, pi)
-
             if not compress_late:
                 # compress as soon as we can after contracting tensors
                 hg.compress(chi=chi, edges=hg.get_node(pi))
@@ -3371,7 +3364,7 @@ class HyperGraph:
     """
 
     __slots__ = ('inputs', 'output', 'size_dict',
-                 'nodes', 'edges', 'compressed', 'node_counter')
+                 'nodes', 'edges', 'node_counter')
 
     def __init__(self, inputs, output=None, size_dict=None):
         self.inputs = inputs
@@ -3388,7 +3381,6 @@ class HyperGraph:
             for e in term:
                 self.edges[e] += (i,)
 
-        self.compressed = set()
         self.node_counter = self.num_nodes - 1
 
     def copy(self):
@@ -3400,7 +3392,6 @@ class HyperGraph:
         new.size_dict = self.size_dict.copy()
         new.nodes = self.nodes.copy()
         new.edges = self.edges.copy()
-        new.compressed = self.compressed.copy()
         new.node_counter = self.node_counter
         return new
 
@@ -3418,7 +3409,6 @@ class HyperGraph:
             for i in e_nodes:
                 self.nodes[i] += (e,)
 
-        self.compressed = set()
         self.node_counter = self.num_nodes - 1
 
         return self
@@ -3563,6 +3553,7 @@ class HyperGraph:
         inds_j = self.remove_node(j)
         inds_ij = unique(
             ind for ind in inds_i + inds_j
+            # index will only still be here if its not only on i and j
             if (ind in self.edges) or (ind in self.output)
         )
         return self.add_node(inds_ij, node=node)
@@ -3582,14 +3573,23 @@ class HyperGraph:
                 incidences[nodes].append(e)
 
         for es in incidences.values():
-            if len(es) == 2:
+            if len(es) > 1:
                 # combine edges into first, capping size at `chi`
                 new_size = self.edges_size(es)
                 e_keep, *es_del = es
                 for e in es_del:
                     self.remove_edge(e)
-                    self.compressed.add(e)
                 self.size_dict[e_keep] = min(new_size, chi)
+
+    def compute_contracted_inds(self, nodes):
+        """Generate the output indices if one were to contract ``nodes``.
+        """
+        snodes = set(nodes)
+        return unique(
+            e for i in nodes for e in self.get_node(i)
+            # keep index if it appears on any other nodes or in output
+            if set(self.edges[e]) - snodes or e in self.output
+        )
 
     def candidate_contraction_size(self, i, j, chi=None):
         """Get the size of the node created if ``i`` and ``j`` were contracted,
@@ -3597,11 +3597,7 @@ class HyperGraph:
         ``chi``.
         """
         # figure out the indices of the contracted nodes
-        sij = {i, j}
-        new_es = list(unique(
-            e for e in self.nodes[i] + self.nodes[j]
-            if set(self.edges[e]) - sij or e in self.output
-        ))
+        new_es = tuple(self.compute_contracted_inds((i, j)))
 
         if chi is None:
             return self.edges_size(new_es)
@@ -3751,11 +3747,13 @@ class HyperGraph:
 
         return c
 
-    def compute_loops(self, max_loop_length=None):
+    def compute_loops(self, start=None, max_loop_length=None):
         """Generate all loops up to a certain length in this hypergraph.
 
         Parameters
         ----------
+        start : sequence of int, optional
+            Only generate loops including these nodes, defaults to all.
         max_loop_length : None or int, optional
             The maximum loop length to search for. If ``None``, then this is
             set automatically by the length of the first loop found.
@@ -3765,18 +3763,26 @@ class HyperGraph:
         loop : tuple[int]
             A set of nodes that form a loop.
         """
+        if start is None:
+            start = self.nodes
+
         # start paths beginning at every node
-        queue = []
-        neighbors = {}  # pre-cache neighbors for speed
-        for i in self.nodes:
-            queue.append((i,))
-            neighbors[i] = tuple(self.neighbors(i))
+        queue = [(i,) for i in start]
+        # cache neighbors for speed
+        neighbors = {}
 
         seen = set()
         while queue:
-            path = queue.pop(0)
             # consider all the ways to extend each path
-            for j in neighbors[path[-1]]:
+            path = queue.pop(0)
+
+            jf = path[-1]
+            try:
+                j_neighbs = neighbors[jf]
+            except KeyError:
+                j_neighbs = neighbors[jf] = tuple(self.neighbors(jf))
+
+            for j in j_neighbs:
                 i0 = path[0]
                 # check for valid loop ...
                 if (

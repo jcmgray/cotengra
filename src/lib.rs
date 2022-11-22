@@ -388,7 +388,7 @@ impl HyperGraph {
             }
         }
         for (_, es) in self.work_incidences.drain().collect_vec() {
-            if es.len() == 2 {
+            if es.len() > 1 {
                 let new_size = self.edges_size(&es);
                 let mut es_it = es.into_iter();
                 let e0 = es_it.next().unwrap();
@@ -401,27 +401,31 @@ impl HyperGraph {
         }
     }
 
-    #[args(chi = "None")]
-    fn candidate_contraction_size(&mut self, i: Node, j: Node, chi: Option<u128>) -> u128 {
-        self.work_edges.clear();
-        let sij = [i, j];
-        for i_then_j in &sij {
-            for e in &self.nodes[i_then_j] {
-                if !self.work_edges.contains(e)
+    fn compute_contracted_inds(&self, nodes: Vec<Node>) -> Vec<String> {
+        let mut inds = Vec::new();
+        for i in &nodes {
+            for e in &self.nodes[i] {
+                if !inds.contains(e)
                     // ind appears on any other node or in output -> keep
-                    && (self.edges[e].iter().any(|k| !sij.contains(k)) || self.output.contains(e))
+                    && (self.edges[e].iter().any(|k| !nodes.contains(k)) || self.output.contains(e))
                 {
-                    self.work_edges.push(e.clone());
+                    inds.push(e.clone());
                 }
             }
         }
+        inds
+    }
+
+    #[args(chi = "None")]
+    fn candidate_contraction_size(&mut self, i: Node, j: Node, chi: Option<u128>) -> u128 {
+        let mut es = self.compute_contracted_inds(vec![i, j]);
         match chi {
-            None => self.edges_size(&self.work_edges),
+            None => self.edges_size(&es),
             Some(chi) => {
                 // if, after contraction, two nodes are incident to the exact same set
                 // of nodes, then they are compressable
                 self.work_incidences.clear();
-                for e in self.work_edges.drain(..) {
+                for e in es.drain(..) {
                     let nodes: BTreeSet<Node> = self.edges[&e]
                         .iter()
                         .map(|&k| if k == j { i } else { k })
@@ -509,18 +513,26 @@ impl HyperGraph {
         affine_renorm(&distances)
     }
 
-    #[args(max_loop_length = "None")]
-    fn compute_loops(&self, max_loop_length: Option<usize>) -> Vec<Vec<Node>> {
+    #[args(start = "None", max_loop_length = "None")]
+    fn compute_loops(
+        &self,
+        start: Option<Vec<Node>>,
+        max_loop_length: Option<usize>,
+    ) -> Vec<Vec<Node>> {
         let n = self.get_num_nodes();
         let (mut max_loop_length, mut auto_length) = match max_loop_length {
             Some(i) => (i, false),
             None => (n, true),
         };
-        let neighbor_map = self.build_neighbor_map();
+
+        // let mut queue: VecDeque<Vec<Node>> = self.nodes.keys().map(|&i| vec![i]).collect();
+        let mut queue: VecDeque<Vec<Node>> = match start {
+            Some(nodes) => nodes.into_iter().map(|i| vec![i]).collect(),
+            None => self.nodes.keys().map(|&i| vec![i]).collect(),
+        };
 
         let mut loops = Vec::new();
         let mut seen: FxHashSet<Vec<Node>> = FxHashSet::default();
-        let mut queue: VecDeque<Vec<Node>> = self.nodes.keys().map(|&i| vec![i]).collect();
 
         let mut path: Vec<Node>;
         let mut key: Vec<Node>;
@@ -528,6 +540,7 @@ impl HyperGraph {
         let mut path_length: usize;
         let mut node_start: Node;
         let mut node_last: Node;
+        let mut neighbor_map: Dict<Node, Vec<Node>> = Dict::default();
 
         loop {
             match queue.pop_front() {
@@ -541,7 +554,12 @@ impl HyperGraph {
             path_length = path.len();
             node_start = path[0];
             node_last = path[path_length - 1];
-            for &node_next in neighbor_map[&node_last].iter() {
+            // for &node_next in neighbor_map[&node_last].iter() {
+            for &node_next in neighbor_map
+                .entry(node_last)
+                .or_insert(self.neighbors(node_last))
+                .iter()
+            {
                 new_path = path.clone();
                 if (path_length > 2) && (node_start == node_next) {
                     // path is a non-trivial closed loop
@@ -603,7 +621,6 @@ fn optimal_compressed_path(
     output: Vec<String>,
     size_dict: Dict<String, u128>,
 ) -> Vec<(u32, u32)> {
-
     let nodes: Dict<u32, Vec<String>> = inputs
         .into_iter()
         .enumerate()

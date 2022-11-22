@@ -826,6 +826,7 @@ def plot_hypergraph(
     highlight=(),
     centrality='simple',
     colormap='plasma',
+    pos=None,
     layout=None,
     node_size=None,
     node_color=(.5, .5, .5, 1.0),
@@ -864,7 +865,8 @@ def plot_hypergraph(
         centrality=centrality,
     )
 
-    pos = get_nice_pos(G, layout=layout, iterations=iterations)
+    if pos is None:
+        pos = get_nice_pos(G, layout=layout, iterations=iterations)
 
     created_ax = (ax is None)
     if created_ax:
