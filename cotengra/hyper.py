@@ -720,8 +720,8 @@ def make_hashable(x):
 
 def hash_contraction_a(inputs, output, size_dict):
     if not isinstance(next(iter(size_dict.values()), 1), int):
-            # hashing e.g. numpy int won't match!
-            size_dict = {k: int(v) for k, v in size_dict.items()}
+        # hashing e.g. numpy int won't match!
+        size_dict = {k: int(v) for k, v in size_dict.items()}
 
     return hashlib.sha1(pickle.dumps((
         tuple(map(sortedtuple, inputs)),
@@ -745,6 +745,7 @@ def hash_contraction_b(inputs, output, size_dict):
     return hashlib.sha1(pickle.dumps((
         canonical_edges, sortedtuple(size_dict.items())
     ))).hexdigest()
+
 
 def hash_contraction(inputs, output, size_dict, method='a'):
     """Compute a hash for a particular contraction geometry.

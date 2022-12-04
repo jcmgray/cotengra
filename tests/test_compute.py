@@ -46,12 +46,12 @@ def test_rand_equation(
         tree.sort_contraction_indices(indices_sort)
 
     # base contract
-    y1 = tree.contract(arrays, check=True)
+    y1 = tree.contract(arrays)
     assert_allclose(x, y1)
 
     # contract after modifying tree
     tree.subtree_reconfigure_()
-    y2 = tree.contract(arrays, check=True)
+    y2 = tree.contract(arrays)
     assert_allclose(x, y2)
 
     size = tree.max_size()
@@ -60,7 +60,7 @@ def test_rand_equation(
 
     # contract after slicing and modifying
     tree.slice_and_reconfigure_(target_size=size // 6)
-    y3 = tree.contract(arrays, check=True)
+    y3 = tree.contract(arrays)
     assert_allclose(x, y3)
 
     # contract after slicing some output indices
@@ -73,7 +73,7 @@ def test_rand_equation(
         if indices_sort:
             tree.sort_contraction_indices(indices_sort)
 
-        y4 = tree.contract(arrays, check=True)
+        y4 = tree.contract(arrays)
         assert_allclose(x, y4)
 
 
@@ -101,3 +101,37 @@ def test_lazy_sliced_output_reduce():
         y += (chunk**2).sum()
 
     assert y == pytest.approx(x)
+
+
+@pytest.mark.parametrize("autojit", [False, True])
+def test_exponent_stripping(autojit):
+    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([8, 8])
+    rng = np.random.default_rng(42)
+    arrays = [rng.uniform(size=s) for s in shapes]
+
+    operands = []
+    for term, array in zip(inputs, arrays):
+        operands.append(array)
+        operands.append(term)
+    operands.append(output)
+    ex = oe.contract(*operands)
+    path, _ = oe.contract_path(*operands)
+
+    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+
+    x1 = tree.contract(arrays, autojit=autojit)
+    assert x1 == pytest.approx(ex)
+
+    m, p = tree.contract(arrays, autojit=autojit, strip_exponent=True)
+    x2 = m * 10**p
+    assert x2 == pytest.approx(ex)
+
+    tree.slice_(target_size=64)
+    assert tree.nslices >= 4
+
+    x3 = tree.contract(arrays, autojit=autojit)
+    assert x3 == pytest.approx(ex)
+
+    m, p = tree.contract(arrays, autojit=autojit, strip_exponent=True)
+    x4 = m * 10**p
+    assert x4 == pytest.approx(ex)
