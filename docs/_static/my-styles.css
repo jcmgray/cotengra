@@ -5,13 +5,37 @@ h1, h2, h3 {
     font-weight: bold;
 }
 
+h1 {
+	font-size: 2.0rem;
+}
+
+h2 {
+	font-size: 1.75rem;
+}
+
+h3 {
+	font-size: 1.5rem;
+}
+
+.toctree-l2 {
+	font-size: 0.85rem;
+}
+
 body {
     font-family: 'Atkinson Hyperlegible', sans-serif;
+}
+
+article {
+	font-size: 0.9rem;
 }
 
 code, kbd, pre, samp {
     font-family: 'IBM Plex Mono', monospace;
 }
+
+/* code.literal {
+	color: hsl(32, 85%, 50%);
+} */
 
 div.cell div.cell_input {
 	padding-left: 0em;
@@ -22,7 +46,7 @@ div.cell div.cell_input {
 	border-left-width: medium;
 }
 
-.cell_output .output.text_plain, .cell_output .output.traceback, .cell_output .output.stream, .cell_output .output.stderr {
+.cell_output .output.text_plain, .cell_output .output.traceback, .cell_output .output.stream {
 	border: 1px solid rgba(127, 127, 127, 0.0);
     background: rgba(127, 127, 127, 0.0);
 	margin-top: 0em;
@@ -31,19 +55,19 @@ div.cell div.cell_input {
 	box-shadow: none;
 }
 
+.cell_output .output.stderr {
+	border: 1px solid rgba(127, 127, 127, 0.0);
+    background: rgba(127, 127, 127, 0.0);
+	margin-top: 0em;
+	margin-bottom: 0em;
+	margin-left: 0.25em;
+	box-shadow: none;
+    border-left-color: #cc7766;
+    border-left-width: medium;
+}
+
 .cell_output {
 	padding-left: 1em;
 	padding-right: 0em;
 	margin-top: 0em;
 }
-
-/* nbsphinx dark
-
-div.nboutput.container div.output_area.stderr {
-    border: 1px solid rgb(51, 51, 51);
-	background: rgb(60, 20, 20);
-}
-
-div.nbinput.container div.input_area {
-	border: 1px solid rgb(51, 51, 51);
-} */

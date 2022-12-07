@@ -17,8 +17,6 @@ setup(
     classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
@@ -41,10 +39,13 @@ setup(
             'ray',
         ],
         'docs': [
-            'sphinx',
+            'sphinx>=2.0',
             'sphinx-autoapi',
+            'sphinx-copybutton',
             'myst-nb',
             'furo',
+            'setuptools_scm',
+            'ipython!=8.7.0',
         ],
         'test': [
             'numpy',
