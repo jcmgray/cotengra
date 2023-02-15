@@ -73,7 +73,11 @@ def nevergrad_init_optimizers(
                            dict(method_sampler_opts))
 
     if method_sampler is None:
-        method_sampler = sampler
+        if len(methods) == 1:
+            # some samplers don't support '1D' search spaces -- ignore
+            method_sampler = "RandomSearch"
+        else:
+            method_sampler = sampler
     if method_budget == 'auto':
         method_budget = self.max_repeats
     if method_num_workers == 'auto':
