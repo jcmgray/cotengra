@@ -19,15 +19,12 @@ def oe_to_igraph(inputs, output, size_dict,
     ind2terms = defaultdict(list)
     for i, term in enumerate(inputs):
         nweight = calc_node_weight_float(term, size_dict, weight_nodes)
-        G.add_vertex(str(i), inds=term.difference(output), weight=nweight)
+        G.add_vertex(str(i), weight=nweight)
         for ix in term:
             if ix not in output:
                 ind2terms[ix].append(str(i))
 
-    all_inds = oset.union(*inputs).difference(output)
-
-    for ix in all_inds:
-        enodes = ind2terms[ix]
+    for ix, enodes in ind2terms.items():
         if len(enodes) != 2:
             continue
 
