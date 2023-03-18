@@ -89,7 +89,7 @@ def HyperCompressedOptimizer(
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    if chi is not None:
+    if (chi is not None) and not callable(minimize):
         minimize += f"-{chi}"
 
     return HyperOptimizer(
@@ -110,7 +110,7 @@ def ReusableHyperCompressedOptimizer(
     """Instantiates a HyperOptimizer but with default arguments applicable to
     compressed path finding.
     """
-    if chi is not None:
+    if (chi is not None) and not callable(minimize):
         minimize += f"-{chi}"
     return ReusableHyperOptimizer(
         methods=methods,
