@@ -14,7 +14,7 @@ codegen-units = 1
 panic = "abort"
 
 [dependencies.pyo3]
-version = "0.16"
+version = "0.18"
 features = ["extension-module"]
 
 [dependencies.bit-set]

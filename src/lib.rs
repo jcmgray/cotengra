@@ -148,7 +148,7 @@ impl HyperGraph {
         inds
     }
 
-    fn remove_edge(&mut self, e: &String) {
+    fn _remove_edge(&mut self, e: &String) {
         for i in &self.edges[e] {
             self.nodes
                 .entry(*i)
@@ -271,8 +271,20 @@ impl HyperGraph {
         self.edges.len()
     }
 
+    fn print_nodes(&self) {
+        println!("{:?}", self.nodes);
+    }
+
+    fn print_edges(&self) {
+        println!("{:?}", self.edges);
+    }
+
     fn node_size(&self, i: Node) -> u128 {
         self.edges_size(&self.nodes[&i])
+    }
+
+    fn remove_edge(&mut self, e: String) {
+        self._remove_edge(&e);
     }
 
     fn bond_size(&self, i: Node, j: Node) -> u128 {
@@ -394,7 +406,7 @@ impl HyperGraph {
                 let e0 = es_it.next().unwrap();
                 // let e0 = es.swap_remove(0);
                 for e in es_it {
-                    self.remove_edge(&e);
+                    self._remove_edge(&e);
                 }
                 self.size_dict.insert(e0, new_size.min(chi));
             }
@@ -416,7 +428,6 @@ impl HyperGraph {
         inds
     }
 
-    #[args(chi = "None")]
     fn candidate_contraction_size(&mut self, i: Node, j: Node, chi: Option<u128>) -> u128 {
         let mut es = self.compute_contracted_inds(vec![i, j]);
         match chi {
@@ -442,7 +453,127 @@ impl HyperGraph {
         }
     }
 
-    #[args(smoothness = "2.0", p = "0.75", mu = "0.5")]
+    fn all_shortest_distances(
+        &self,
+        nodes: Option<Vec<Node>>,
+        neighbor_map: Option<Dict<Node, Vec<Node>>>,
+    ) -> Dict<(Node, Node), u32> {
+        let mut neighbor_map = match neighbor_map {
+            Some(x) => x,
+            // None => self.build_neighbor_map(),
+            None => Dict::default(),
+        };
+
+        let nodes: FxHashSet<Node> = match nodes {
+            Some(nodes) => nodes.into_iter().collect(),
+            None => self.nodes.keys().cloned().collect(),
+        };
+        let n = nodes.len();
+        let ncomb = (nodes.len().pow(2) - nodes.len()) / 2;
+
+        // which nodes have reached which other nodes
+        let mut visitors: Dict<Node, BitSet<Node>> = nodes
+            .iter()
+            .map(|&x| (x, single_el_bitset(x as usize, n)))
+            .collect();
+
+        let mut previous_visitors: Dict<Node, BitSet<Node>>;
+        let mut distances = Dict::default();
+        let mut any_change;
+
+        for d in 1..self.get_num_nodes() + 1 {
+            any_change = false;
+            // do a parallel update
+            previous_visitors = visitors.clone();
+            // only need to iterate over touched region
+
+            for (&i, ivis) in &previous_visitors {
+                // send i's visitors to its neighbors
+                // for &j in &neighbor_map[&i] {
+                for &j in
+                    neighbor_map
+                    .entry(i)
+                    .or_insert_with_key(
+                        |&i|
+                        self.neighbors(i)
+                    ).iter() {
+                    visitors
+                        .entry(j)
+                        // also populating newly encountered neighbors
+                        .or_insert_with(|| {
+                            any_change = true;
+                            BitSet::with_capacity(n)
+                        })
+                        .union_with(ivis);
+                }
+            }
+            // all changes in visitors are new distances of d
+            for &i in &nodes {
+                for j in visitors[&i].difference(&previous_visitors[&i]) {
+                    let j = j as Node;
+                    if (i < j) & nodes.contains(&j) {
+                        distances.insert((i, j), d as u32);
+                    }
+                    any_change = true;
+                }
+            }
+
+            if !any_change {
+                any_change |= previous_visitors
+                    .iter()
+                    .map(|(k, v)| v != &visitors[&k])
+                    .any(|x| x);
+            }
+
+            if (distances.len() == ncomb) | !any_change {
+                // we've either calculated all required distances, or there's
+                // nothing to be done -> due to disconnected subgraphs
+                break;
+            }
+        }
+        distances
+    }
+
+    fn all_shortest_distances_condensed(
+        &self,
+        nodes: Option<Vec<Node>>,
+        neighbor_map: Option<Dict<Node, Vec<Node>>>,
+    ) -> Vec<u32> {
+        let nodes = match nodes {
+            Some(nodes) => nodes,
+            None => {
+                let mut nodes: Vec<Node> = self.nodes.keys().cloned().collect();
+                nodes.sort();
+                nodes
+            }
+        };
+
+        let distances = self.all_shortest_distances(Some(nodes.clone()), neighbor_map);
+        let mut condensed = Vec::new();
+
+        let n = nodes.len();
+        let mut ni: Node;
+        let mut nj: Node;
+        let mut key;
+        let default_distance = 10 * n as u32;
+
+        for i in 0..n {
+            for j in i + 1..n {
+                ni = nodes[i];
+                nj = nodes[j];
+                if nj < ni {
+                    key = (nj, ni)
+                } else {
+                    key = (ni, nj)
+                }
+                condensed.push(*distances.get(&key).unwrap_or(&default_distance));
+            }
+        }
+
+        condensed
+    }
+
+    #[pyo3(signature = (smoothness=2.0, p=0.75, mu=0.5, neighbor_map=None))]
     fn simple_centrality(
         &self,
         smoothness: f64,
@@ -483,7 +614,7 @@ impl HyperGraph {
         c
     }
 
-    #[args(p = "2.0")]
+    #[pyo3(signature= (region, p=2.0))]
     fn simple_distance(&self, region: Vec<Node>, p: f64) -> Dict<Node, f64> {
         let mut ball: FxHashSet<Node> = FxHashSet::default();
         let mut distances: Dict<Node, f64> = Dict::default();
@@ -513,7 +644,6 @@ impl HyperGraph {
         affine_renorm(&distances)
     }
 
-    #[args(start = "None", max_loop_length = "None")]
     fn compute_loops(
         &self,
         start: Option<Vec<Node>>,

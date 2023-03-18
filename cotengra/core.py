@@ -3616,6 +3616,81 @@ class HyperGraph:
             min(chi, self.edges_size(es)) for es in incidences.values()
         )
 
+    def all_shortest_distances(
+        self,
+        nodes=None,
+    ):
+        if nodes is None:
+            nodes = set(self.nodes)
+        elif not isinstance(nodes, set):
+            nodes = set(nodes)
+
+        # build lazily
+        neighbors_map = {}
+
+        n = len(nodes)
+        ncomb = n * (n - 1) // 2
+        distances = {}
+
+        visitors = {node: {node} for node in nodes}
+        for d in range(1, self.num_nodes):
+            any_change = False
+            previous_visitors = {
+                k: v.copy() for k, v in visitors.items()
+            }
+            for i, ivis in previous_visitors.items():
+
+                try:
+                    ineighbs = neighbors_map[i]
+                except KeyError:
+                    ineighbs = neighbors_map[i] = tuple(self.neighbors(i))
+
+                for j in ineighbs:
+                    try:
+                        visitors[j] |= ivis
+                    except KeyError:
+                        visitors[j] = ivis.copy()
+                        # won't get caught in the later any_change check
+                        any_change = True
+
+            for i in nodes:
+                for j in visitors[i] - previous_visitors[i]:
+                    if (i < j) and (j in nodes):
+                        distances[i, j] = d
+                    any_change = True
+
+            if not any_change:
+                # also ened to check non target nodes
+                any_change |= any(
+                    ivis != visitors[i]
+                    for i, ivis in previous_visitors.items()
+                )
+
+            if (len(distances) == ncomb) or (not any_change):
+                break
+
+        return distances
+
+    def all_shortest_distances_condensed(
+        self,
+        nodes=None,
+    ):
+        if nodes is None:
+            nodes = tuple(self.nodes)
+        distances = self.all_shortest_distances(nodes=nodes)
+
+        default_distance = 10 * self.num_nodes
+
+        condensed = []
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                ni = nodes[i]
+                nj = nodes[j]
+                key = (ni, nj) if ni < nj else (nj, ni)
+                condensed.append(distances.get(key, default_distance))
+
+        return condensed
+
     def simple_distance(self, region, p=2):
         """Compute a simple distance metric from nodes in ``region`` to all
         others. Unlike graph distance, relative connectedness is taken into
