@@ -801,7 +801,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         self._opt_kwargs = opt_kwargs
         if directory is True:
             # automatically generate the directory
-            directory = f'ctg_cache_{self.auto_hash_path_relevant_opts()}'
+            directory = f'ctg_cache/opts{self.auto_hash_path_relevant_opts()}'
         self._cache = DiskDict(directory)
         self.overwrite = overwrite
         self._set_surface_order = set_surface_order
