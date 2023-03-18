@@ -55,12 +55,15 @@ def optuna_init_optimizers(
     methods,
     space,
     sampler='TPESampler',
+    sampler_opts=None,
     **create_study_opts,
 ):
     import optuna
 
     if isinstance(sampler, str):
-        sampler = getattr(optuna.samplers, sampler)()
+        if sampler_opts is None:
+            sampler_opts = {}
+        sampler = getattr(optuna.samplers, sampler)(**sampler_opts)
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     self._study = optuna.create_study(sampler=sampler, **create_study_opts)
