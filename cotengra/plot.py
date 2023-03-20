@@ -1,11 +1,11 @@
 import math
 import functools
+import importlib
 
 import numpy as np
 
 
 def show_and_close(fn):
-
     @functools.wraps(fn)
     def wrapped(*args, show_and_close=True, **kwargs):
         import matplotlib.pyplot as plt
@@ -23,21 +23,21 @@ def show_and_close(fn):
 
 
 NEUTRAL_STYLE = {
-    'axes.edgecolor': (0.5, 0.5, 0.5),
-    'axes.facecolor': (0, 0, 0, 0),
-    'axes.grid': True,
-    'axes.labelcolor': (0.5, 0.5, 0.5),
-    'axes.spines.right': False,
-    'axes.spines.top': False,
-    'figure.facecolor': (0, 0, 0, 0),
-    'grid.alpha': 0.1,
-    'grid.color': (0.5, 0.5, 0.5),
-    'legend.frameon': False,
-    'text.color': (0.5, 0.5, 0.5),
-    'xtick.color': (0.5, 0.5, 0.5),
-    'xtick.minor.visible': True,
-    'ytick.color': (0.5, 0.5, 0.5),
-    'ytick.minor.visible': True,
+    "axes.edgecolor": (0.5, 0.5, 0.5),
+    "axes.facecolor": (0, 0, 0, 0),
+    "axes.grid": True,
+    "axes.labelcolor": (0.5, 0.5, 0.5),
+    "axes.spines.right": False,
+    "axes.spines.top": False,
+    "figure.facecolor": (0, 0, 0, 0),
+    "grid.alpha": 0.1,
+    "grid.color": (0.5, 0.5, 0.5),
+    "legend.frameon": False,
+    "text.color": (0.5, 0.5, 0.5),
+    "xtick.color": (0.5, 0.5, 0.5),
+    "xtick.minor.visible": True,
+    "ytick.color": (0.5, 0.5, 0.5),
+    "ytick.minor.visible": True,
 }
 
 
@@ -46,7 +46,6 @@ def use_neutral_style(fn):
 
     @functools.wraps(fn)
     def new_fn(*args, use_neutral_style=True, **kwargs):
-
         if not use_neutral_style:
             return fn(*args, **kwargs)
 
@@ -123,7 +122,6 @@ def plot_scatter(
     import math
     import itertools
     import collections
-    import matplotlib as mpl
     import matplotlib.pyplot as plt
     import cotengra as ctg
 
@@ -176,7 +174,7 @@ def plot_scatter(
             edgecolor="white",
         )
 
-    ax.grid(True, color=(.5, .5, .5), which="major", alpha=0.1)
+    ax.grid(True, color=(0.5, 0.5, 0.5), which="major", alpha=0.1)
     ax.set_axisbelow(True)
 
     ax.legend(
@@ -350,6 +348,7 @@ def massage_pos(pos, nangles=12, flatten=False):
     for i, (x, y) in enumerate(pos.values()):
         xy[i, 0] = x
         xy[i, 1] = y
+
     thetas = np.linspace(0, 2 * np.pi, nangles, endpoint=False)
     rxys = (rotate(xy, theta) for theta in thetas)
     rxy0 = min(rxys, key=lambda rxy: span(rxy))
@@ -360,24 +359,157 @@ def massage_pos(pos, nangles=12, flatten=False):
     return dict(zip(pos, rxy0))
 
 
-def get_nice_pos(G, k=0.01, iterations=500, layout=None, flatten=False):
+def layout_pygraphviz(
+    G,
+    prog="neato",
+    dim=2,
+    **kwargs,
+):
+    # TODO: fix nodes with pin attribute
+    # TODO: initial positions
+    # TODO: max iters
+    # TODO: spring parameter
+    import pygraphviz as pgv
+
+    aG = pgv.AGraph()
+    mapping = {}
+    for nodea, nodeb in G.edges():
+        s_nodea = str(nodea)
+        s_nodeb = str(nodeb)
+        mapping[s_nodea] = nodea
+        mapping[s_nodeb] = nodeb
+        aG.add_edge(s_nodea, s_nodeb)
+
+    kwargs = {}
+
+    if dim == 2.5:
+        kwargs["dim"] = 3
+        kwargs["dimen"] = 2
+    else:
+        kwargs["dim"] = kwargs["dimen"] = dim
+    args = " ".join(f"-G{k}={v}" for k, v in kwargs.items())
+
+    # run layout algorithm
+    aG.layout(prog=prog, args=args)
+
+    # extract layout
+    pos = {}
+    for snode, node in mapping.items():
+        spos = aG.get_node(snode).attr["pos"]
+        pos[node] = tuple(map(float, spos.split(",")))
+
+    # normalize to unit square
+    xmin = ymin = zmin = float("inf")
+    xmax = ymax = zmaz = float("-inf")
+    for x, y, *maybe_z in pos.values():
+        xmin = min(xmin, x)
+        xmax = max(xmax, x)
+        ymin = min(ymin, y)
+        ymax = max(ymax, y)
+        for z in maybe_z:
+            zmin = min(zmin, z)
+            zmaz = max(zmaz, z)
+
+    for node, (x, y, *maybe_z) in pos.items():
+        pos[node] = (
+            2 * (x - xmin) / (xmax - xmin) - 1,
+            2 * (y - ymin) / (ymax - ymin) - 1,
+            *(2 * (z - zmin) / (zmaz - zmin) - 1 for z in maybe_z),
+        )
+
+    return pos
+
+
+HAS_FA2 = importlib.util.find_spec("fa2") is not None
+HAS_PYGRAPHVIZ = importlib.util.find_spec("pygraphviz") is not None
+
+
+def get_nice_pos(
+    G,
+    *,
+    dim=2,
+    layout="auto",
+    initial_layout="auto",
+    iterations="auto",
+    k=None,
+    use_forceatlas2=False,
+    flatten=False,
+):
+    if (layout == "auto") and HAS_PYGRAPHVIZ:
+        layout = "neato"
+
+    if layout in ("dot", "neato", "fdp", "sfdp"):
+        pos = layout_pygraphviz(G, prog=layout, dim=dim)
+        return massage_pos(pos, flatten=flatten)
+
     import networkx as nx
 
-    if layout is None:
-        try:
+    if layout != "auto":
+        initial_layout = layout
+        iterations = 0
+
+    if initial_layout == "auto":
+        # automatically select
+        if len(G) <= 100:
+            # usually nicest
+            initial_layout = "kamada_kawai"
+        else:
+            # faster, but not as nice
+            initial_layout = "spectral"
+
+    if iterations == "auto":
+        # the smaller the graph, the more iterations we can afford
+        iterations = max(200, 1000 - len(G))
+
+    if dim == 2.5:
+        dim = 3
+        project_back_to_2d = True
+    else:
+        project_back_to_2d = False
+
+    # use spectral or other layout as starting point
+    ly_opts = {"dim": dim} if dim != 2 else {}
+    pos0 = getattr(nx, initial_layout + "_layout")(G, **ly_opts)
+
+    # and then relax remaining using spring layout
+    if iterations:
+        if use_forceatlas2 is True:
+            # turn on for more than 1 node
+            use_forceatlas2 = 1
+        elif use_forceatlas2 in (0, False):
+            # never turn on
+            use_forceatlas2 = float("inf")
+
+        should_use_fa2 = HAS_FA2 and (len(G) > use_forceatlas2) and (dim == 2)
+
+        if should_use_fa2:
             from fa2 import ForceAtlas2
 
+            # NB: some versions of fa2 don't support the `weight_attr` option
             pos = ForceAtlas2(verbose=False).forceatlas2_networkx_layout(
-                G, iterations=iterations
+                G, pos=pos0, iterations=iterations
             )
-            return massage_pos(pos, flatten=flatten)
+        else:
+            pos = nx.spring_layout(
+                G,
+                pos=pos0,
+                k=k,
+                dim=dim,
+                iterations=iterations,
+            )
+    else:
+        pos = pos0
 
-        except ImportError:
-            layout = "kamada_kawai"
+    if project_back_to_2d:
+        # project back to 2d
+        pos = {k: v[:2] for k, v in pos.items()}
+        dim = 2
 
-    pos = getattr(nx.layout, layout + "_layout")(G)
-    pos = nx.spring_layout(G, k=k, iterations=0, pos=pos)
-    return massage_pos(pos, flatten=flatten)
+    if dim == 2:
+        # finally rotate them to cover a small vertical span
+        pos = massage_pos(pos)
+
+    return pos
 
 
 @show_and_close
@@ -385,7 +517,8 @@ def get_nice_pos(G, k=0.01, iterations=500, layout=None, flatten=False):
 def plot_tree(
     tree,
     layout="ring",
-    layout_hypergraph=None,
+    hypergraph_layout="auto",
+    hypergraph_layout_opts=None,
     k=0.01,
     iterations=500,
     span=None,
@@ -412,6 +545,11 @@ def plot_tree(
     import networkx as nx
     import matplotlib as mpl
     from matplotlib import pyplot as plt
+
+    hypergraph_layout_opts = (
+        {} if hypergraph_layout_opts is None else dict(hypergraph_layout_opts)
+    )
+    hypergraph_layout_opts.setdefault("layout", hypergraph_layout)
 
     if raw_edge_color is None:
         raw_edge_color = (0.5, 0.5, 0.5)
@@ -463,13 +601,8 @@ def plot_tree(
 
     if layout == "tent":
         # place raw graph first
-        pos = get_nice_pos(
-            G_tn,
-            k=k,
-            iterations=iterations,
-            flatten=True,
-            layout=layout_hypergraph,
-        )
+        hypergraph_layout_opts.setdefault("flatten", True)
+        pos = get_nice_pos(G_tn, **hypergraph_layout_opts)
 
         xmin = min(v[0] for v in pos.values())
         xmax = max(v[0] for v in pos.values())
@@ -550,13 +683,8 @@ def plot_tree(
 
     elif layout == "span":
         # place raw graph first
-        pos = get_nice_pos(
-            G_tn,
-            k=k,
-            iterations=iterations,
-            flatten=False,
-            layout=layout_hypergraph,
-        )
+        hypergraph_layout_opts.setdefault("flatten", False)
+        pos = get_nice_pos(G_tn, **hypergraph_layout_opts)
         if span is None:
             span = tree.get_spans()[0]
         pos.update({node: pos[span[node]] for node in G_tree.nodes})
@@ -721,7 +849,6 @@ def plot_contractions(
     from matplotlib import pyplot as plt
     import matplotlib as mpl
     import seaborn as sns
-    import warnings
 
     df = tree_to_df(tree)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
@@ -828,7 +955,6 @@ def plot_slicings(
     import matplotlib as mpl
     from matplotlib import pyplot as plt
     import seaborn as sns
-    import warnings
 
     df = slicefinder_to_df(slice_finder, relative_flops=relative_flops)
 
@@ -904,7 +1030,13 @@ def plot_hypergraph(
     centrality="simple",
     colormap="plasma",
     pos=None,
-    layout=None,
+    dim=2,
+    layout="auto",
+    initial_layout="auto",
+    iterations="auto",
+    k=None,
+    use_forceatlas2=False,
+    flatten=False,
     node_size=None,
     node_color=(0.5, 0.5, 0.5, 1.0),
     edge_alpha=1 / 3,
@@ -913,7 +1045,6 @@ def plot_hypergraph(
     draw_edge_labels=None,
     edge_labels_font_size=8,
     edge_labels_font_family="monospace",
-    iterations=500,
     return_pos=False,
     ax=None,
     figsize=(5, 5),
@@ -943,7 +1074,16 @@ def plot_hypergraph(
     )
 
     if pos is None:
-        pos = get_nice_pos(G, layout=layout, iterations=iterations)
+        pos = get_nice_pos(
+            G,
+            dim=2,
+            layout=layout,
+            initial_layout=initial_layout,
+            iterations=iterations,
+            k=k,
+            use_forceatlas2=use_forceatlas2,
+            flatten=flatten,
+        )
 
     created_ax = ax is None
     if created_ax:
