@@ -2,37 +2,37 @@ from .hyper import register_hyper_optlib
 
 
 BTB_TYPE_TO_HYPERPARAM = {
-    'BOOL': 'BooleanHyperParam',
-    'INT': 'IntHyperParam',
-    'INT_CAT': 'CategoricalHyperParam',
-    'STRING': 'CategoricalHyperParam',
-    'FLOAT': 'FloatHyperParam',
-    'FLOAT_EXP': 'FloatHyperParam',  # no more EXP support in baytune?
+    "BOOL": "BooleanHyperParam",
+    "INT": "IntHyperParam",
+    "INT_CAT": "CategoricalHyperParam",
+    "STRING": "CategoricalHyperParam",
+    "FLOAT": "FloatHyperParam",
+    "FLOAT_EXP": "FloatHyperParam",  # no more EXP support in baytune?
 }
 
 
 def convert_param_to_baytune(param):
-    """Convert a search subspace to ``baytune`` form.
-    """
+    """Convert a search subspace to ``baytune`` form."""
     from btb.tuning import hyperparams
 
-    hp = getattr(hyperparams, BTB_TYPE_TO_HYPERPARAM[param['type']])
+    hp = getattr(hyperparams, BTB_TYPE_TO_HYPERPARAM[param["type"]])
 
-    if param['type'] in ('BOOL',):
+    if param["type"] in ("BOOL",):
         return hp()
-    elif param['type'] in ('INT_CAT', 'STRING'):
-        return hp(param['options'])
+    elif param["type"] in ("INT_CAT", "STRING"):
+        return hp(param["options"])
     else:
-        return hp(param['min'], param['max'],
-                  include_min=True, include_max=True)
+        return hp(
+            param["min"], param["max"], include_min=True, include_max=True
+        )
 
 
 def baytune_init_optimizers(
     self,
     methods,
     space,
-    sampler='GP',
-    method_sampler='UCB1',
+    sampler="GP",
+    method_sampler="UCB1",
     sampler_opts=None,
 ):
     """
@@ -58,54 +58,59 @@ def baytune_init_optimizers(
 
     sampler_opts = {} if sampler_opts is None else dict(sampler_opts)
     self._selector = getattr(btb.selection, method_sampler)(
-        methods, **sampler_opts)
+        methods, **sampler_opts
+    )
 
     # for compatability
-    if 'Tuner' not in sampler:
-        sampler += 'Tuner'
+    if "Tuner" not in sampler:
+        sampler += "Tuner"
 
     tuner_fn = getattr(btb.tuning.tuners, sampler)
 
     self._tuners = {
-        method: tuner_fn(Tunable({
-            name: convert_param_to_baytune(param)
-            for name, param in space[method].items()
-        }))
+        method: tuner_fn(
+            Tunable(
+                {
+                    name: convert_param_to_baytune(param)
+                    for name, param in space[method].items()
+                }
+            )
+        )
         for method in methods
     }
 
 
 def baytune_get_setting(self):
-    """Get a setting to trial from one of the baytune optimizers.
-    """
+    """Get a setting to trial from one of the baytune optimizers."""
     import warnings
+
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", module='sklearn')
+        warnings.filterwarnings("ignore", module="sklearn")
 
         if len(self._methods) == 1:
-            method, = self._methods
+            (method,) = self._methods
         else:
             possible_methods = {
-                m: getattr(self._tuners[m], 'scores', ())
+                m: getattr(self._tuners[m], "scores", ())
                 for m in self._methods
             }
             method = self._selector.select(possible_methods)
 
         params = self._tuners[method].propose()
-        return {'method': method, 'params': params}
+        return {"method": method, "params": params}
 
 
 def baytune_report_result(self, setting, trial, score):
-    """Report the result of a trial to the baytune optimizers.
-    """
+    """Report the result of a trial to the baytune optimizers."""
     import warnings
+
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", module='sklearn')
-        self._tuners[setting['method']].record(setting['params'], -score)
+        warnings.filterwarnings("ignore", module="sklearn")
+        self._tuners[setting["method"]].record(setting["params"], -score)
 
 
 register_hyper_optlib(
-    'baytune',
+    "baytune",
     baytune_init_optimizers,
     baytune_get_setting,
     baytune_report_result,

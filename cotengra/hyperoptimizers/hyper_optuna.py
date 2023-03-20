@@ -1,34 +1,36 @@
-
 import warnings
 
 from .hyper import register_hyper_optlib
 
 
 def make_getter(name, param):
-    if param['type'] == 'BOOL':
-        return lambda trial: trial.suggest_categorical(
-            name, [False, True])
-    if param['type'] == 'INT':
+    if param["type"] == "BOOL":
+        return lambda trial: trial.suggest_categorical(name, [False, True])
+    if param["type"] == "INT":
         return lambda trial: trial.suggest_int(
-            name, param['min'], param['max'])
-    if param['type'] == 'STRING':
-        return lambda trial: trial.suggest_categorical(
-            name, param['options'])
-    if param['type'] == 'FLOAT':
+            name, param["min"], param["max"]
+        )
+    if param["type"] == "STRING":
+        return lambda trial: trial.suggest_categorical(name, param["options"])
+    if param["type"] == "FLOAT":
         return lambda trial: trial.suggest_float(
-            name, param['min'], param['max'])
-    if param['type'] == 'FLOAT_EXP':
+            name, param["min"], param["max"]
+        )
+    if param["type"] == "FLOAT_EXP":
         return lambda trial: trial.suggest_float(
-            name, param['min'], param['max'], log=True)
+            name, param["min"], param["max"], log=True
+        )
     raise ValueError("Didn't understand space {}.".format(param))
 
 
 def make_retriever(methods, space):
-
     if len(methods) == 1:
+
         def meth_getter(_):
             return methods[0]
+
     else:
+
         def meth_getter(trial):
             return trial.suggest_categorical("method", methods)
 
@@ -41,8 +43,8 @@ def make_retriever(methods, space):
     def retriever(trial):
         meth = meth_getter(trial)
         return {
-            'method': meth,
-            'params': {
+            "method": meth,
+            "params": {
                 n: getter(trial) for n, getter in getters[meth].items()
             },
         }
@@ -54,7 +56,7 @@ def optuna_init_optimizers(
     self,
     methods,
     space,
-    sampler='TPESampler',
+    sampler="TPESampler",
     sampler_opts=None,
     **create_study_opts,
 ):
@@ -72,13 +74,10 @@ def optuna_init_optimizers(
 
 def optuna_get_setting(self):
     with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=".*divide by zero.*")
         warnings.filterwarnings(
-            action='ignore',
-            message='.*divide by zero.*'
-        )
-        warnings.filterwarnings(
-            action='ignore',
-            message='.*invalid value encountered in subtract.*'
+            action="ignore",
+            message=".*invalid value encountered in subtract.*",
         )
 
         otrial = self._study.ask()
@@ -89,11 +88,11 @@ def optuna_get_setting(self):
 
 
 def optuna_report_result(self, settings, trial, score):
-    self._study.tell(settings['trial_number'], score)
+    self._study.tell(settings["trial_number"], score)
 
 
 register_hyper_optlib(
-    'optuna',
+    "optuna",
     optuna_init_optimizers,
     optuna_get_setting,
     optuna_report_result,

@@ -3,8 +3,8 @@ import random
 import collections
 
 
-from .core import HyperGraph, PartitionTreeBuilder
-from .hyper import register_hyper_function
+from ..core import HyperGraph, PartitionTreeBuilder
+from ..hyperoptimizers.hyper import register_hyper_function
 
 
 def pop_fact(p, parts, n, pop_small_bias, pop_big_bias):
@@ -12,15 +12,15 @@ def pop_fact(p, parts, n, pop_small_bias, pop_big_bias):
     if p <= m:
         return pop_small_bias * n * math.sin(math.pi * p / m)
     else:
-        return - pop_big_bias * n * math.sin(math.pi / 2 * (p - m) / (n - m))
+        return -pop_big_bias * n * math.sin(math.pi / 2 * (p - m) / (n - m))
 
 
 def labels_partition(
     inputs,
     output,
     size_dict,
-    weight_nodes='linear',
-    weight_edges='log',
+    weight_nodes="linear",
+    weight_edges="log",
     parts=2,
     maxiter=None,
     memory=0,
@@ -50,12 +50,13 @@ def labels_partition(
 
     hg = HyperGraph(inputs, output, size_dict)
     n = hg.get_num_nodes()
-    winfo = hg.compute_weights(weight_nodes=weight_nodes,
-                               weight_edges=weight_edges)
+    winfo = hg.compute_weights(
+        weight_nodes=weight_nodes, weight_edges=weight_edges
+    )
 
     sites = list(hg.nodes)
     neighbs = collections.defaultdict(set)
-    max_edge_weight = max(winfo['edge_weights'])
+    max_edge_weight = max(winfo["edge_weights"])
     weights = {}
 
     # populate neighbor list and weights by edge weight
@@ -65,12 +66,12 @@ def labels_partition(
                 if j != i:
                     neighbs[i].add(j)
                     weights[i, j] = (
-                        winfo['edge_weight_map'][e] / max_edge_weight
+                        winfo["edge_weight_map"][e] / max_edge_weight
                     )
 
     # weight by mutual connectivity
     for i, j in weights:
-        weights[i, j] *= (1 + len(neighbs[i] & neighbs[j]))**con_pow
+        weights[i, j] *= (1 + len(neighbs[i] & neighbs[j])) ** con_pow
 
     labels = sites.copy()
     pops = collections.Counter(labels)
@@ -79,7 +80,6 @@ def labels_partition(
         maxiter = n
 
     for r in range(maxiter):
-
         random.shuffle(sites)
         all_static = True
 
@@ -100,7 +100,7 @@ def labels_partition(
                 p = pops[lbl]
                 scores[lbl] += (
                     pop_fact(p, parts, n, pop_small_bias, pop_big_bias)
-                ) / (r + 1)**pop_decay
+                ) / (r + 1) ** pop_decay
 
             new_label = scores.most_common(1)[0][0]
 
@@ -108,7 +108,7 @@ def labels_partition(
             pops[old_label] -= 1
             pops[new_label] += 1
 
-            all_static &= (new_label == old_label)
+            all_static &= new_label == old_label
 
         if all_static:
             break
@@ -132,36 +132,36 @@ labels_to_tree = PartitionTreeBuilder(labels_partition)
 
 
 register_hyper_function(
-    name='labels',
+    name="labels",
     ssa_func=labels_to_tree.trial_fn,
     space={
-        'random_strength': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 1.},
-        'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
-        'cutoff': {'type': 'INT', 'min': 10, 'max': 40},
-        'parts': {'type': 'INT', 'min': 1, 'max': 16},
-        'memory': {'type': 'INT', 'min': -2, 'max': 1},
-        'pop_small_bias': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
-        'pop_big_bias': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
-        'pop_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
-        'con_pow': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
-        'final_sweep': {'type': 'BOOL'},
+        "random_strength": {"type": "FLOAT_EXP", "min": 0.01, "max": 1.0},
+        "weight_edges": {"type": "STRING", "options": ["const", "log"]},
+        "cutoff": {"type": "INT", "min": 10, "max": 40},
+        "parts": {"type": "INT", "min": 1, "max": 16},
+        "memory": {"type": "INT", "min": -2, "max": 1},
+        "pop_small_bias": {"type": "FLOAT", "min": 0.0, "max": 2.0},
+        "pop_big_bias": {"type": "FLOAT", "min": 0.0, "max": 2.0},
+        "pop_decay": {"type": "FLOAT", "min": 0.0, "max": 10.0},
+        "con_pow": {"type": "FLOAT", "min": 0.0, "max": 10.0},
+        "final_sweep": {"type": "BOOL"},
     },
 )
 
 
 register_hyper_function(
-    name='labels-agglom',
+    name="labels-agglom",
     ssa_func=labels_to_tree.trial_fn_agglom,
     space={
-        'weight_edges': {'type': 'STRING', 'options': ['const', 'log']},
-        'memory': {'type': 'INT', 'min': -2, 'max': 1},
-        'pop_small_bias': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
-        'pop_big_bias': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
-        'pop_decay': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
-        'con_pow': {'type': 'FLOAT', 'min': 0.0, 'max': 10.0},
-        'final_sweep': {'type': 'BOOL'},
+        "weight_edges": {"type": "STRING", "options": ["const", "log"]},
+        "memory": {"type": "INT", "min": -2, "max": 1},
+        "pop_small_bias": {"type": "FLOAT", "min": 0.0, "max": 2.0},
+        "pop_big_bias": {"type": "FLOAT", "min": 0.0, "max": 2.0},
+        "pop_decay": {"type": "FLOAT", "min": 0.0, "max": 10.0},
+        "con_pow": {"type": "FLOAT", "min": 0.0, "max": 10.0},
+        "final_sweep": {"type": "BOOL"},
     },
     constants={
-        'random_strength': 0.0,
-    }
+        "random_strength": 0.0,
+    },
 )

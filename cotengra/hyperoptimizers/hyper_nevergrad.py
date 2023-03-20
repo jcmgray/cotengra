@@ -4,32 +4,31 @@ from .hyper import register_hyper_optlib
 def convert_param_to_nevergrad(param):
     import nevergrad as ng
 
-    if param['type'] == 'BOOL':
+    if param["type"] == "BOOL":
         return ng.p.Choice([False, True])
-    if param['type'] == 'INT':
-        return ng.p.TransitionChoice(range(param['min'], param['max'] + 1))
-    if param['type'] == 'STRING':
-        return ng.p.Choice(param['options'])
-    if param['type'] == 'FLOAT':
-        return ng.p.Scalar(lower=param['min'], upper=param['max'])
-    if param['type'] == 'FLOAT_EXP':
-        return ng.p.Log(lower=param['min'], upper=param['max'])
+    if param["type"] == "INT":
+        return ng.p.TransitionChoice(range(param["min"], param["max"] + 1))
+    if param["type"] == "STRING":
+        return ng.p.Choice(param["options"])
+    if param["type"] == "FLOAT":
+        return ng.p.Scalar(lower=param["min"], upper=param["max"])
+    if param["type"] == "FLOAT_EXP":
+        return ng.p.Log(lower=param["min"], upper=param["max"])
     else:
         raise ValueError("Didn't understand space {}.".format(param))
 
 
 def get_methods_space(methods):
     import nevergrad as ng
+
     return ng.p.Choice(methods)
 
 
 def convert_to_nevergrad_space(method, space):
     import nevergrad as ng
+
     return ng.p.Dict(
-        **{
-            o: convert_param_to_nevergrad(p)
-            for o, p in space[method].items()
-        }
+        **{o: convert_param_to_nevergrad(p) for o, p in space[method].items()}
     )
 
 
@@ -37,11 +36,11 @@ def nevergrad_init_optimizers(
     self,
     methods,
     space,
-    sampler='NaiveTBPSA',
+    sampler="NaiveTBPSA",
     method_sampler=None,
-    budget='auto',
+    budget="auto",
     num_workers=1,
-    method_budget='auto',
+    method_budget="auto",
     method_num_workers=1,
     sampler_opts=None,
     method_sampler_opts=None,
@@ -69,8 +68,9 @@ def nevergrad_init_optimizers(
     import nevergrad as ng
 
     sampler_opts = {} if sampler_opts is None else dict(sampler_opts)
-    method_sampler_opts = ({} if method_sampler_opts is None else
-                           dict(method_sampler_opts))
+    method_sampler_opts = (
+        {} if method_sampler_opts is None else dict(method_sampler_opts)
+    )
 
     if method_sampler is None:
         if len(methods) == 1:
@@ -78,21 +78,21 @@ def nevergrad_init_optimizers(
             method_sampler = "RandomSearch"
         else:
             method_sampler = sampler
-    if method_budget == 'auto':
+    if method_budget == "auto":
         method_budget = self.max_repeats
-    if method_num_workers == 'auto':
+    if method_num_workers == "auto":
         method_num_workers = self._num_workers
 
     self._method_chooser = getattr(ng.optimizers, method_sampler)(
         parametrization=get_methods_space(methods),
         budget=method_budget,
         num_workers=method_num_workers,
-        **method_sampler_opts
+        **method_sampler_opts,
     )
 
-    if budget == 'auto':
+    if budget == "auto":
         budget = self.max_repeats
-    if num_workers == 'auto':
+    if num_workers == "auto":
         num_workers = self._num_workers
 
     self._optimizers = {
@@ -107,27 +107,25 @@ def nevergrad_init_optimizers(
 
 
 def nevergrad_get_setting(self):
-    """Get a setting to trial from one of the nevergrad optimizers.
-    """
+    """Get a setting to trial from one of the nevergrad optimizers."""
     method = self._method_chooser.ask()
     params = self._optimizers[method.args[0]].ask()
     return {
-        'method_token': method,
-        'method': method.args[0],
-        'params_token': params,
-        'params': params.args[0],
+        "method_token": method,
+        "method": method.args[0],
+        "params_token": params,
+        "params": params.args[0],
     }
 
 
 def nevergrad_report_result(self, setting, trial, score):
-    """Report the result of a trial to the ``nevergrad`` optimizers.
-    """
-    self._method_chooser.tell(setting['method_token'], score)
-    self._optimizers[setting['method']].tell(setting['params_token'], score)
+    """Report the result of a trial to the ``nevergrad`` optimizers."""
+    self._method_chooser.tell(setting["method_token"], score)
+    self._optimizers[setting["method"]].tell(setting["params_token"], score)
 
 
 register_hyper_optlib(
-    'nevergrad',
+    "nevergrad",
     nevergrad_init_optimizers,
     nevergrad_get_setting,
     nevergrad_report_result,

@@ -7,7 +7,7 @@ from time import sleep
 import tqdm
 from opt_einsum.paths import ssa_to_linear
 
-from .core import (
+from ..core import (
     get_hypergraph,
     ContractionTreeCompressed,
     get_compressed_stats_tracker,
@@ -51,8 +51,8 @@ class CompressedExhaustive:
     def __init__(
         self,
         chi,
-        minimize='peak',
-        max_nodes=float('inf'),
+        minimize="peak",
+        max_nodes=float("inf"),
         max_time=None,
         local_score=None,
         exploration_power=0.0,
@@ -62,7 +62,7 @@ class CompressedExhaustive:
         self.chi = chi
         self.minimize = minimize
         if best_score is None:
-            self.best_score = float('inf')
+            self.best_score = float("inf")
         else:
             self.best_score = abs(best_score)
         self.best_ssa_path = None
@@ -73,7 +73,6 @@ class CompressedExhaustive:
         self.allow = None
 
         if local_score is None:
-
             if exploration_power <= 0:
 
                 def local_score(step, tracker):
@@ -88,23 +87,21 @@ class CompressedExhaustive:
                     """Use the actual score to order search, but modified by
                     how 'complete' the contraction is to favor finishing.
                     """
-                    return (
-                        tracker.score /
-                        (step + 1)**(1 / self.exploration_power)
+                    return tracker.score / (step + 1) ** (
+                        1 / self.exploration_power
                     )
 
         self.local_score = local_score
         self.progbar = progbar
 
     def setup(self, inputs, output, size_dict):
-        """Set-up the optimizer with a specific contraction.
-        """
+        """Set-up the optimizer with a specific contraction."""
         if self.counter is None:
             hg = get_hypergraph(
                 inputs,
                 output,
                 size_dict,
-                accel='auto',
+                accel=False,
             )
             # maps node integer to subgraph
             tree_map = {i: frozenset([i]) for i in hg.nodes}
@@ -125,14 +122,7 @@ class CompressedExhaustive:
             self.priority_queue = []
 
     def expand_node(
-        self,
-        i,
-        j,
-        hg,
-        tree_map,
-        ssa_path,
-        tracker,
-        high_priority=False
+        self, i, j, hg, tree_map, ssa_path, tracker, high_priority=False
     ):
         """Given a current contraction node, expand it by contracting nodes
         ``i`` and ``j``.
@@ -160,7 +150,7 @@ class CompressedExhaustive:
         ti = tree_map[i]
         tj = tree_map[j]
         tij = ti | tj
-        if ((self.allow is not None) and (tij not in self.allow)):
+        if (self.allow is not None) and (tij not in self.allow):
             # search is restricted to a subset of pairs excluding tij
             return
 
@@ -171,9 +161,7 @@ class CompressedExhaustive:
         # simulate a contraction step while tracking costs
         tracker.update_pre_compress(hg, i, j)
         # compress late - just before contraction
-        hg.compress(
-            self.chi, hg.get_node(i) + hg.get_node(j)
-        )
+        hg.compress(self.chi, hg.get_node(i) + hg.get_node(j))
         tracker.update_pre_contract(hg, i, j)
         ij = hg.contract(i, j)
         tracker.update_post_contract(hg, ij)
@@ -189,17 +177,20 @@ class CompressedExhaustive:
 
         # uniquely identify partially contracted graph
         graph_key = hash(frozenset(tree_map_next.values()))
-        if tracker.score >= self.seen.get(graph_key, float('inf')):
+        if tracker.score >= self.seen.get(graph_key, float("inf")):
             # already reached this exact point with an equal or better score
             return
         # record new or better score
         self.seen[graph_key] = tracker.score
 
         # construct the next candidate and add to queue
-        new_ssa_path = ssa_path + ((j, i) if j < i else (i, j), )
+        new_ssa_path = ssa_path + ((j, i) if j < i else (i, j),)
         c = next(self.counter)
         self.cands[c] = (
-            hg, tree_map_next, new_ssa_path, tracker,
+            hg,
+            tree_map_next,
+            new_ssa_path,
+            tracker,
         )
 
         if not high_priority:
@@ -231,12 +222,16 @@ class CompressedExhaustive:
 
         if self.max_time is not None:
             import time
+
             time0 = time.time()
 
             def should_stop(c):
-                return ((time.time() - time0 >= self.max_time) or
-                        (self.best_ssa_path and c and (c > self.max_nodes)))
+                return (time.time() - time0 >= self.max_time) or (
+                    self.best_ssa_path and c and (c > self.max_nodes)
+                )
+
         else:
+
             def should_stop(c):
                 return self.best_ssa_path and c and (c > self.max_nodes)
 
@@ -247,7 +242,6 @@ class CompressedExhaustive:
 
         try:
             while self.cands:
-
                 if self.priority_queue:
                     c = self.priority_queue.pop()
                 else:
@@ -313,15 +307,22 @@ class CompressedExhaustive:
 
         ssas = list(range(hg.get_num_nodes()))
         ssa = ssas[-1]
-        for (pi, pj) in path:
+        for pi, pj in path:
             i, j = map(ssas.pop, sorted((pi, pj), reverse=True))
             ssa += 1
             ij = ssa
             if restrict:
                 self.allow.add(tree_map[i] | tree_map[j])
             ssas.append(ij)
-            c = self.expand_node(i, j, hg, tree_map, ssa_path, tracker,
-                                 high_priority=high_priority)
+            c = self.expand_node(
+                i,
+                j,
+                hg,
+                tree_map,
+                ssa_path,
+                tracker,
+                high_priority=high_priority,
+            )
             if c is None:
                 return
 
@@ -329,32 +330,33 @@ class CompressedExhaustive:
             hg, tree_map, ssa_path, tracker = self.cands[c]
 
     def search(self, inputs, output, size_dict):
-        """Run and return the best ``ContractionTreeCompressed``.
-        """
+        """Run and return the best ``ContractionTreeCompressed``."""
         self.run(inputs, output, size_dict)
         return ContractionTreeCompressed.from_path(
-            inputs, output, size_dict, ssa_path=self.ssa_path,
+            inputs,
+            output,
+            size_dict,
+            ssa_path=self.ssa_path,
         )
 
     def __call__(self, inputs, output, size_dict):
-        """Run and return the best ``path``.
-        """
+        """Run and return the best ``path``."""
         self.run(inputs, output, size_dict)
         return self.path
 
 
 def do_reconfigure(tree, time, chi):
-
     tree.compressed_reconfigure_(
-        chi, progbar=False, max_time=time, order_only=True)
+        chi, progbar=False, max_time=time, order_only=True
+    )
     tree.compressed_reconfigure_(
-        chi, progbar=False, max_time=time, order_only=False)
+        chi, progbar=False, max_time=time, order_only=False
+    )
     new = math.log2(tree.peak_size_compressed(chi))
     return tree, new
 
 
 class CompressedTreeRefiner:
-
     def __init__(
         self,
         trees,
@@ -402,9 +404,8 @@ class CompressedTreeRefiner:
         return tree, key, time, old, new
 
     def _get_next_result_par(self, max_futures):
-        while (
-            self.scores and
-            (len(self.futures) < min(self.pre_dispatch, max_futures))
+        while self.scores and (
+            len(self.futures) < min(self.pre_dispatch, max_futures)
         ):
             tree, key, time, old = self._get_next_tree()
             f = self.executor.submit(do_reconfigure, tree, time, self.chi)
@@ -435,7 +436,8 @@ class CompressedTreeRefiner:
 
         if self.progbar:
             import tqdm
-            its = tqdm.trange(num_its, desc='Refining...')
+
+            its = tqdm.trange(num_its, desc="Refining...")
         else:
             its = range(num_its)
 
@@ -457,7 +459,8 @@ class CompressedTreeRefiner:
 
         if self.plot:
             import matplotlib.pyplot as plt
+
             new_scores = [-x[0] for x in self.scores]
             _, bins, _ = plt.hist(old_scores, bins=bins, alpha=0.8)
-            plt.hist(new_scores, bins=bins, color='orange', alpha=0.8)
-            plt.hist(self.finished_scores, bins=bins, color='red', alpha=0.8)
+            plt.hist(new_scores, bins=bins, color="orange", alpha=0.8)
+            plt.hist(self.finished_scores, bins=bins, color="red", alpha=0.8)

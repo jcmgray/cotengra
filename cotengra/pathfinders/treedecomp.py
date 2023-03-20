@@ -56,6 +56,7 @@ class TreeDecomposition:
         mapping decomposition nodes to vertices in the original graph.
         """
         import networkx as nx
+
         self.tree = nx.Graph()
         self.bags = {}
 
@@ -87,13 +88,14 @@ def _increment_eo(td, eo):
     while True:
         # Base case: If one node left, add its vertices to the eo
         if td.tree.order() == 1:
-            only_vertex, = td.tree.nodes()
+            (only_vertex,) = td.tree.nodes()
             eo.ordering.extend(sorted(td.bags[only_vertex]))
             return eo
 
         # Otherwise we can identify a leaf and its parent
-        leaf = next(node for node in td.tree.nodes()
-                    if td.tree.degree[node] == 1)
+        leaf = next(
+            node for node in td.tree.nodes() if td.tree.degree[node] == 1
+        )
         parent = min(td.tree.neighbors(leaf))
 
         # See if there are any vertices in leaf's bag that are not in
@@ -146,11 +148,11 @@ def td_str_to_tree_decomposition(td_str):
 
     td = TreeDecomposition()
 
-    lines = iter(td_str.split('\n'))
+    lines = iter(td_str.split("\n"))
 
     # Ignore comments
     line = next(lines)
-    while line[0] == 'c':
+    while line[0] == "c":
         line = next(lines)
 
     # The next line will look like "s td 28 25 95"
@@ -158,7 +160,7 @@ def td_str_to_tree_decomposition(td_str):
     # num_nodes, max_bag, num_vertices = map(int, line.split()[2:])
 
     line = next(lines)
-    while line[0] == 'b':
+    while line[0] == "b":
         # A bag line will look like:
         # "b 1 1 11 16 41 42 43 44 45"
         node = int(line.split()[1])

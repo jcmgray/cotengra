@@ -12,21 +12,27 @@ from opt_einsum.paths import (
 )
 from opt_einsum.path_random import thermal_chooser
 
-from .core import (
+from ..core import (
     ContractionTreeCompressed,
     jitter_dict,
     ContractionTree,
     get_hypergraph,
 )
-from .utils import oset
-from .hyper import register_hyper_function
+from ..utils import oset
+from ..hyperoptimizers.hyper import register_hyper_function
 
 # ------------------------------ GREEDY HYPER ------------------------------- #
 
 
 def cost_memory_removed_mod(
-    size12, size1, size2, k12, k1, k2,
-    costmod=1, usesizes=True,
+    size12,
+    size1,
+    size2,
+    k12,
+    k1,
+    k2,
+    costmod=1,
+    usesizes=True,
 ):
     """The default heuristic cost, corresponding to the total reduction in
     memory of performing a contraction.
@@ -36,36 +42,45 @@ def cost_memory_removed_mod(
     return len(k12) - costmod * max(len(k1), len(k2))
 
 
-def trial_greedy(inputs, output, size_dict,
-                 random_strength=0.1,
-                 temperature=1.0,
-                 rel_temperature=True,
-                 costmod=1,
-                 usesizes=True):
-
+def trial_greedy(
+    inputs,
+    output,
+    size_dict,
+    random_strength=0.1,
+    temperature=1.0,
+    rel_temperature=True,
+    costmod=1,
+    usesizes=True,
+):
     rand_size_dict = jitter_dict(size_dict, random_strength)
 
-    cost_fn = functools.partial(cost_memory_removed_mod,
-                                costmod=costmod, usesizes=usesizes)
-    choose_fn = functools.partial(thermal_chooser, temperature=temperature,
-                                  rel_temperature=rel_temperature)
+    cost_fn = functools.partial(
+        cost_memory_removed_mod, costmod=costmod, usesizes=usesizes
+    )
+    choose_fn = functools.partial(
+        thermal_chooser,
+        temperature=temperature,
+        rel_temperature=rel_temperature,
+    )
 
-    ssa_path = ssa_greedy_optimize(inputs, output, rand_size_dict,
-                                   choose_fn=choose_fn, cost_fn=cost_fn)
+    ssa_path = ssa_greedy_optimize(
+        inputs, output, rand_size_dict, choose_fn=choose_fn, cost_fn=cost_fn
+    )
 
-    return ContractionTree.from_path(inputs, output, size_dict,
-                                     ssa_path=ssa_path)
+    return ContractionTree.from_path(
+        inputs, output, size_dict, ssa_path=ssa_path
+    )
 
 
 register_hyper_function(
-    name='greedy',
+    name="greedy",
     ssa_func=trial_greedy,
     space={
-        'random_strength': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
-        'temperature': {'type': 'FLOAT_EXP', 'min': 0.01, 'max': 10.},
-        'rel_temperature': {'type': 'BOOL'},
-        'costmod': {'type': 'FLOAT', 'min': 0.0, 'max': 2.0},
-        'usesizes': {'type': 'BOOL'},
+        "random_strength": {"type": "FLOAT_EXP", "min": 0.01, "max": 10.0},
+        "temperature": {"type": "FLOAT_EXP", "min": 0.01, "max": 10.0},
+        "rel_temperature": {"type": "BOOL"},
+        "costmod": {"type": "FLOAT", "min": 0.0, "max": 2.0},
+        "usesizes": {"type": "BOOL"},
     },
 )
 
@@ -79,12 +94,13 @@ def greconf_rf(inputs, output, size_dict, memory_limit=None):
     """
     ssa_path = ssa_greedy_optimize(inputs, output, size_dict)
     tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path)
-    tree.subtree_reconfigure_(subtree_size=6, minimize='flops')
+        inputs, output, size_dict, ssa_path=ssa_path
+    )
+    tree.subtree_reconfigure_(subtree_size=6, minimize="flops")
     return tree.get_path()
 
 
-register_path_fn('greedy-rf', greconf_rf)
+register_path_fn("greedy-rf", greconf_rf)
 
 
 def greconf_rw(inputs, output, size_dict, memory_limit=None):
@@ -93,12 +109,13 @@ def greconf_rw(inputs, output, size_dict, memory_limit=None):
     """
     ssa_path = ssa_greedy_optimize(inputs, output, size_dict)
     tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path)
-    tree.subtree_reconfigure_(subtree_size=6, minimize='write')
+        inputs, output, size_dict, ssa_path=ssa_path
+    )
+    tree.subtree_reconfigure_(subtree_size=6, minimize="write")
     return tree.get_path()
 
 
-register_path_fn('greedy-rw', greconf_rw)
+register_path_fn("greedy-rw", greconf_rw)
 
 
 def greconf_rc(inputs, output, size_dict, memory_limit=None):
@@ -107,27 +124,28 @@ def greconf_rc(inputs, output, size_dict, memory_limit=None):
     """
     ssa_path = ssa_greedy_optimize(inputs, output, size_dict)
     tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path)
-    tree.subtree_reconfigure_(subtree_size=6, minimize='combo')
+        inputs, output, size_dict, ssa_path=ssa_path
+    )
+    tree.subtree_reconfigure_(subtree_size=6, minimize="combo")
     return tree.get_path()
 
 
-register_path_fn('greedy-rc', greconf_rc)
+register_path_fn("greedy-rc", greconf_rc)
 
 
 # --------------------------------------------------------------------------- #
 
 
 def _binary_combine(func, x, y):
-    if func == 'sum':
+    if func == "sum":
         return x + y
-    if func == 'mean':
+    if func == "mean":
         return (x + y) / 2
-    if func == 'max':
+    if func == "max":
         return max(x, y)
-    if func == 'min':
+    if func == "min":
         return min(x, y)
-    if func == 'diff':
+    if func == "diff":
         return abs(x - y)
 
 
@@ -187,14 +205,14 @@ class GreedyCompressed:
         coeff_size_compressed=1.0,
         coeff_size=0.0,
         coeff_size_inputs=0.0,
-        score_size_inputs='max',
+        score_size_inputs="max",
         coeff_subgraph=0.0,
-        score_subgraph='sum',
+        score_subgraph="sum",
         coeff_centrality=0.0,
-        centrality_combine='max',
-        score_centrality='diff',
+        centrality_combine="max",
+        score_centrality="diff",
         temperature=0.0,
-        score_perm='',
+        score_perm="",
     ):
         self.chi = chi
         self.coeff_size_compressed = coeff_size_compressed
@@ -219,33 +237,36 @@ class GreedyCompressed:
         new_size = self.hg.candidate_contraction_size(i1, i2, chi=self.chi)
 
         scores = {
-            'R': self.coeff_size_compressed * math.log2(new_size),
-            'O': self.coeff_size * math.log2(old_size),
+            "R": self.coeff_size_compressed * math.log2(new_size),
+            "O": self.coeff_size * math.log2(old_size),
             # weight some combination of the inputs sizes
-            'I': self.coeff_size_inputs * _binary_combine(
+            "I": self.coeff_size_inputs
+            * _binary_combine(
                 self.score_size_inputs, math.log2(size1), math.log2(size2)
             ),
             # weight some combination of the inputs subgraph sizes
-            'S': self.coeff_subgraph * _binary_combine(
+            "S": self.coeff_subgraph
+            * _binary_combine(
                 self.score_subgraph,
                 math.log(self.sgsizes[i1]),
                 math.log(self.sgsizes[i2]),
             ),
             # weight some combination of the inputs centralities
-            'L': self.coeff_centrality * _binary_combine(
+            "L": self.coeff_centrality
+            * _binary_combine(
                 self.score_centrality, self.sgcents[i1], self.sgcents[i2]
             ),
             # randomize using boltzmann sampling trick
-            'T': max(0.0, self.temperature) * gumbel(),
+            "T": max(0.0, self.temperature) * gumbel(),
         }
-        if self.score_perm == '':
+        if self.score_perm == "":
             return sum(scores.values())
         return tuple(scores[p] for p in self.score_perm)
 
     def get_ssa_path(self, inputs, output, size_dict):
         self.candidates = []
         self.ssapath = []
-        self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
+        self.hg = get_hypergraph(inputs, output, size_dict, accel="auto")
 
         # compute hypergraph centralities to use heuristically
         self.sgcents = self.hg.simple_centrality()
@@ -258,7 +279,6 @@ class GreedyCompressed:
                 heapq.heappush(self.candidates, candidate)
 
         while self.hg.get_num_nodes() > 2:
-
             if not self.candidates:
                 # this occurs with disconneted sub-graphs -> pick any two
                 i1, i2, *_ = self.hg.nodes
@@ -279,9 +299,11 @@ class GreedyCompressed:
 
             # propagate some meta information up the contraction tree
             self.sgsizes[i12] = self.sgsizes.pop(i1) + self.sgsizes.pop(i2)
-            self.sgcents[i12] = _binary_combine(self.centrality_combine,
-                                                self.sgcents.pop(i1),
-                                                self.sgcents.pop(i2))
+            self.sgcents[i12] = _binary_combine(
+                self.centrality_combine,
+                self.sgcents.pop(i1),
+                self.sgcents.pop(i2),
+            )
 
             # assess / re-assess new and also neighboring contractions
             #     n.b. duplicate scores should be lower and heap-popped first
@@ -299,7 +321,7 @@ class GreedyCompressed:
 
 
 def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
-    chi = max(size_dict.values())**2
+    chi = max(size_dict.values()) ** 2
     return GreedyCompressed(chi, **kwargs)(inputs, output, size_dict)
 
 
@@ -307,34 +329,39 @@ def trial_greedy_compressed(inputs, output, size_dict, **kwargs):
     opt = GreedyCompressed(**kwargs)
     ssa_path = opt.get_ssa_path(inputs, output, size_dict)
     tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path)
+        inputs, output, size_dict, ssa_path=ssa_path
+    )
     tree.set_surface_order_from_path(ssa_path)
     return tree
 
 
 register_hyper_function(
-    name='greedy-compressed',
+    name="greedy-compressed",
     ssa_func=trial_greedy_compressed,
     space={
-        'coeff_size_compressed': {'type': 'FLOAT', 'min': 0.5, 'max': 2.0},
-        'coeff_size': {'type': 'FLOAT', 'min': 0.0, 'max': 1.0},
-        'coeff_size_inputs': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'score_size_inputs': {
-            'type': 'STRING',
-            'options': ['min', 'max', 'mean', 'sum', 'diff']},
-        'coeff_subgraph': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'score_subgraph': {
-            'type': 'STRING',
-            'options': ['min', 'max', 'mean', 'sum', 'diff']},
-        'coeff_centrality': {'type': 'FLOAT', 'min': -10.0, 'max': 10.0},
-        'centrality_combine': {
-            'type': 'STRING',
-            'options': ['min', 'max', 'mean']},
-        'score_centrality': {
-            'type': 'STRING',
-            'options': ['min', 'max', 'mean', 'diff']},
-        'temperature': {'type': 'FLOAT', 'min': -0.1, 'max': 1.0},
-        'chi': {'type': 'INT', 'min': 2, 'max': 128},
+        "coeff_size_compressed": {"type": "FLOAT", "min": 0.5, "max": 2.0},
+        "coeff_size": {"type": "FLOAT", "min": 0.0, "max": 1.0},
+        "coeff_size_inputs": {"type": "FLOAT", "min": -1.0, "max": 1.0},
+        "score_size_inputs": {
+            "type": "STRING",
+            "options": ["min", "max", "mean", "sum", "diff"],
+        },
+        "coeff_subgraph": {"type": "FLOAT", "min": -1.0, "max": 1.0},
+        "score_subgraph": {
+            "type": "STRING",
+            "options": ["min", "max", "mean", "sum", "diff"],
+        },
+        "coeff_centrality": {"type": "FLOAT", "min": -10.0, "max": 10.0},
+        "centrality_combine": {
+            "type": "STRING",
+            "options": ["min", "max", "mean"],
+        },
+        "score_centrality": {
+            "type": "STRING",
+            "options": ["min", "max", "mean", "diff"],
+        },
+        "temperature": {"type": "FLOAT", "min": -0.1, "max": 1.0},
+        "chi": {"type": "INT", "min": 2, "max": 128},
     },
 )
 
@@ -372,16 +399,16 @@ class GreedySpan:
 
     def __init__(
         self,
-        start='max',
+        start="max",
         coeff_connectivity=1.0,
         coeff_ndim=1.0,
         coeff_distance=-1.0,
         coeff_next_centrality=0.0,
         weight_bonds=True,
         temperature=0.0,
-        score_perm='CNDLTI',
+        score_perm="CNDLTI",
         distance_p=1,
-        distance_steal='abs',
+        distance_steal="abs",
     ):
         self.start = start
         self.coeff_connectivity = coeff_connectivity
@@ -395,7 +422,7 @@ class GreedySpan:
         self.distance_steal = distance_steal
 
     def get_ssa_path(self, inputs, output, size_dict):
-        self.hg = get_hypergraph(inputs, output, size_dict, accel='auto')
+        self.hg = get_hypergraph(inputs, output, size_dict, accel="auto")
         self.cents = self.hg.simple_centrality()
 
         def region_choose_sorter(node):
@@ -403,9 +430,9 @@ class GreedySpan:
 
         if output:
             region = oset(self.hg.output_nodes())
-        elif self.start == 'max':
+        elif self.start == "max":
             region = oset([max(self.cents.keys(), key=region_choose_sorter)])
-        elif self.start == 'min':
+        elif self.start == "min":
             region = oset([min(self.cents.keys(), key=region_choose_sorter)])
         else:
             region = oset(self.start)
@@ -432,7 +459,7 @@ class GreedySpan:
             seq.reverse()
 
         def _check_candidate(i_surface, i_neighbor):
-            if (i_neighbor in region):
+            if i_neighbor in region:
                 return
 
             if i_neighbor in merges:
@@ -442,11 +469,13 @@ class GreedySpan:
                     if distances[i_surface] < distances[i_current]:
                         merges[i_neighbor] = i_surface
 
-                elif self.distance_steal == 'rel':
-                    old_diff = abs(distances[i_current] -
-                                   distances[i_neighbor])
-                    new_diff = abs(distances[i_surface] -
-                                   distances[i_neighbor])
+                elif self.distance_steal == "rel":
+                    old_diff = abs(
+                        distances[i_current] - distances[i_neighbor]
+                    )
+                    new_diff = abs(
+                        distances[i_surface] - distances[i_neighbor]
+                    )
                     if new_diff > old_diff:
                         merges[i_neighbor] = i_surface
             else:
@@ -462,15 +491,15 @@ class GreedySpan:
 
         def _sorter(i):
             scores = {
-                'C': self.coeff_connectivity * connectivity[i],
-                'N': self.coeff_ndim * len(inputs[i]),
-                'D': self.coeff_distance * distances[i],
-                'L': self.coeff_next_centrality * self.cents[i],
-                'T': max(0.0, self.temperature) * gumbel(),
-                'I': -i,
+                "C": self.coeff_connectivity * connectivity[i],
+                "N": self.coeff_ndim * len(inputs[i]),
+                "D": self.coeff_distance * distances[i],
+                "L": self.coeff_next_centrality * self.cents[i],
+                "T": max(0.0, self.temperature) * gumbel(),
+                "I": -i,
             }
-            if self.score_perm == '':
-                return sum(scores[o] for o in 'CNDLT')
+            if self.score_perm == "":
+                return sum(scores[o] for o in "CNDLT")
             c = tuple(scores[o] for o in self.score_perm)
             return c
 
@@ -515,29 +544,30 @@ def trial_greedy_span(inputs, output, size_dict, **kwargs):
     opt = GreedySpan(**kwargs)
     ssa_path = opt.get_ssa_path(inputs, output, size_dict)
     tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path)
+        inputs, output, size_dict, ssa_path=ssa_path
+    )
     tree.set_surface_order_from_path(ssa_path)
     return tree
 
 
 _allowed_perms = tuple(
-    "C" + "".join(p) + "T" for p in itertools.permutations('NDLI')
+    "C" + "".join(p) + "T" for p in itertools.permutations("NDLI")
 )
 
 
 register_hyper_function(
-    name='greedy-span',
+    name="greedy-span",
     ssa_func=trial_greedy_span,
     space={
-        'start': {'type': 'STRING', 'options': ['min', 'max']},
-        'score_perm': {'type': 'STRING', 'options': _allowed_perms},
-        'coeff_connectivity': {'type': 'INT', 'min': 0, 'max': 1},
-        'coeff_ndim': {'type': 'INT', 'min': -1, 'max': 1},
-        'coeff_distance': {'type': 'INT', 'min': -1, 'max': 1},
-        'coeff_next_centrality': {'type': 'FLOAT', 'min': -1, 'max': 1},
-        'weight_bonds': {'type': 'BOOL'},
-        'temperature': {'type': 'FLOAT', 'min': -1.0, 'max': 1.0},
-        'distance_p': {'type': 'FLOAT', 'min': -5.0, 'max': 5.0},
-        'distance_steal': {'type': 'STRING', 'options': ['', 'abs', 'rel']},
+        "start": {"type": "STRING", "options": ["min", "max"]},
+        "score_perm": {"type": "STRING", "options": _allowed_perms},
+        "coeff_connectivity": {"type": "INT", "min": 0, "max": 1},
+        "coeff_ndim": {"type": "INT", "min": -1, "max": 1},
+        "coeff_distance": {"type": "INT", "min": -1, "max": 1},
+        "coeff_next_centrality": {"type": "FLOAT", "min": -1, "max": 1},
+        "weight_bonds": {"type": "BOOL"},
+        "temperature": {"type": "FLOAT", "min": -1.0, "max": 1.0},
+        "distance_p": {"type": "FLOAT", "min": -5.0, "max": 5.0},
+        "distance_steal": {"type": "STRING", "options": ["", "abs", "rel"]},
     },
 )

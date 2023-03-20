@@ -3,22 +3,21 @@ import random
 
 from opt_einsum.paths import ssa_to_linear
 
-from .core import ContractionTreeCompressed, get_hypergraph
+from ..core import ContractionTreeCompressed, get_hypergraph
 
 
 class Node:
-
     __slots__ = (
-        'hg',
-        'n',
-        'graph_key',
-        'nid_path',
-        'size',
-        'local_score',
-        'forward_score',
-        'mean',
-        'count',
-        'leaf_score',
+        "hg",
+        "n",
+        "graph_key",
+        "nid_path",
+        "size",
+        "local_score",
+        "forward_score",
+        "mean",
+        "count",
+        "leaf_score",
     )
 
     def __init__(
@@ -38,8 +37,8 @@ class Node:
         self.forward_score = forward_score
 
         self.count = 0
-        # self.mean = float('inf')
-        self.mean = 0.0
+        self.mean = float("inf")
+        # self.mean = 0.0
         self.leaf_score = None
 
     def update(self, x):
@@ -47,12 +46,12 @@ class Node:
         nodes score.
         """
         self.count += 1
-        delta = x - self.mean
-        self.mean += delta / self.count
-        # self.mean = min(self.mean, x)
+        # delta = x - self.mean
+        # self.mean += delta / self.count
+        self.mean = min(self.mean, x)
 
         phi = math.log2(self.mean)
-        phi -= (phi / self.count)**0.5
+        phi -= (phi / self.count) ** 0.5
         self.leaf_score = phi
 
     def __hash__(self):
@@ -76,23 +75,22 @@ def gumbel():
 
 
 class MCTS:
-
     __slots__ = (
-        'chi',
-        'T',
-        'prune',
-        'optimize',
-        'optimize_factory',
-        'best_score',
-        'best_nid_path',
-        'children',
-        'parents',
-        'seen',
-        'leaves',
-        'root',
-        'N',
-        'pbar',
-        'to_delete',
+        "chi",
+        "T",
+        "prune",
+        "optimize",
+        "optimize_factory",
+        "best_score",
+        "best_nid_path",
+        "children",
+        "parents",
+        "seen",
+        "leaves",
+        "root",
+        "N",
+        "pbar",
+        "to_delete",
     )
 
     def __init__(
@@ -108,7 +106,7 @@ class MCTS:
         self.prune = prune
         self.optimize = optimize
         self.optimize_factory = optimize_factory
-        self.best_score = float('inf')
+        self.best_score = float("inf")
         self.best_nid_path = None
         self.children = {}
         self.parents = {}
@@ -128,12 +126,10 @@ class MCTS:
         )
 
     def setup(self, inputs, output, size_dict):
-        """
-        """
+        """ """
         if self.leaves is None:
             H = get_hypergraph(
-                {1 << i: term
-                 for i, term in enumerate(inputs)},
+                {1 << i: term for i, term in enumerate(inputs)},
                 output,
                 size_dict,
                 accel=False,
@@ -154,8 +150,7 @@ class MCTS:
             self.check_node(root)
 
     def get_ssa_path(self):
-        """Convert unique node identifiers to ssa.
-        """
+        """Convert unique node identifiers to ssa."""
         ssa_path = []
         ssa = self.N
         ssa_lookup = {1 << i: i for i in range(ssa)}
@@ -167,8 +162,7 @@ class MCTS:
         return ssa_path
 
     def check_node(self, node):
-        """
-        """
+        """ """
         if node in self.children:
             return
 
@@ -186,9 +180,8 @@ class MCTS:
             ij = hg_next.contract(i, j, node=i | j)
 
             # measure change in total memory
-            dsize = (
-                hg_next.neighborhood_size([ij]) -
-                hg.neighborhood_size([i, j])
+            dsize = hg_next.neighborhood_size([ij]) - hg.neighborhood_size(
+                [i, j]
             )
 
             # score is peak total size encountered
@@ -208,12 +201,14 @@ class MCTS:
             )
 
             graph_key = new_node.graph_key
-            if self.prune and (new_score >=
-                               self.seen.get(graph_key, float('inf'))):
+            if self.prune and (
+                new_score >= self.seen.get(graph_key, float("inf"))
+            ):
                 # we've reached this graph before with better score
                 continue
-            self.seen[graph_key] = min(new_score,
-                                       self.seen.get(graph_key, float('inf')))
+            self.seen[graph_key] = min(
+                new_score, self.seen.get(graph_key, float("inf"))
+            )
 
             # add to tree
             cnodes.add(new_node)
@@ -223,8 +218,7 @@ class MCTS:
         # node.hg = None
 
     def delete_node(self, node):
-        """
-        """
+        """ """
         if node is self.root:
             raise
 
@@ -277,8 +271,7 @@ class MCTS:
             node = pnode
 
     def simulate_node(self, node):
-        """
-        """
+        """ """
         # greedily descend to bottom based on heuristic local_score
         while True:
             self.check_node(node)
@@ -290,7 +283,7 @@ class MCTS:
                 continue
             node = min(
                 self.children[node],
-                key=lambda node: node.local_score - self.T * gumbel()
+                key=lambda node: node.local_score - self.T * gumbel(),
             )
         self.backprop(node)
 
@@ -308,15 +301,20 @@ class MCTS:
             size_dict=H.size_dict,
         )
         nids = list(H.nodes.keys())
-        for (i, j) in path:
+        for i, j in path:
             self.check_node(node)
             ni, nj = map(nids.pop, sorted((i, j), reverse=True))
             nids.append(ni | nj)
             try:
-                node = next(iter((
-                    x for x in self.children[node]
-                    if set(x.nid_path[-1]) == {ni, nj}
-                )))
+                node = next(
+                    iter(
+                        (
+                            x
+                            for x in self.children[node]
+                            if set(x.nid_path[-1]) == {ni, nj}
+                        )
+                    )
+                )
             except StopIteration:
                 # next path node already pruned
                 self.simulate_node(node)
@@ -325,17 +323,15 @@ class MCTS:
         self.backprop(node)
 
     def is_deadend(self, node):
-        """
-        """
+        """ """
         return (
-            not bool(self.children[node]) or
-            node.forward_score >= self.best_score or
-            node.forward_score > self.seen.get(node.graph_key, float('inf'))
+            not bool(self.children[node])
+            or node.forward_score >= self.best_score
+            or node.forward_score > self.seen.get(node.graph_key, float("inf"))
         )
 
     def descend(self):
-        """
-        """
+        """ """
         if self.optimize is not None:
             simulate = self.simulate_optimized
         else:
@@ -360,20 +356,18 @@ class MCTS:
 
     @property
     def ssa_path(self):
-        """
-        """
+        """ """
         return self.get_ssa_path()
 
     @property
     def path(self):
-        """
-        """
+        """ """
         return ssa_to_linear(self.ssa_path)
 
     def run(self, inputs, output, size_dict):
-        """
-        """
+        """ """
         import tqdm
+
         self.pbar = tqdm.tqdm()
         self.setup(inputs, output, size_dict)
 
@@ -386,15 +380,16 @@ class MCTS:
             self.pbar.close()
 
     def search(self, inputs, output, size_dict):
-        """
-        """
+        """ """
         self.run(inputs, output, size_dict)
         return ContractionTreeCompressed.from_path(
-            inputs, output, size_dict, ssa_path=self.ssa_path,
+            inputs,
+            output,
+            size_dict,
+            ssa_path=self.ssa_path,
         )
 
     def __call__(self, inputs, output, size_dict):
-        """
-        """
+        """ """
         self.run(inputs, output, size_dict)
         return self.path

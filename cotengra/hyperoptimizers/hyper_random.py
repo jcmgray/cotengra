@@ -26,29 +26,32 @@ def sample_loguniform(low, high):
 
 
 class RandomSpace:
-
     def __init__(self, space):
         self._samplers = {}
 
         for k, param in space.items():
-            if param['type'] == 'BOOL':
+            if param["type"] == "BOOL":
                 self._samplers[k] = sample_bool
 
-            elif param['type'] == 'INT':
+            elif param["type"] == "INT":
                 self._samplers[k] = functools.partial(
-                    sample_int, low=param['min'], high=param['max'])
+                    sample_int, low=param["min"], high=param["max"]
+                )
 
-            elif param['type'] == 'STRING':
+            elif param["type"] == "STRING":
                 self._samplers[k] = functools.partial(
-                    sample_option, options=param['options'])
+                    sample_option, options=param["options"]
+                )
 
-            elif param['type'] == 'FLOAT':
+            elif param["type"] == "FLOAT":
                 self._samplers[k] = functools.partial(
-                    sample_uniform, low=param['min'], high=param['max'])
+                    sample_uniform, low=param["min"], high=param["max"]
+                )
 
-            elif param['type'] == 'FLOAT_EXP':
+            elif param["type"] == "FLOAT_EXP":
                 self._samplers[k] = functools.partial(
-                    sample_loguniform, low=param['min'], high=param['max'])
+                    sample_loguniform, low=param["min"], high=param["max"]
+                )
 
             else:
                 raise ValueError("Didn't understand space {}.".format(param))
@@ -58,7 +61,6 @@ class RandomSpace:
 
 
 class RandomSampler:
-
     def __init__(self, methods, spaces):
         self._rmethods = tuple(methods)
         self._rspaces = {m: RandomSpace(spaces[m]) for m in methods}
@@ -87,7 +89,7 @@ def random_init_optimizers(
 
 def random_get_setting(self):
     method, params = self.sampler.ask()
-    return {'method': method, 'params': params}
+    return {"method": method, "params": params}
 
 
 def random_report_result(*_, **__):
@@ -95,7 +97,7 @@ def random_report_result(*_, **__):
 
 
 register_hyper_optlib(
-    'random',
+    "random",
     random_init_optimizers,
     random_get_setting,
     random_report_result,
