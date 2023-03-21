@@ -42,10 +42,11 @@ NEUTRAL_STYLE = {
 
 
 def use_neutral_style(fn):
-    import matplotlib as mpl
 
     @functools.wraps(fn)
     def new_fn(*args, use_neutral_style=True, **kwargs):
+        import matplotlib as mpl
+
         if not use_neutral_style:
             return fn(*args, **kwargs)
 
