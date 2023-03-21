@@ -15,7 +15,7 @@ import opt_einsum as oe
 @pytest.mark.parametrize("n_hyper_in", [0, 1, 2])
 @pytest.mark.parametrize("n_hyper_out", [0, 1, 2])
 @pytest.mark.parametrize("seed", [42, 666])
-@pytest.mark.parametrize("indices_sort", [None, 'root', 'flops'])
+@pytest.mark.parametrize("indices_sort", [None, "root", "flops"])
 def test_rand_equation(
     n,
     reg,
@@ -28,13 +28,19 @@ def test_rand_equation(
     indices_sort,
 ):
     inputs, output, shapes, size_dict = ctg.utils.rand_equation(
-        n=n, reg=reg, n_out=n_out, n_hyper_in=n_hyper_in,
-        n_hyper_out=n_hyper_out, d_min=d_min, d_max=d_max, seed=seed,
+        n=n,
+        reg=reg,
+        n_out=n_out,
+        n_hyper_in=n_hyper_in,
+        n_hyper_out=n_hyper_out,
+        d_min=d_min,
+        d_max=d_max,
+        seed=seed,
     )
     arrays = [np.random.normal(size=s) for s in shapes]
     eq = ",".join(map("".join, inputs)) + "->" + "".join(output)
 
-    path, info = oe.contract_path(eq, *arrays, optimize='greedy')
+    path, info = oe.contract_path(eq, *arrays, optimize="greedy")
     if info.largest_intermediate > 2**20:
         raise RuntimeError("Contraction too big.")
 
@@ -79,21 +85,24 @@ def test_rand_equation(
 
 def test_lazy_sliced_output_reduce():
     inputs, output, shapes, size_dict = ctg.utils.rand_equation(
-        n=10, reg=5, n_out=3, d_max=2,
+        n=10,
+        reg=5,
+        n_out=3,
+        d_max=2,
         seed=666,
     )
     arrays = [np.random.rand(*s) for s in shapes]
-    opt = ctg.HyperOptimizer(max_repeats=32, methods=['greedy'])
+    opt = ctg.HyperOptimizer(max_repeats=32, methods=["greedy"])
     tree = opt.search(inputs, output, size_dict)
 
     # slice both inner and outer indices
-    tree.remove_ind_('g')
-    tree.remove_ind_('b')
-    tree.remove_ind_('y')
-    tree.remove_ind_('a')
+    tree.remove_ind_("g")
+    tree.remove_ind_("b")
+    tree.remove_ind_("y")
+    tree.remove_ind_("a")
 
     # for such a quantity, sum(f(x)), the inner slice sum must be performed 1st
-    x = (tree.contract(arrays)**2).sum()
+    x = (tree.contract(arrays) ** 2).sum()
 
     # ... so that the outer sum can be lazily generated correctly
     y = 0.0
@@ -135,3 +144,50 @@ def test_exponent_stripping(autojit):
     m, p = tree.contract(arrays, autojit=autojit, strip_exponent=True)
     x4 = m * 10**p
     assert x4 == pytest.approx(ex)
+
+
+@pytest.mark.parametrize("autojit", [False, True])
+@pytest.mark.parametrize("constants", [None, True])
+@pytest.mark.parametrize("optimize_type", ["path", "tree", "optimizer", "str"])
+@pytest.mark.parametrize("sort_contraction_indices", [False, True])
+def test_contract_expression(
+    autojit,
+    constants,
+    optimize_type,
+    sort_contraction_indices,
+):
+    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([4, 8])
+
+    eq = f"{','.join(map(''.join, inputs))}->{''.join(output)}"
+    arrays = [np.random.rand(*s) for s in shapes]
+    x0 = oe.contract(eq, *arrays)
+
+    if optimize_type == "str":
+        optimize = "greedy"
+    elif optimize_type == "path":
+        path = oe.contract_path(eq, *arrays, optimize="greedy")[0]
+        optimize = path
+    elif optimize_type == "tree":
+        tree = ctg.ContractionTree(inputs, output, size_dict)
+        tree.contract_nodes(tuple(tree.gen_leaves()), optimize="greedy")
+        optimize = tree
+    elif optimize_type == "optimizer":
+        optimize = ctg.HyperOptimizer(max_repeats=32, methods=["greedy"])
+
+    if constants:
+        constants = range(0, len(inputs), 2)
+        shapes = list(shapes)
+        for c in sorted(constants, reverse=True):
+            shapes[c] = arrays.pop(c)
+
+    expr = ctg.contract_expression(
+        eq,
+        *shapes,
+        optimize=optimize,
+        constants=constants,
+        autojit=autojit,
+        sort_contraction_indices=sort_contraction_indices,
+    )
+
+    x1 = expr(*arrays)
+    assert_allclose(x0, x1)

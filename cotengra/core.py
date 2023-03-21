@@ -87,6 +87,101 @@ def get_with_default(k, obj, default):
     return obj.get(k, default)
 
 
+def do_contraction(
+    *arrays,
+    contractions,
+    strip_exponent=False,
+    check_zero=False,
+    backend=None,
+    progbar=False,
+):
+    """Contract ``arrays`` using operations listed in ``contractions``.
+
+    Parameters
+    ----------
+    arrays : sequence of array-like
+        The arrays to contract.
+    contractions : tuple[tuple]
+        The sequence of contractions to perform. Each contraction should be a
+        tuple containing:
+
+            - ``p``: the parent node,
+            - ``l``: the left child node,
+            - ``r``: the right child node,
+            - ``tdot``: whether to use ``tensordot`` or ``einsum``,
+            - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
+                i.e. ``axes`` or ``eq``,
+            - ``perm``: the permutation required after the contraction, if
+                any (only applies to tensordot).
+
+        e.g. built by calling ``ContractionTree.extract_contractions()``.
+
+    strip_exponent : bool, optional
+        If ``True``, eagerly strip the exponent (in log10) from
+        intermediate tensors to control numerical problems from leaving the
+        range of the datatype. This method then returns the scaled
+        'mantissa' output array and the exponent separately.
+    check_zero : bool, optional
+        If ``True``, when ``strip_exponent=True``, explicitly check for
+        zero-valued intermediates that would otherwise produce ``nan``,
+        instead terminating early if encounteredand returning
+        ``(0.0, 0.0)``.
+    backend : str, optional
+        What library to use for ``tensordot``, ``einsum`` and
+        ``transpose``, it will be automatically inferred from the input
+        arrays if not given.
+    progbar : bool, optional
+        Whether to show a progress bar.
+
+    Returns
+    -------
+    output : array
+        The contracted output, it will be scaled if ``strip_exponent==True``.
+    exponent : float
+        The exponent of the output in base 10, returned only if
+        ``strip_exponent==True``.
+    """
+    # temporary storage for intermediates
+    N = len(arrays)
+    temps = {
+        leaf: array for leaf, array in
+        zip(map(node_from_single, range(N)), arrays)
+    }
+
+    exponent = 0.0 if (strip_exponent is not False) else None
+
+    if progbar:
+        from tqdm import tqdm
+        contractions = tqdm(contractions, total=N - 1)
+
+    for p, l, r, tdot, arg, perm in contractions:
+        # get input arrays for this contraction
+        l_array = temps.pop(l)
+        r_array = temps.pop(r)
+
+        if tdot:
+            p_array = do("tensordot", l_array, r_array, arg, like=backend)
+            if perm:
+                p_array = do("transpose", p_array, perm, like=backend)
+        else:
+            p_array = do("einsum", arg, l_array, r_array, like=backend)
+
+        if exponent is not None:
+            factor = do('max', do('abs', p_array))
+            if check_zero and float(factor) == 0.0:
+                return 0.0, 0.0
+            exponent = exponent + do('log10', factor)
+            p_array = p_array / factor
+
+        # insert the new intermediate array
+        temps[p] = p_array
+
+    if (exponent is not None):
+        return p_array, exponent
+
+    return p_array
+
+
 class ContractionTree:
     """Binary tree representing a tensor network contraction.
 
@@ -1807,7 +1902,7 @@ class ContractionTree:
         -------
         ContractionTree
         """
-        from .path_compressed import CompressedExhaustive
+        from .pathfinders.path_compressed import CompressedExhaustive
 
         minimize = minimize.replace('-compressed', '')
 
@@ -2216,65 +2311,92 @@ class ContractionTree:
 
     # --------------------- Performing the Contraction ---------------------- #
 
-    def _contract_core(
+    def extract_contractions(
         self,
-        arrays,
+        order=None,
+        prefer_einsum=False,
+    ):
+        """Extract just the information needed to perform the contraction.
+
+        Parameters
+        ----------
+        order : str or callable, optional
+            Supplied to :meth:`ContractionTree.traverse`.
+        prefer_einsum : bool, optional
+            Prefer to use ``einsum`` for pairwise contractions, even if
+            ``tensordot`` can perform the contraction.
+
+        Returns
+        -------
+        contractions : tuple
+            A tuple of tuples, each containing the information needed to
+            perform a pairwise contraction. Each tuple contains:
+
+                - ``p``: the parent node,
+                - ``l``: the left child node,
+                - ``r``: the right child node,
+                - ``tdot``: whether to use ``tensordot`` or ``einsum``,
+                - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
+                  i.e. ``axes`` or ``eq``,
+                - ``perm``: the permutation required after the contraction, if
+                  any (only applies to tensordot).
+
+        """
+        return tuple(
+            (p, l, r, False, self.get_einsum_eq(p), None)
+            if (prefer_einsum or not self.get_can_dot(p)) else
+            (
+                p, l, r, True,
+                self.get_tensordot_axes(p),
+                self.get_tensordot_perm(p)
+            )
+            for p, l, r in self.traverse(order=order)
+        )
+
+    def get_contractor(
+        self,
         order=None,
         prefer_einsum=False,
         strip_exponent=False,
-        backend=None,
-        check=False,
-        progbar=False,
+        autojit=False,
     ):
-        # temporary storage for intermediates
-        temps = {leaf: array for leaf, array in zip(self.gen_leaves(), arrays)}
+        """Get a reusable function which performs the contraction corresponding
+        to this tree.
 
-        exponent = 0.0 if (strip_exponent is not False) else None
+        Parameters
+        ----------
+        order : str or callable, optional
+            Supplied to :meth:`ContractionTree.traverse`, the order in which
+            to perform the pairwise contractions given by the tree.
+        prefer_einsum : bool, optional
+            Prefer to use ``einsum`` for pairwise contractions, even if
+            ``tensordot`` can perform the contraction.
+        strip_exponent : bool, optional
+            If ``True``, the function will strip the exponent from the output
+            array and return it separately.
+        autojit : bool, optional
+            If ``True``, use :func:`autoray.autojit` to compile the contraction
+            function.
 
-        if progbar:
-            from tqdm import tqdm
-            contractions = tqdm(self.traverse(order=order), total=self.N - 1)
-        else:
-            contractions = self.traverse(order=order)
+        Returns
+        -------
+        fn : callable
+        """
+        key = (autojit, order, prefer_einsum, strip_exponent)
+        try:
+            fn = self.contraction_cores[key]
+        except KeyError:
+            fn =functools.partial(
+                do_contraction,
+                contractions=self.extract_contractions(order, prefer_einsum),
+                strip_exponent=strip_exponent,
+            )
+            if autojit:
+                from autoray import autojit as _autojit
+                fn = _autojit(fn)
+            self.contraction_cores[key] = fn
 
-        for p, l, r in contractions:
-            # get input arrays for this contraction
-            l_array = temps.pop(l)
-            r_array = temps.pop(r)
-
-            if check:
-                l_shp, r_shp = l_array.shape, r_array.shape
-                l_inds, r_inds = map(self.get_inds, (l, r))
-                if (len(l_shp) != len(l_inds)) or (len(r_shp) != len(r_inds)):
-                    raise ValueError(
-                        f"Array shapes don't match indices: "
-                        f"[{l_shp}, '{l_inds}'], [{r_shp}, '{r_inds}'].")
-
-            # perform the contraction
-            if prefer_einsum or not self.get_can_dot(p):
-                eq = self.get_einsum_eq(p)
-                p_array = do('einsum', eq, l_array, r_array, like=backend)
-            else:
-                axes = self.get_tensordot_axes(p)
-                p_array = do('tensordot', l_array, r_array, axes, like=backend)
-
-                # check if we need to transpose tensordot output order
-                perm = self.get_tensordot_perm(p)
-                if perm:
-                    p_array = do('transpose', p_array, perm, like=backend)
-
-            if exponent is not None:
-                factor = do('max', do('abs', p_array))
-                exponent = exponent + do('log10', factor)
-                p_array = p_array / factor
-
-            # insert the new intermediate array
-            temps[p] = p_array
-
-        if exponent is not None:
-            return p_array, exponent
-
-        return p_array
+        return fn
 
     def contract_core(
         self,
@@ -2282,9 +2404,9 @@ class ContractionTree:
         order=None,
         prefer_einsum=False,
         strip_exponent=False,
+        check_zero=False,
         backend=None,
         autojit=False,
-        check=False,
         progbar=False,
     ):
         """Contract ``arrays`` with this tree. The order of the axes and
@@ -2307,35 +2429,21 @@ class ContractionTree:
             automatically inferred from the arrays if not given.
         autojit : bool, optional
             Whether to use ``autoray.autojit`` to jit compile the expression.
-        check : bool, optional
-            Perform some basic error checks.
         progbar : bool, optional
             Show progress through the contraction.
         """
-        if not autojit:
-            result = self._contract_core(
-                arrays,
-                order=order,
-                prefer_einsum=prefer_einsum,
-                check=check,
-                strip_exponent=strip_exponent,
-                backend=backend,
-                progbar=progbar,
-            )
-        else:
-            try:
-                fn = self.contraction_cores[order, prefer_einsum]
-            except KeyError:
-                from autoray import autojit
-                fn = self.contraction_cores[order, prefer_einsum] = autojit(
-                    functools.partial(
-                        self._contract_core,
-                        order=order,
-                        strip_exponent=strip_exponent,
-                        prefer_einsum=prefer_einsum,
-                    )
-                )
-            result = fn(arrays, backend=backend)
+        fn = self.get_contractor(
+            order=order,
+            prefer_einsum=prefer_einsum,
+            strip_exponent=strip_exponent is not False,
+            autojit=autojit,
+        )
+        result = fn(
+            *arrays,
+            check_zero=check_zero,
+            backend=backend,
+            progbar=progbar,
+        )
 
         # handle exponent outside of potential jit
         if isinstance(strip_exponent, dict):
@@ -2444,9 +2552,9 @@ class ContractionTree:
         order=None,
         prefer_einsum=False,
         strip_exponent=False,
+        check_zero=False,
         backend=None,
         autojit=False,
-        check=False,
         progbar=False,
     ):
         """Contract ``arrays`` with this tree. This function takes *unsliced*
@@ -2468,6 +2576,11 @@ class ContractionTree:
             intermediate tensors to control numerical problems from leaving the
             range of the datatype. This method then returns the scaled
             'mantissa' output array and the exponent separately.
+        check_zero : bool, optional
+            If ``True``, when ``strip_exponent=True``, explicitly check for
+            zero-valued intermediates that would otherwise produce ``nan``,
+            instead terminating early if encounteredand returning
+            ``(0.0, 0.0)``.
         backend : str, optional
             What library to use for ``tensordot``, ``einsum`` and
             ``transpose``, it will be automatically inferred from the input
@@ -2475,8 +2588,6 @@ class ContractionTree:
         autojit : bool, optional
             Whether to use the 'autojit' feature of `autoray` to compile the
             contraction expression.
-        check : bool, optional
-            Perform some basic error checks.
         progbar : bool, optional
             Whether to show a progress bar.
 
@@ -2502,9 +2613,9 @@ class ContractionTree:
                 order=order,
                 prefer_einsum=prefer_einsum,
                 strip_exponent=strip_exponent,
+                check_zero=check_zero,
                 backend=backend,
                 autojit=autojit,
-                check=check,
                 progbar=progbar,
             )
 
@@ -2518,9 +2629,9 @@ class ContractionTree:
                 order=order,
                 prefer_einsum=prefer_einsum,
                 strip_exponent=strip_exponent,
+                check_zero=check_zero,
                 backend=backend,
                 autojit=autojit,
-                check=check,
             )
             for i in range(self.multiplicity)
         )
@@ -3319,13 +3430,22 @@ class LineGraph:
             f.write(contents)
 
 
-try:
-    from gmpy2 import popcount
-
-except ImportError:
+# best: use built in
+if hasattr(int, 'bit_count'):
 
     def popcount(x):
-        return bin(x).count('1')
+        return x.bit_count()
+
+else:
+    # second best, gmpy2 is installed
+    try:
+        from gmpy2 import popcount
+
+    except ImportError:
+        # finally, use string method
+
+        def popcount(x):
+            return bin(x).count('1')
 
 
 def dict_affine_renorm(d):
