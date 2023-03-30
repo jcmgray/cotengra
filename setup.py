@@ -11,6 +11,7 @@ setup(
     name='cotengra',
     description='opt_einsum compatible contractors for large tensor networks',
     long_description=long_description,
+    long_description_content_type="text/markdown",
     url='https://github.com/jcmgray/cotengra',
     project_urls={
         'Bug Reports': 'https://github.com/jcmgray/cotengra/issues',
