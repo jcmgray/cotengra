@@ -9,20 +9,18 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='cotengra',
-    version='0.1.0',
     description='opt_einsum compatible contractors for large tensor networks',
     long_description=long_description,
     url='https://github.com/jcmgray/cotengra',
+    project_urls={
+        'Bug Reports': 'https://github.com/jcmgray/cotengra/issues',
+        'Source': 'https://github.com/jcmgray/cotengra/',
+    },
     author='Johnnie Gray',
-    classifiers=[
-        'Development Status :: 3 - Alpha',
-        'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-    ],
-    keywords='tensor network contraction graph hypergraph partition einsum',
+    author_email="johnniemcgray@gmail.com",
+    license="Apache",
     packages=find_packages(exclude=['docs', 'tests']),
+    include_package_data=True,
     install_requires=[
         'opt_einsum',
         'tqdm',
@@ -63,9 +61,14 @@ setup(
             'nevergrad',
         ],
     },
-    project_urls={  # Optional
-        'Bug Reports': 'https://github.com/jcmgray/cotengra/issues',
-        'Source': 'https://github.com/jcmgray/cotengra/',
-    },
-    include_package_data=True,
+    python_requires=">=3.8",
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'License :: OSI Approved :: Apache Software License',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+    ],
+    keywords='tensor network contraction graph hypergraph partition einsum',
 )
