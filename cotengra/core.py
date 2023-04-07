@@ -2458,6 +2458,21 @@ class ContractionTree:
 
         return result
 
+    def slice_key(self, i):
+        """Get the combination of sliced index values for overall slice ``i``.
+
+        Parameters
+        ----------
+        i : int
+            The overall slice index.
+
+        Returns
+        -------
+        key : dict[str, int]
+            The value each sliced index takes for slice ``i``.
+        """
+        return dict(zip(self.sliced_inds, dynary(i, self.sliced_sizes)))
+
     def slice_arrays(self, arrays, i):
         """Take ``arrays`` and slice the relevant inputs according to
         ``tree.sliced_inds`` and the dynary representation of ``i``.
@@ -2465,7 +2480,7 @@ class ContractionTree:
         temp_arrays = list(arrays)
 
         # e.g. {'a': 2, 'd': 7, 'z': 0}
-        locations = dict(zip(self.sliced_inds, dynary(i, self.sliced_sizes)))
+        locations = self.slice_key(i)
 
         for c in self.sliced_inputs:
             # the indexing object, e.g. [:, :, 7, :, 2, :, :, 0]
