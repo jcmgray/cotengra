@@ -37,6 +37,7 @@ from .parallel import (
     scatter,
     can_scatter,
 )
+from .contract import do_contraction
 from .plot import (
     plot_tree_ring,
     plot_tree_tent,
@@ -85,101 +86,6 @@ def union_it(bs):
 
 def get_with_default(k, obj, default):
     return obj.get(k, default)
-
-
-def do_contraction(
-    *arrays,
-    contractions,
-    strip_exponent=False,
-    check_zero=False,
-    backend=None,
-    progbar=False,
-):
-    """Contract ``arrays`` using operations listed in ``contractions``.
-
-    Parameters
-    ----------
-    arrays : sequence of array-like
-        The arrays to contract.
-    contractions : tuple[tuple]
-        The sequence of contractions to perform. Each contraction should be a
-        tuple containing:
-
-            - ``p``: the parent node,
-            - ``l``: the left child node,
-            - ``r``: the right child node,
-            - ``tdot``: whether to use ``tensordot`` or ``einsum``,
-            - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
-                i.e. ``axes`` or ``eq``,
-            - ``perm``: the permutation required after the contraction, if
-                any (only applies to tensordot).
-
-        e.g. built by calling ``ContractionTree.extract_contractions()``.
-
-    strip_exponent : bool, optional
-        If ``True``, eagerly strip the exponent (in log10) from
-        intermediate tensors to control numerical problems from leaving the
-        range of the datatype. This method then returns the scaled
-        'mantissa' output array and the exponent separately.
-    check_zero : bool, optional
-        If ``True``, when ``strip_exponent=True``, explicitly check for
-        zero-valued intermediates that would otherwise produce ``nan``,
-        instead terminating early if encounteredand returning
-        ``(0.0, 0.0)``.
-    backend : str, optional
-        What library to use for ``tensordot``, ``einsum`` and
-        ``transpose``, it will be automatically inferred from the input
-        arrays if not given.
-    progbar : bool, optional
-        Whether to show a progress bar.
-
-    Returns
-    -------
-    output : array
-        The contracted output, it will be scaled if ``strip_exponent==True``.
-    exponent : float
-        The exponent of the output in base 10, returned only if
-        ``strip_exponent==True``.
-    """
-    # temporary storage for intermediates
-    N = len(arrays)
-    temps = {
-        leaf: array for leaf, array in
-        zip(map(node_from_single, range(N)), arrays)
-    }
-
-    exponent = 0.0 if (strip_exponent is not False) else None
-
-    if progbar:
-        from tqdm import tqdm
-        contractions = tqdm(contractions, total=N - 1)
-
-    for p, l, r, tdot, arg, perm in contractions:
-        # get input arrays for this contraction
-        l_array = temps.pop(l)
-        r_array = temps.pop(r)
-
-        if tdot:
-            p_array = do("tensordot", l_array, r_array, arg, like=backend)
-            if perm:
-                p_array = do("transpose", p_array, perm, like=backend)
-        else:
-            p_array = do("einsum", arg, l_array, r_array, like=backend)
-
-        if exponent is not None:
-            factor = do('max', do('abs', p_array))
-            if check_zero and float(factor) == 0.0:
-                return 0.0, 0.0
-            exponent = exponent + do('log10', factor)
-            p_array = p_array / factor
-
-        # insert the new intermediate array
-        temps[p] = p_array
-
-    if (exponent is not None):
-        return p_array, exponent
-
-    return p_array
 
 
 class ContractionTree:

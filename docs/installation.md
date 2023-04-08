@@ -66,6 +66,8 @@ The following packages enable visualization:
 
 * [`networkx`](https://networkx.org/) for most visualizations
 * [`hypernetx`](https://github.com/pnnl/HyperNetX) for the 'rubberband' visualization
+
+
 ## Contraction
 
 If you want to perform the contractions using ``cotengra`` itself you'll need:
