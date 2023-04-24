@@ -27,7 +27,7 @@ from .core import (
 )
 from .interface import contract_expression
 
-from .slicer import SliceFinder, SlicedContractor
+from .slicer import SliceFinder
 
 from .pathfinders import path_greedy
 from .pathfinders import path_igraph

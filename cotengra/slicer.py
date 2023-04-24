@@ -1,15 +1,12 @@
 import re
 import random
-import operator
-import functools
 import collections
 from math import log
 
-from opt_einsum import contract_expression, contract_path
 from opt_einsum.contract import PathInfo
 from opt_einsum.helpers import compute_size_by_dict, flop_count
 
-from .utils import MaxCounter, oset, dynary
+from .utils import MaxCounter, oset
 from .core import DEFAULT_COMBO_FACTOR
 from .plot import plot_slicings, plot_slicings_alt
 
@@ -443,20 +440,6 @@ class SliceFinder:
     plot_slicings = plot_slicings
     plot_slicings_alt = plot_slicings_alt
 
-    def SlicedContractor(self, arrays, target_size=None, target_overhead=None,
-                         target_slices=None, **kwargs):
-        """Generate a sliced contraction using the best indices found by this
-        `SliceFinder` and by default the original contraction path as well.
-        """
-        sliced = self.best(
-            target_size=target_size, target_overhead=target_overhead,
-            target_slices=target_slices
-        )[0]
-
-        return SlicedContractor.from_info(
-            info=self.info, arrays=arrays, sliced=sliced, **kwargs
-        )
-
 
 def create_size_dict(inputs, arrays):
     size_dict = {}
@@ -464,193 +447,3 @@ def create_size_dict(inputs, arrays):
         for ix, d in zip(term, array.shape):
             size_dict[ix] = max(size_dict.get(ix, 1), d)
     return size_dict
-
-
-class SlicedContractor:
-    """A contraction where certain indices are explicitly summed over,
-    corresponding to taking different 'slices' of the input arrays, each of
-    which can be contracted independently with *hopefully* a lower memory
-    requirement. The recommended way of instantiating this is from a
-    directly from ``SliceFinder`` which already.
-
-    Parameters
-    ----------
-    eq : str
-        The overall contraction to perform.
-    arrays : sequence of array
-        The arrays to contract.
-    sliced : sequence of str
-        Which indices in ``eq`` to slice over.
-    optimize : str or path or PathOptimizer, optional
-        How to optimize the sliced contraction path - the contraction with
-        ``sliced`` indices removed. If these ``sliced`` indices were found
-        automatically is it generally best to supply the full path they were
-        found with respect to rather than trying to re-optimize the path.
-    size_dict : dict[str, int], optional
-        If already known, the sizes of each index.
-    """
-
-    def __init__(
-        self,
-        eq,
-        arrays,
-        sliced,
-        optimize='auto',
-        size_dict=None,
-    ):
-        # basic info
-        lhs, self.output = eq.split('->')
-        self.inputs = lhs.split(',')
-        self.arrays = tuple(arrays)
-        self.sliced = tuple(sorted(sliced, key=eq.index))
-        if size_dict is None:
-            size_dict = create_size_dict(self.inputs, self.arrays)
-        self.size_dict = size_dict
-
-        # find which arrays are going to be sliced or not
-        self.constant, self.changing = [], []
-        for i, term in enumerate(self.inputs):
-            if any(ix in self.sliced for ix in term):
-                self.changing.append(i)
-            else:
-                self.constant.append(i)
-
-        # information about the contraction of a single slice
-        self.eq_sliced = "".join(c for c in eq if c not in sliced)
-        self.sliced_sizes = tuple(self.size_dict[i] for i in self.sliced)
-        self.nslices = compute_size_by_dict(self.sliced, self.size_dict)
-        self.shapes_sliced = tuple(
-            tuple(self.size_dict[i] for i in term)
-            for term in self.eq_sliced.split('->')[0].split(',')
-        )
-        self.path, self.info_sliced = contract_path(
-            self.eq_sliced, *self.shapes_sliced, shapes=True, optimize=optimize
-        )
-
-        # generate the contraction expression
-        self._expr = contract_expression(
-            self.eq_sliced, *self.shapes_sliced, optimize=self.path
-        )
-
-    @classmethod
-    def from_info(cls, info, arrays, sliced, optimize=None, **kwargs):
-        """Creat a `SlicedContractor` directly from a `PathInfo` object.
-        """
-        # by default inherit the info's path
-        if optimize is None:
-            optimize = info.path
-
-        return cls(eq=info.eq, arrays=arrays, sliced=sliced,
-                   optimize=optimize, size_dict=info.size_dict, **kwargs)
-
-    @property
-    def individual_flops(self):
-        """FLOP cost of a single contraction slice.
-        """
-        return self.info_sliced.opt_cost
-
-    @property
-    def total_flops(self):
-        """FLOP cost of performing all sliced contractions.
-        """
-        return self.individual_flops * self.nslices
-
-    @property
-    def max_size(self):
-        """The largest size tensor produced in an individual contraction.
-        """
-        return self.info_sliced.largest_intermediate
-
-    def get_sliced_arrays(self, i):
-        """Generate the tuple of array inputs corresponding to slice ``i``.
-        """
-        temp_arrays = list(self.arrays)
-
-        # e.g. {'a': 2, 'd': 7, 'z': 0}
-        locations = dict(zip(self.sliced, dynary(i, self.sliced_sizes)))
-
-        for c in self.changing:
-            # the indexing object, e.g. [:, :, 7, :, 2, :, :, 0]
-            selector = tuple(
-                locations.get(ix, slice(None)) for ix in self.inputs[c]
-            )
-            # re-insert the sliced array
-            temp_arrays[c] = temp_arrays[c][selector]
-
-        return temp_arrays
-
-    def contract_slice(self, i, **kwargs):
-        """Contraction of just slice ``i``.
-        """
-        arrays = self.get_sliced_arrays(i)
-        return self._expr(*arrays, **kwargs)
-
-    def gather_slices(self, slices):
-        """Gather all the output contracted slices into the single full result.
-        """
-        output_pos = {ix: i for i, ix in enumerate(self.output)
-                      if ix in self.sliced}
-
-        if not output_pos:
-            # we can just sum everything
-            return functools.reduce(operator.add, slices)
-
-        # else we need to do a multidimensional stack of all the results
-        from autoray import do
-
-        sliced_pos = {ix: i for i, ix in enumerate(self.sliced)
-                      if ix in self.output}
-
-        # first we sum over non-output sliced indices
-        chunks = {}
-        for i, s in enumerate(slices):
-            loc = dynary(i, self.sliced_sizes)
-            key = tuple(loc[sliced_pos[ix]] for ix in output_pos)
-            try:
-                chunks[key] = chunks[key] + s
-            except KeyError:
-                chunks[key] = s
-
-        # then we stack these summed chunks over output sliced indices
-        def recursively_stack_chunks(loc, rem):
-            if not rem:
-                return chunks[loc]
-            return do('stack',
-                      [recursively_stack_chunks(loc + (d,), rem[1:])
-                       for d in range(self.size_dict[rem[0]])],
-                      axis=output_pos[rem[0]] - len(loc), like=s)
-
-        return recursively_stack_chunks((), tuple(output_pos))
-
-    def contract_all(self, **kwargs):
-        """Contract (and sum) all slices at once.
-        """
-        return self.gather_slices(
-            (self.contract_slice(i, **kwargs) for i in range(self.nslices))
-        )
-
-    def get_dask_chunked(self, **kwargs):
-        """
-        """
-        import dask.array as da
-
-        return tuple(
-            da.from_array(x, chunks=tuple(
-                1 if ix in self.sliced else None
-                for ix in term
-            ), **kwargs)
-            for term, x in zip(self.inputs, self.arrays)
-        )
-
-    def get_mars_chunked(self, **kwargs):
-        """
-        """
-        import mars.tensor as mt
-
-        return tuple(
-            mt.tensor(x, chunk_size=tuple(
-                1 if ix in self.sliced else max(x.shape)
-                for ix in term
-            ), **kwargs)
-            for term, x in zip(self.inputs, self.arrays)
-        )
