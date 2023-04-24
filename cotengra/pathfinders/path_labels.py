@@ -3,7 +3,8 @@ import random
 import collections
 
 
-from ..core import HyperGraph, PartitionTreeBuilder
+from ..core import PartitionTreeBuilder
+from ..hypergraph import HyperGraph
 from ..hyperoptimizers.hyper import register_hyper_function
 
 

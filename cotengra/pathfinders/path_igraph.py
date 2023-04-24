@@ -3,11 +3,13 @@ import functools
 from collections import defaultdict
 
 from ..core import (
-    calc_edge_weight_float,
-    calc_node_weight_float,
     jitter_dict,
     ContractionTree,
     PartitionTreeBuilder,
+)
+from ..hypergraph import (
+    calc_edge_weight_float,
+    calc_node_weight_float,
 )
 from ..hyperoptimizers.hyper import register_hyper_function
 

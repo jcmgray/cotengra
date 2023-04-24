@@ -9,7 +9,8 @@ import subprocess
 from opt_einsum.paths import PathOptimizer
 
 from .treedecomp import td_str_to_tree_decomposition, td_to_eo
-from ..core import ContractionTree, LineGraph
+from ..core import ContractionTree
+from ..hypergraph import LineGraph
 from ..hyperoptimizers.hyper import register_hyper_function
 
 

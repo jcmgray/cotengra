@@ -27,7 +27,6 @@ from .utils import (
     unique,
     prod,
     dynary,
-
 )
 from .parallel import (
     parse_parallel_arg,
@@ -37,6 +36,7 @@ from .parallel import (
     scatter,
     can_scatter,
 )
+from .hypergraph import get_hypergraph
 from .contract import do_contraction
 from .plot import (
     plot_tree_ring,
@@ -54,17 +54,11 @@ try:
 except ImportError:
     DEFAULT_COMBO_FACTOR = 64
 
-try:
-    from cotengra.cotengra import HyperGraph as HyperGraphRust
-except ImportError:
-    HyperGraphRust = None
-
 
 def cached_node_property(name):
-    """Decorator for caching information about nodes.
-    """
-    def wrapper(meth):
+    """Decorator for caching information about nodes."""
 
+    def wrapper(meth):
         @functools.wraps(meth)
         def getter(self, node):
             try:
@@ -74,12 +68,12 @@ def cached_node_property(name):
                 return value
 
         return getter
+
     return wrapper
 
 
 def union_it(bs):
-    """Non-variadic version of various set type unions.
-    """
+    """Non-variadic version of various set type unions."""
     b0, *bs = bs
     return b0.union(*bs)
 
@@ -121,7 +115,10 @@ class ContractionTree:
     """
 
     def __init__(
-        self, inputs, output, size_dict,
+        self,
+        inputs,
+        output,
+        size_dict,
         track_childless=False,
         track_flops=False,
         track_write=False,
@@ -153,9 +150,9 @@ class ContractionTree:
         # the collection of all nodes
         self.root = node_supremum(self.N)
         self.info[self.root] = {
-            'legs': self.output_legs,
-            'keep': self.output_legs,
-            'size': compute_size_by_dict(self.output, size_dict),
+            "legs": self.output_legs,
+            "keep": self.output_legs,
+            "size": compute_size_by_dict(self.output, size_dict),
         }
 
         # whether to keep track of dangling nodes/subgraphs
@@ -189,23 +186,38 @@ class ContractionTree:
         self.contraction_cores = {}
 
     def set_state_from(self, other):
-        """Set the internal state of this tree to that of ``other``.
-        """
+        """Set the internal state of this tree to that of ``other``."""
         # immutable properties
-        for attr in ('inputs', 'output', 'size_dict', 'N', 'root',
-                     'multiplicity', 'sliced_inds', 'sliced_sizes',
-                     'sliced_inputs', 'bitset_edges'):
+        for attr in (
+            "inputs",
+            "output",
+            "size_dict",
+            "N",
+            "root",
+            "multiplicity",
+            "sliced_inds",
+            "sliced_sizes",
+            "sliced_inputs",
+            "bitset_edges",
+        ):
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
-        for attr in ('children', 'inputs_legs',
-                     'output_legs', 'contraction_cores'):
+        for attr in (
+            "children",
+            "inputs_legs",
+            "output_legs",
+            "contraction_cores",
+        ):
             setattr(self, attr, getattr(other, attr).copy())
 
         # dicts of mutable
-        for attr in ('info', 'already_optimized'):
-            setattr(self, attr,
-                    {k: v.copy() for k, v in getattr(other, attr).items()})
+        for attr in ("info", "already_optimized"):
+            setattr(
+                self,
+                attr,
+                {k: v.copy() for k, v in getattr(other, attr).items()},
+            )
 
         self.track_childless = other.track_childless
         if other.track_childless:
@@ -224,8 +236,7 @@ class ContractionTree:
             self._sizes = other._sizes.copy()
 
     def copy(self):
-        """Create a copy of this ``ContractionTree``.
-        """
+        """Create a copy of this ``ContractionTree``."""
         tree = object.__new__(self.__class__)
         tree.set_state_from(self)
         return tree
@@ -243,7 +254,8 @@ class ContractionTree:
         indices.
         """
         return prod(
-            d for ix, d in zip(self.sliced_inds, self.sliced_sizes)
+            d
+            for ix, d in zip(self.sliced_inds, self.sliced_sizes)
             if ix in self.output
         )
 
@@ -260,14 +272,24 @@ class ContractionTree:
         return map(node_from_single, range(self.N))
 
     @classmethod
-    def from_path(cls, inputs, output, size_dict, *,
-                  path=None, ssa_path=None, check=False, **kwargs):
+    def from_path(
+        cls,
+        inputs,
+        output,
+        size_dict,
+        *,
+        path=None,
+        ssa_path=None,
+        check=False,
+        **kwargs,
+    ):
         """Create a (completed) ``ContractionTree`` from the usual inputs plus
         a standard contraction path or 'ssa_path' - you need to supply one.
         """
         if int(path is None) + int(ssa_path is None) != 1:
-            raise ValueError("Exactly one of ``path`` or ``ssa_path`` must be "
-                             "supplied.")
+            raise ValueError(
+                "Exactly one of ``path`` or ``ssa_path`` must be " "supplied."
+            )
 
         if ssa_path is not None:
             path = ssa_path
@@ -288,10 +310,13 @@ class ContractionTree:
     def from_info(cls, info, **kwargs):
         """Create a ``ContractionTree`` from an ``opt_einsum.PathInfo`` object.
         """
-        return cls.from_path(inputs=info.input_subscripts.split(','),
-                             output=info.output_subscript,
-                             size_dict=info.size_dict,
-                             path=info.path, **kwargs)
+        return cls.from_path(
+            inputs=info.input_subscripts.split(","),
+            output=info.output_subscript,
+            size_dict=info.size_dict,
+            path=info.path,
+            **kwargs,
+        )
 
     @classmethod
     def from_eq(cls, eq, size_dict, **kwargs):
@@ -305,20 +330,19 @@ class ContractionTree:
         size_dict : dict[str, int]
             The size of each index.
         """
-        lhs, output = eq.split('->')
-        inputs = lhs.split(',')
+        lhs, output = eq.split("->")
+        inputs = lhs.split(",")
         return cls(inputs, output, size_dict, **kwargs)
 
     @classmethod
-    def from_edge_path(cls, edge_path, inputs, output, size_dict,
-                       check=False, **kwargs):
-        """Create a ``ContractionTree`` from an edge elimination ordering.
-        """
+    def from_edge_path(
+        cls, edge_path, inputs, output, size_dict, check=False, **kwargs
+    ):
+        """Create a ``ContractionTree`` from an edge elimination ordering."""
         tree = cls(inputs, output, size_dict, **kwargs)
         nodes = list(tree.gen_leaves())
 
         for e in edge_path:
-
             # filter out the subgraph induced by edge `e` (generally a pair)
             new_terms, merge = [], []
             for node in nodes:
@@ -338,7 +362,8 @@ class ContractionTree:
             # this seems to happen when the initial contraction contains a
             # scalar? Or disconnected subgraphs?
             warnings.warn(
-                f"Ended up with {nt} nodes - contracting all remaining.")
+                f"Ended up with {nt} nodes - contracting all remaining."
+            )
             tree.contract_nodes(nodes, check=check)
 
         return tree
@@ -371,7 +396,7 @@ class ContractionTree:
         del self.info[node]
         del self.children[node]
 
-    @cached_node_property('keep')
+    @cached_node_property("keep")
     def get_keep(self, node):
         """Get a set of at least the indices that should be explicitly kept if
         they appear on ``node`` (or below).
@@ -380,7 +405,7 @@ class ContractionTree:
         terms_above = self.node_to_terms(nodes_above)
         return union_it((self.output_legs, *terms_above))
 
-    @cached_node_property('legs')
+    @cached_node_property("legs")
     def get_legs(self, node):
         """Get the effective 'outer' indices for the collection of tensors
         in ``node``.
@@ -394,7 +419,7 @@ class ContractionTree:
         keep = self.get_keep(node)
         return involved.intersection(keep)
 
-    @cached_node_property('involved')
+    @cached_node_property("involved")
     def get_involved(self, node):
         """Get all the indices involved in the formation of subgraph ``node``.
         """
@@ -403,19 +428,25 @@ class ContractionTree:
         sub_legs = map(self.get_legs, self.children[node])
         return union_it(sub_legs)
 
-    @cached_node_property('removed')
+    @cached_node_property("removed")
     def get_removed(self, node):
-        """Get the indices that will be removed by the creation of ``node``.
-        """
+        """Get the indices that will be removed by the creation of ``node``."""
         return self.get_involved(node).difference(self.get_legs(node))
 
-    @cached_node_property('size')
+    @cached_node_property("size")
     def get_size(self, node):
-        """Get the tensor size of ``node``.
-        """
+        """Get the tensor size of ``node``."""
         return compute_size_by_dict(self.get_legs(node), self.size_dict)
 
-    @cached_node_property('flops')
+    @cached_node_property("ops")
+    def get_ops(self, node):
+        """Get the number of scalar ops for the pairwise contraction."""
+        if len(node) == 1:
+            return 0
+        involved = self.get_involved(node)
+        return compute_size_by_dict(involved, self.size_dict)
+
+    @cached_node_property("flops")
     def get_flops(self, node):
         """Get the FLOPs for the pairwise contraction that will create
         ``node``.
@@ -426,7 +457,7 @@ class ContractionTree:
         removed = self.get_removed(node)
         return flop_count(involved, removed, 2, self.size_dict)
 
-    @cached_node_property('can_dot')
+    @cached_node_property("can_dot")
     def get_can_dot(self, node):
         """Get whether this contraction can be performed as a dot product (i.e.
         with ``tensordot``), or else requires ``einsum``, as it has indices
@@ -436,7 +467,7 @@ class ContractionTree:
         sp, sl, sr = map(self.get_legs, (node, l, r))
         return sl.symmetric_difference(sr) == sp
 
-    @cached_node_property('inds')
+    @cached_node_property("inds")
     def get_inds(self, node):
         """Get the indices of this node - an ordered string version of
         ``get_legs`` that starts with ``tree.inputs`` and maintains the order
@@ -466,7 +497,7 @@ class ContractionTree:
             unique(filter(legs.__contains__, itertools.chain(l_inds, r_inds)))
         )
 
-    @cached_node_property('tensordot_axes')
+    @cached_node_property("tensordot_axes")
     def get_tensordot_axes(self, node):
         """Get the ``axes`` arg for a tensordot ocontraction that produces
         ``node``. The pairs are sorted in order of appearance on the left
@@ -481,7 +512,7 @@ class ContractionTree:
                 r_axes.append(j)
         return tuple(l_axes), tuple(r_axes)
 
-    @cached_node_property('tensordot_perm')
+    @cached_node_property("tensordot_perm")
     def get_tensordot_perm(self, node):
         """Get the permutation required, if any, to bring the tensordot output
         of this nodes contraction into line with ``self.get_inds(node)``.
@@ -495,7 +526,7 @@ class ContractionTree:
             return None
         return tuple(map(td_inds.find, p_inds))
 
-    @cached_node_property('einsum_eq')
+    @cached_node_property("einsum_eq")
     def get_einsum_eq(self, node):
         """Get the einsum string describing the contraction that produces
         ``node``, unlike ``get_inds`` the characters are mapped into [a-zA-Z],
@@ -505,19 +536,19 @@ class ContractionTree:
         l_inds, r_inds, p_inds = map(self.get_inds, (l, r, node))
         # we need to map any extended unicode characters into ascii
         char_mapping = {
-            ord(ix): ascii_letters[i] for i, ix in
-            enumerate(unique(itertools.chain(l_inds, r_inds)))
+            ord(ix): ascii_letters[i]
+            for i, ix in enumerate(unique(itertools.chain(l_inds, r_inds)))
         }
         return f"{l_inds},{r_inds}->{p_inds}".translate(char_mapping)
 
     def get_centrality(self, node):
         try:
-            return self.info[node]['centrality']
+            return self.info[node]["centrality"]
         except KeyError:
             self.compute_centralities()
-            return self.info[node]['centrality']
+            return self.info[node]["centrality"]
 
-    def total_flops(self, dtype='float'):
+    def total_flops(self, dtype="float"):
         """Sum the flops contribution from every node in the tree.
 
         Parameters
@@ -539,10 +570,10 @@ class ContractionTree:
         if dtype is None:
             return real_flops // 2
 
-        if 'float' in dtype:
+        if "float" in dtype:
             return real_flops
 
-        if 'complex' in dtype:
+        if "complex" in dtype:
             return real_flops * 4
 
     def total_write(self):
@@ -566,8 +597,7 @@ class ContractionTree:
         return self.multiplicity * t
 
     def max_size(self):
-        """The size of the largest intermediate tensor.
-        """
+        """The size of the largest intermediate tensor."""
         if self._track_size:
             return self._sizes.max()
 
@@ -609,22 +639,20 @@ class ContractionTree:
         return self.total_flops(dtype=None) / self.total_write()
 
     def contraction_cost(self):
-        """Get the total number of scalar operations ~ time complexity.
-        """
+        """Get the total number of scalar operations ~ time complexity."""
         return float(self.total_flops(dtype=None))
 
     def contraction_width(self):
-        """Get log2 of the size of the largest tensor.
-        """
+        """Get log2 of the size of the largest tensor."""
         return math.log2(self.max_size())
 
     def compressed_contract_stats(
         self,
         chi,
-        order='surface_order',
+        order="surface_order",
         compress_late=True,
     ):
-        hg = self.get_hypergraph(accel='auto')
+        hg = self.get_hypergraph(accel="auto")
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), range(hg.get_num_nodes())))
@@ -648,8 +676,9 @@ class ContractionTree:
 
         return tracker
 
-    def max_size_compressed(self, chi, order='surface_order',
-                            compress_late=True):
+    def max_size_compressed(
+        self, chi, order="surface_order", compress_late=True
+    ):
         """Compute the maximum sized tensor produced when a compressed
         contraction is performed with maximum bond size ``chi``, ordered by
         ``order``. This is close to the ideal space complexity if only
@@ -661,8 +690,9 @@ class ContractionTree:
             compress_late=compress_late,
         ).max_size
 
-    def peak_size_compressed(self, chi, order='surface_order',
-                             compress_late=True, accel='auto'):
+    def peak_size_compressed(
+        self, chi, order="surface_order", compress_late=True, accel="auto"
+    ):
         """Compute the peak size of combined intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``. This is the practical space complexity if one is
@@ -674,8 +704,9 @@ class ContractionTree:
             compress_late=compress_late,
         ).peak_size
 
-    def total_size_compressed(self, chi, order='surface_order',
-                              compress_late=True, accel='auto'):
+    def total_size_compressed(
+        self, chi, order="surface_order", compress_late=True, accel="auto"
+    ):
         """Compute the total size of all intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``. This is relevant maybe for time complexity and
@@ -728,7 +759,7 @@ class ContractionTree:
     def contract_nodes(
         self,
         nodes,
-        optimize='auto-hq',
+        optimize="auto-hq",
         check=False,
         extra_opts=None,
     ):
@@ -765,9 +796,7 @@ class ContractionTree:
             path_fn = optimize
 
         if extra_opts is None:
-            path = path_fn(
-                path_inputs, path_output, self.size_dict
-            )
+            path = path_fn(path_inputs, path_output, self.size_dict)
         else:
             path = path_fn(
                 path_inputs, path_output, self.size_dict, **extra_opts
@@ -776,16 +805,14 @@ class ContractionTree:
         # now we have path create the nodes in between
         temp_nodes = list(nodes)
         for p in path:
-            to_contract = [
-                temp_nodes.pop(i) for i in sorted(p, reverse=True)
-            ]
+            to_contract = [temp_nodes.pop(i) for i in sorted(p, reverse=True)]
             temp_nodes.append(
                 self.contract_nodes(
                     to_contract, optimize=optimize, check=check
                 )
             )
 
-        parent, = temp_nodes
+        (parent,) = temp_nodes
 
         if check:
             # final remaining temp input should be the 'grandparent'
@@ -794,8 +821,7 @@ class ContractionTree:
         return parent
 
     def is_complete(self):
-        """Check every node has two children, unless it is a leaf.
-        """
+        """Check every node has two children, unless it is a leaf."""
         too_many_nodes = len(self.info) > 2 * self.N - 1
         too_many_branches = len(self.children) > self.N - 1
 
@@ -823,7 +849,7 @@ class ContractionTree:
         """
         from bisect import bisect
 
-        if order == 'surface_order':
+        if order == "surface_order":
             order = self.surface_order
 
         seen = set()
@@ -896,7 +922,7 @@ class ContractionTree:
             if l not in ready:
                 queue.append(l)
 
-    def descend(self, mode='dfs'):
+    def descend(self, mode="dfs"):
         """Generate, from root to leaves, all the node merges in this tree.
         Non-recursive! This ensures parents are visited before their children.
 
@@ -917,9 +943,9 @@ class ContractionTree:
         """
         queue = [self.root]
         while queue:
-            if mode == 'dfs':
+            if mode == "dfs":
                 parent = queue.pop(-1)
-            elif mode == 'bfs':
+            elif mode == "bfs":
                 parent = queue.pop(0)
             l, r = self.children[parent]
             yield parent, l, r
@@ -928,7 +954,7 @@ class ContractionTree:
             if len(r) > 1:
                 queue.append(r)
 
-    def get_subtree(self, node, size, search='bfs'):
+    def get_subtree(self, node, size, search="bfs"):
         """Get a subtree spanning down from ``node`` which will have ``size``
         leaves (themselves not necessarily leaves of the actual tree).
 
@@ -962,12 +988,11 @@ class ContractionTree:
         queue = [node]
 
         while (len(queue) + len(real_leaves) < size) and queue:
-
-            if search == 'bfs':
+            if search == "bfs":
                 p = queue.pop(0)
-            elif search == 'dfs':
+            elif search == "dfs":
                 p = queue.pop(-1)
-            elif search == 'random':
+            elif search == "random":
                 p = queue.pop(random.randint(0, len(queue) - 1))
 
             if len(p) == 1:
@@ -1003,7 +1028,6 @@ class ContractionTree:
         s_ind = self.bitset_edges.frommembers((ind,))
 
         for node, node_info in tree.info.items():
-
             # if ind doesn't feature in this node (contraction) nothing to do
             involved = tree.get_involved(node)
 
@@ -1014,39 +1038,39 @@ class ContractionTree:
                 continue
 
             # else update all the relevant information about this node
-            node_info['involved'] = involved.difference(s_ind)
+            node_info["involved"] = involved.difference(s_ind)
             removed = tree.get_removed(node)
 
             # update information regarding node indices sets
             if s_ind & legs:
                 # removing indices changes both flops and size of node
-                node_info['legs'] = legs.difference(s_ind)
+                node_info["legs"] = legs.difference(s_ind)
 
                 old_size = tree.get_size(node)
                 tree._sizes.discard(old_size)
                 new_size = old_size // d
                 tree._sizes.add(new_size)
-                node_info['size'] = new_size
+                node_info["size"] = new_size
 
                 if len(node) > 1:
                     # only non-leaf nodes contribute to write
-                    tree._write += (-old_size + new_size)
+                    tree._write += -old_size + new_size
 
                 # XXX: modifying 'keep' not stricly necessarily as its only
                 #     needed for ``legs = keep.intersection(involved)``?
                 keep = tree.get_keep(node)
-                node_info['keep'] = keep.difference(s_ind)
+                node_info["keep"] = keep.difference(s_ind)
             else:
                 # removing indices only changes flops
-                node_info['removed'] = removed.difference(s_ind)
+                node_info["removed"] = removed.difference(s_ind)
 
             old_flops = tree.get_flops(node)
             new_flops = old_flops // d
             if len(removed) == 1:
                 # if ind was the last contracted index then have outer product
                 new_flops //= 2
-            node_info['flops'] = new_flops
-            tree._flops += (-old_flops + new_flops)
+            node_info["flops"] = new_flops
+            tree._flops += -old_flops + new_flops
 
             if len(node) == 1:
                 # its a leaf - corresponding input will be sliced
@@ -1058,21 +1082,28 @@ class ContractionTree:
                 tree.output_legs = tree.output_legs - s_ind
 
             # delete info we can't change
-            for k in ('inds', 'einsum_eq', 'can_dot',
-                      'tensordot_axes', 'tensordot_perm'):
+            for k in (
+                "inds",
+                "einsum_eq",
+                "can_dot",
+                "tensordot_axes",
+                "tensordot_perm",
+            ):
                 tree.info[node].pop(k, None)
 
         tree.multiplicity = tree.multiplicity * d
 
         # update the tuples of sliced indices and sliced sizes, but maintain
         # the order such that output sliced indices always appear first
-        tree.sliced_inds, tree.sliced_sizes = zip(*sorted(
-            zip(
-                itertools.chain(tree.sliced_inds, (ind,)),
-                itertools.chain(tree.sliced_sizes, (tree.size_dict[ind],)),
-            ),
-            key=lambda x: (x[0] not in tree.output, x)
-        ))
+        tree.sliced_inds, tree.sliced_sizes = zip(
+            *sorted(
+                zip(
+                    itertools.chain(tree.sliced_inds, (ind,)),
+                    itertools.chain(tree.sliced_sizes, (tree.size_dict[ind],)),
+                ),
+                key=lambda x: (x[0] not in tree.output, x),
+            )
+        )
 
         tree.already_optimized.clear()
         tree.contraction_cores.clear()
@@ -1081,36 +1112,37 @@ class ContractionTree:
 
     remove_ind_ = functools.partialmethod(remove_ind, inplace=True)
 
-    def calc_subtree_candidates(self, pwr=2, what='flops'):
+    def calc_subtree_candidates(self, pwr=2, what="flops"):
         candidates = list(self.children)
 
-        if what == 'size':
+        if what == "size":
             weights = [self.get_size(x) for x in candidates]
 
-        elif what == 'flops':
+        elif what == "flops":
             weights = [self.get_flops(x) for x in candidates]
 
         max_weight = max(weights)
 
         # can be bigger than numpy int/float allows
-        weights = [float(w / max_weight)**(1 / pwr) for w in weights]
+        weights = [float(w / max_weight) ** (1 / pwr) for w in weights]
 
         # sort by descending score
         candidates, weights = zip(
-            *sorted(zip(candidates, weights), key=lambda x: -x[1]))
+            *sorted(zip(candidates, weights), key=lambda x: -x[1])
+        )
 
         return list(candidates), list(weights)
 
     def subtree_reconfigure(
         self,
         subtree_size=8,
-        subtree_search='bfs',
-        weight_what='flops',
+        subtree_search="bfs",
+        weight_what="flops",
         weight_pwr=2,
-        select='max',
+        select="max",
         maxiter=500,
         seed=None,
-        minimize='flops',
+        minimize="flops",
         optimize=None,
         inplace=False,
         progbar=False,
@@ -1174,22 +1206,33 @@ class ContractionTree:
         minimize, param = score_matcher.findall(minimize)[0]
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
 
-        if minimize == 'flops':
+        if minimize == "flops":
+
             def cost(node):
                 return tree.get_flops(node) // 2
-        elif minimize == 'write':
+
+        elif minimize == "write":
+
             def cost(node):
                 return tree.get_size(node)
-        elif minimize == 'size':
+
+        elif minimize == "size":
+
             def cost(node):
                 return tree.get_size(node)
-        elif minimize == 'combo':
+
+        elif minimize == "combo":
+
             def cost(node):
                 return tree.get_flops(node) // 2 + factor * tree.get_size(node)
-        elif minimize == 'limit':
+
+        elif minimize == "limit":
+
             def cost(node):
-                return max(tree.get_flops(node) // 2,
-                           factor * tree.get_size(node))
+                return max(
+                    tree.get_flops(node) // 2, factor * tree.get_size(node)
+                )
+
         else:
             # default to a very small cost cap
             def cost(_):
@@ -1203,30 +1246,34 @@ class ContractionTree:
             random.seed(seed)
 
         candidates, weights = self.calc_subtree_candidates(
-            pwr=weight_pwr, what=weight_what)
+            pwr=weight_pwr, what=weight_what
+        )
 
         if progbar:
             import tqdm
+
             pbar = tqdm.tqdm()
             pbar.set_description(_describe_tree(tree))
 
         r = 0
         try:
             while candidates and r < maxiter:
-                if select == 'max':
+                if select == "max":
                     i = 0
-                elif select == 'min':
+                elif select == "min":
                     i = -1
-                elif select == 'random':
-                    i, = random.choices(
-                        range(len(candidates)), weights=weights)
+                elif select == "random":
+                    (i,) = random.choices(
+                        range(len(candidates)), weights=weights
+                    )
 
                 weights.pop(i)
                 sub_root = candidates.pop(i)
 
                 # get a subtree to possibly reconfigure
                 sub_leaves, sub_branches = tree.get_subtree(
-                    sub_root, size=subtree_size, search=subtree_search)
+                    sub_root, size=subtree_size, search=subtree_search
+                )
 
                 sub_leaves = frozenset(sub_leaves)
 
@@ -1237,7 +1284,7 @@ class ContractionTree:
                 # else remove the branches, keeping track of current cost
                 current_cost = cost(sub_root)
                 for node in sub_branches:
-                    if minimize == 'size':
+                    if minimize == "size":
                         current_cost = max(current_cost, cost(node))
                     else:
                         current_cost += cost(node)
@@ -1258,7 +1305,8 @@ class ContractionTree:
 
                 # if we have reconfigured simply re-add all candidates
                 candidates, weights = tree.calc_subtree_candidates(
-                    pwr=weight_pwr, what=weight_what)
+                    pwr=weight_pwr, what=weight_what
+                )
         finally:
             if progbar:
                 pbar.close()
@@ -1269,7 +1317,8 @@ class ContractionTree:
         return tree
 
     subtree_reconfigure_ = functools.partialmethod(
-        subtree_reconfigure, inplace=True)
+        subtree_reconfigure, inplace=True
+    )
 
     def subtree_reconfigure_forest(
         self,
@@ -1278,13 +1327,13 @@ class ContractionTree:
         restart_fraction=0.5,
         subtree_maxiter=100,
         subtree_size=10,
-        subtree_search=('random', 'bfs'),
-        subtree_select=('random',),
-        subtree_weight_what=('flops', 'size'),
+        subtree_search=("random", "bfs"),
+        subtree_select=("random",),
+        subtree_weight_what=("flops", "size"),
         subtree_weight_pwr=(2,),
-        parallel='auto',
+        parallel="auto",
         parallel_maxiter_steps=4,
-        minimize='flops',
+        minimize="flops",
         progbar=False,
         inplace=False,
     ):
@@ -1360,61 +1409,60 @@ class ContractionTree:
 
         if progbar:
             import tqdm
+
             pbar = tqdm.tqdm(total=num_restarts)
             pbar.set_description(_describe_tree(tree))
 
         try:
             for _ in range(num_restarts):
-
                 # on the next round take only the best trees
                 forest = itertools.cycle(forest[:num_keep])
 
                 # select some random configurations
-                saplings = [{
-                    'tree': next(forest),
-                    'maxiter': maxiter,
-                    'minimize': minimize,
-                    'subtree_size': subtree_size,
-                    'subtree_search': random.choice(subtree_search),
-                    'select': random.choice(subtree_select),
-                    'weight_pwr': random.choice(subtree_weight_pwr),
-                    'weight_what': random.choice(subtree_weight_what),
-                } for _ in range(num_trees)]
+                saplings = [
+                    {
+                        "tree": next(forest),
+                        "maxiter": maxiter,
+                        "minimize": minimize,
+                        "subtree_size": subtree_size,
+                        "subtree_search": random.choice(subtree_search),
+                        "select": random.choice(subtree_select),
+                        "weight_pwr": random.choice(subtree_weight_pwr),
+                        "weight_what": random.choice(subtree_weight_what),
+                    }
+                    for _ in range(num_trees)
+                ]
 
                 if pool is None:
                     forest = [_reconfigure_tree(**s) for s in saplings]
-                    res = [{'tree': t, **_get_tree_info(t)} for t in forest]
+                    res = [{"tree": t, **_get_tree_info(t)} for t in forest]
                 elif not is_scatter_pool:
                     forest_futures = [
-                        submit(pool, _reconfigure_tree, **s)
-                        for s in saplings
+                        submit(pool, _reconfigure_tree, **s) for s in saplings
                     ]
                     forest = [f.result() for f in forest_futures]
-                    res = [{'tree': t, **_get_tree_info(t)} for t in forest]
+                    res = [{"tree": t, **_get_tree_info(t)} for t in forest]
                 else:
                     # submit in smaller steps to saturate processes
                     for _ in range(parallel_maxiter_steps):
                         for s in saplings:
-                            s['tree'] = submit(pool, _reconfigure_tree, **s)
+                            s["tree"] = submit(pool, _reconfigure_tree, **s)
 
                     # compute scores remotely then gather
-                    forest_futures = [
-                        s['tree']
-                        for s in saplings
-                    ]
+                    forest_futures = [s["tree"] for s in saplings]
                     res_futures = [
-                        submit(pool, _get_tree_info, t)
-                        for t in forest_futures
+                        submit(pool, _get_tree_info, t) for t in forest_futures
                     ]
                     res = [
-                        {'tree': tree_future, **res_future.result()}
-                        for tree_future, res_future in
-                        zip(forest_futures, res_futures)
+                        {"tree": tree_future, **res_future.result()}
+                        for tree_future, res_future in zip(
+                            forest_futures, res_futures
+                        )
                     ]
 
                 # update the order of the new forest
                 res.sort(key=score)
-                forest = [r['tree'] for r in res]
+                forest = [r["tree"] for r in res]
 
                 if progbar:
                     pbar.update()
@@ -1437,7 +1485,8 @@ class ContractionTree:
         return tree
 
     subtree_reconfigure_forest_ = functools.partialmethod(
-        subtree_reconfigure_forest, inplace=True)
+        subtree_reconfigure_forest, inplace=True
+    )
 
     def slice(
         self,
@@ -1445,7 +1494,7 @@ class ContractionTree:
         target_overhead=None,
         target_slices=None,
         temperature=0.01,
-        minimize='flops',
+        minimize="flops",
         allow_outer=True,
         max_repeats=16,
         inplace=False,
@@ -1501,7 +1550,7 @@ class ContractionTree:
             target_slices=target_slices,
             temperature=temperature,
             minimize=minimize,
-            allow_outer=allow_outer
+            allow_outer=allow_outer,
         )
 
         ix_sl, _ = sf.search(max_repeats)
@@ -1517,7 +1566,7 @@ class ContractionTree:
         target_size,
         step_size=2,
         temperature=0.01,
-        minimize='flops',
+        minimize="flops",
         allow_outer=True,
         max_repeats=16,
         reconf_opts=None,
@@ -1554,11 +1603,12 @@ class ContractionTree:
         tree = self if inplace else self.copy()
 
         reconf_opts = {} if reconf_opts is None else dict(reconf_opts)
-        reconf_opts.setdefault('minimize', minimize)
-        forested_reconf = reconf_opts.pop('forested', False)
+        reconf_opts.setdefault("minimize", minimize)
+        forested_reconf = reconf_opts.pop("forested", False)
 
         if progbar:
             import tqdm
+
             pbar = tqdm.tqdm()
             pbar.set_description(_describe_tree(tree))
 
@@ -1585,7 +1635,8 @@ class ContractionTree:
         return tree
 
     slice_and_reconfigure_ = functools.partialmethod(
-        slice_and_reconfigure, inplace=True)
+        slice_and_reconfigure, inplace=True
+    )
 
     def slice_and_reconfigure_forest(
         self,
@@ -1595,9 +1646,9 @@ class ContractionTree:
         restart_fraction=0.5,
         temperature=0.02,
         max_repeats=32,
-        minimize='flops',
+        minimize="flops",
         allow_outer=True,
-        parallel='auto',
+        parallel="auto",
         progbar=False,
         inplace=False,
         reconf_opts=None,
@@ -1659,6 +1710,7 @@ class ContractionTree:
 
         if progbar:
             import tqdm
+
             pbar = tqdm.tqdm()
             pbar.set_description(_describe_tree(tree))
 
@@ -1671,21 +1723,24 @@ class ContractionTree:
                 # on the next round take only the best trees
                 forest = itertools.cycle(forest[:num_keep])
 
-                saplings = [{
-                    'tree': next(forest),
-                    'target_size': next_size,
-                    'step_size': step_size,
-                    'temperature': temperature,
-                    'max_repeats': max_repeats,
-                    'reconf_opts': reconf_opts,
-                    'allow_outer': allow_outer,
-                } for _ in range(num_trees)]
+                saplings = [
+                    {
+                        "tree": next(forest),
+                        "target_size": next_size,
+                        "step_size": step_size,
+                        "temperature": temperature,
+                        "max_repeats": max_repeats,
+                        "reconf_opts": reconf_opts,
+                        "allow_outer": allow_outer,
+                    }
+                    for _ in range(num_trees)
+                ]
 
                 if pool is None:
                     forest = [
                         _slice_and_reconfigure_tree(**s) for s in saplings
                     ]
-                    res = [{'tree': t, **_get_tree_info(t)} for t in forest]
+                    res = [{"tree": t, **_get_tree_info(t)} for t in forest]
 
                 elif not is_scatter_pool:
                     # simple pool with no pass by reference
@@ -1694,10 +1749,9 @@ class ContractionTree:
                         for s in saplings
                     ]
                     forest = [f.result() for f in forest_futures]
-                    res = [{'tree': t, **_get_tree_info(t)} for t in forest]
+                    res = [{"tree": t, **_get_tree_info(t)} for t in forest]
 
                 else:
-
                     forest_futures = [
                         submit(pool, _slice_and_reconfigure_tree, **s)
                         for s in saplings
@@ -1705,28 +1759,27 @@ class ContractionTree:
 
                     # compute scores remotely then gather
                     res_futures = [
-                        submit(pool, _get_tree_info, t)
-                        for t in forest_futures
+                        submit(pool, _get_tree_info, t) for t in forest_futures
                     ]
                     res = [
-                        {
-                            'tree': tree_future,
-                            **res_future.result()
-                        }
-                        for tree_future, res_future in
-                        zip(forest_futures, res_futures)
+                        {"tree": tree_future, **res_future.result()}
+                        for tree_future, res_future in zip(
+                            forest_futures, res_futures
+                        )
                     ]
 
                 # we want to sort by flops, but also favour sampling as
                 # many different sliced index combos as possible
                 #    ~ [1, 1, 1, 2, 2, 3] -> [1, 2, 3, 1, 2, 1]
                 res.sort(key=score)
-                res = list(interleave(groupby(
-                    lambda r: r['sliced_inds'], res
-                ).values()))
+                res = list(
+                    interleave(
+                        groupby(lambda r: r["sliced_inds"], res).values()
+                    )
+                )
 
                 # update the order of the new forest
-                forest = [r['tree'] for r in res]
+                forest = [r["tree"] for r in res]
 
                 if progbar:
                     pbar.update()
@@ -1736,7 +1789,7 @@ class ContractionTree:
                         d = submit(pool, _describe_tree, forest[0]).result()
                     pbar.set_description(d)
 
-                if res[0]['size'] <= target_size:
+                if res[0]["size"] <= target_size:
                     break
 
         finally:
@@ -1752,14 +1805,15 @@ class ContractionTree:
         return tree
 
     slice_and_reconfigure_forest_ = functools.partialmethod(
-        slice_and_reconfigure_forest, inplace=True)
+        slice_and_reconfigure_forest, inplace=True
+    )
 
     def compressed_reconfigure(
         self,
         chi,
-        minimize='peak',
+        minimize="peak",
         order_only=False,
-        max_nodes='auto',
+        max_nodes="auto",
         max_time=None,
         local_score=None,
         exploration_power=0,
@@ -1810,13 +1864,13 @@ class ContractionTree:
         """
         from .pathfinders.path_compressed import CompressedExhaustive
 
-        minimize = minimize.replace('-compressed', '')
+        minimize = minimize.replace("-compressed", "")
 
-        if max_nodes == 'auto':
+        if max_nodes == "auto":
             if max_time is None:
                 max_nodes = max(10_000, self.N**2)
             else:
-                max_nodes = float('inf')
+                max_nodes = float("inf")
 
         opt = CompressedExhaustive(
             chi=chi,
@@ -1837,7 +1891,10 @@ class ContractionTree:
         ssa_path = opt.ssa_path
         # ssa_path = opt(self.inputs, self.output, self.size_dict)
         rtree = self.__class__.from_path(
-            self.inputs, self.output, self.size_dict, ssa_path=ssa_path,
+            self.inputs,
+            self.output,
+            self.size_dict,
+            ssa_path=ssa_path,
         )
         if inplace:
             self.set_state_from(rtree)
@@ -1846,7 +1903,8 @@ class ContractionTree:
         return rtree
 
     compressed_reconfigure_ = functools.partialmethod(
-        compressed_reconfigure, inplace=True)
+        compressed_reconfigure, inplace=True
+    )
 
     def flat_tree(self, order=None):
         """Create a nested tuple representation of the contraction tree like::
@@ -1882,13 +1940,13 @@ class ContractionTree:
             raise ValueError("Can't order the leaves until tree is complete.")
 
         return tuple(
-            nd for nd in itertools.chain.from_iterable(self.traverse())
+            nd
+            for nd in itertools.chain.from_iterable(self.traverse())
             if len(nd) == 1
         )
 
     def get_path(self, order=None):
-        """Generate a standard path from the contraction tree.
-        """
+        """Generate a standard path from the contraction tree."""
         path = []
         terms = list(self.gen_leaves())
 
@@ -1901,17 +1959,16 @@ class ContractionTree:
 
         return tuple(path)
 
-    path = deprecated(get_path, 'path', 'get_path')
+    path = deprecated(get_path, "path", "get_path")
 
     def get_numpy_path(self, order=None):
         """Generate a path compatible with the `optimize` kwarg of
         `numpy.einsum`.
         """
-        return ['einsum_path', *self.get_path(order=order)]
+        return ["einsum_path", *self.get_path(order=order)]
 
     def get_ssa_path(self, order=None):
-        """Generate a ssa path from the contraction tree.
-        """
+        """Generate a ssa path from the contraction tree."""
         ssa_path = []
         pos = dict(zip(self.gen_leaves(), range(self.N)))
 
@@ -1922,7 +1979,7 @@ class ContractionTree:
 
         return tuple(ssa_path)
 
-    ssa_path = deprecated(get_ssa_path, 'ssa_path', 'get_ssa_path')
+    ssa_path = deprecated(get_ssa_path, "ssa_path", "get_ssa_path")
 
     def surface_order(self, node):
         return (len(node), self.get_centrality(node))
@@ -1937,19 +1994,22 @@ class ContractionTree:
             o[p] = j
 
         self.surface_order = functools.partial(
-            get_with_default, obj=o, default=float('inf'))
+            get_with_default, obj=o, default=float("inf")
+        )
 
     def get_path_surface(self):
         return self.get_path(order=self.surface_order)
 
     path_surface = deprecated(
-        get_path_surface, 'path_surface', 'get_path_surface')
+        get_path_surface, "path_surface", "get_path_surface"
+    )
 
     def get_ssa_path_surface(self):
         return self.get_ssa_path(order=self.surface_order)
 
     ssa_path_surface = deprecated(
-        get_ssa_path_surface, 'ssa_path_surface', 'get_ssa_path_surface')
+        get_ssa_path_surface, "ssa_path_surface", "get_ssa_path_surface"
+    )
 
     def get_spans(self):
         """Get all (which could mean none) potential embeddings of this
@@ -1983,61 +2043,65 @@ class ContractionTree:
         candidates = [
             {
                 # which intermedate nodes map to which leaf nodes
-                'map': {self.root: node_from_single(l2)},
+                "map": {self.root: node_from_single(l2)},
                 # the leaf nodes in the spanning tree
-                'spine': {l1, l2},
+                "spine": {l1, l2},
             }
             for l1, l2 in boundary_pairs(self.root)
         ]
 
         for p, l, r in self.descend():
             for child in (r, l):
-
                 # for each current candidate check all the possible extensions
                 for _ in range(len(candidates)):
                     cand = candidates.pop(0)
 
                     # don't need to do anything for
                     if len(child) == 1:
-                        candidates.append({
-                            'map': {child: child, **cand['map']},
-                            'spine': cand['spine'].copy(),
-                        })
+                        candidates.append(
+                            {
+                                "map": {child: child, **cand["map"]},
+                                "spine": cand["spine"].copy(),
+                            }
+                        )
 
                     for l1, l2 in boundary_pairs(child):
-                        if (l1 in cand['spine']) or (l2 not in cand['spine']):
+                        if (l1 in cand["spine"]) or (l2 not in cand["spine"]):
                             # pair does not merge inwards into spine
                             continue
 
                         # valid extension of spanning tree
-                        candidates.append({
-                            'map': {child: node_from_single(l2),
-                                    **cand['map']},
-                            'spine': cand['spine'] | {l1, l2},
-                        })
+                        candidates.append(
+                            {
+                                "map": {
+                                    child: node_from_single(l2),
+                                    **cand["map"],
+                                },
+                                "spine": cand["spine"] | {l1, l2},
+                            }
+                        )
 
-        return tuple(c['map'] for c in candidates)
+        return tuple(c["map"] for c in candidates)
 
-    def compute_centralities(self, combine='mean'):
-        """Compute a centrality for every node in this contraction tree.
-        """
-        hg = self.get_hypergraph(accel='auto')
+    def compute_centralities(self, combine="mean"):
+        """Compute a centrality for every node in this contraction tree."""
+        hg = self.get_hypergraph(accel="auto")
         cents = hg.simple_centrality()
 
         for i, leaf in enumerate(self.gen_leaves()):
-            self.info[leaf]['centrality'] = cents[i]
+            self.info[leaf]["centrality"] = cents[i]
 
         combine = {
-            'mean': lambda x, y: (x + y) / 2,
-            'sum': lambda x, y: (x + y),
-            'max': max,
-            'min': min,
+            "mean": lambda x, y: (x + y) / 2,
+            "sum": lambda x, y: (x + y),
+            "max": max,
+            "min": min,
         }.get(combine, combine)
 
-        for p, l, r in self.traverse('dfs'):
-            self.info[p]['centrality'] = combine(
-                self.info[l]['centrality'],
-                self.info[r]['centrality'])
+        for p, l, r in self.traverse("dfs"):
+            self.info[p]["centrality"] = combine(
+                self.info[l]["centrality"], self.info[r]["centrality"]
+            )
 
     def get_hypergraph(self, accel=False):
         """Get a hypergraph representing the uncontracted network (i.e. the
@@ -2051,8 +2115,13 @@ class ContractionTree:
         """
         # delete all derived information
         for node in self.children:
-            for k in ('inds', 'einsum_eq', 'can_dot',
-                      'tensordot_axes', 'tensordot_perm'):
+            for k in (
+                "inds",
+                "einsum_eq",
+                "can_dot",
+                "tensordot_axes",
+                "tensordot_perm",
+            ):
                 self.info[node].pop(k, None)
 
         # invalidate any compiled contractions
@@ -2060,7 +2129,7 @@ class ContractionTree:
 
     def sort_contraction_indices(
         self,
-        priority='flops',
+        priority="flops",
         make_output_contig=True,
         make_contracted_contig=True,
         reset=True,
@@ -2089,17 +2158,17 @@ class ContractionTree:
         if reset:
             self.reset_contraction_indices()
 
-        if priority == 'flops':
+        if priority == "flops":
             nodes = sorted(
                 self.children.items(), key=lambda x: self.get_flops(x[0])
             )
-        elif priority == 'size':
+        elif priority == "size":
             nodes = sorted(
                 self.children.items(), key=lambda x: self.get_size(x[0])
             )
-        elif priority == 'root':
+        elif priority == "root":
             nodes = ((p, (l, r)) for p, l, r in self.traverse())
-        elif priority == 'leaves':
+        elif priority == "leaves":
             nodes = ((p, (l, r)) for p, l, r in self.descend())
         else:
             raise ValueError(priority)
@@ -2118,7 +2187,7 @@ class ContractionTree:
                     return (r_inds.find(ix), l_inds.find(ix))
 
                 p_inds = "".join(sorted(p_inds, key=psort))
-                self.info[p]['inds'] = p_inds
+                self.info[p]["inds"] = p_inds
 
             if make_contracted_contig:
                 # sort indices by:
@@ -2131,7 +2200,7 @@ class ContractionTree:
                         return (r_inds.find(ix), p_inds.find(ix))
 
                     l_inds = "".join(sorted(self.get_legs(l), key=lsort))
-                    self.info[l]['inds'] = l_inds
+                    self.info[l]["inds"] = l_inds
 
                 if len(r) != 1:
 
@@ -2139,7 +2208,7 @@ class ContractionTree:
                         return (p_inds.find(ix), l_inds.find(ix))
 
                     r_inds = "".join(sorted(self.get_legs(r), key=rsort))
-                    self.info[r]['inds'] = r_inds
+                    self.info[r]["inds"] = r_inds
 
         # invalidate any compiled contractions
         self.contraction_cores.clear()
@@ -2150,6 +2219,7 @@ class ContractionTree:
         """
         try:
             from colorama import Fore
+
             RESET = Fore.RESET
             GREY = Fore.WHITE
             PINK = Fore.MAGENTA
@@ -2181,33 +2251,44 @@ class ContractionTree:
                 type_msg = "einsum"
 
             pa = "".join(
-                PINK + f'({ix})' if ix in l_legs & r_legs else
-                GREEN + f'({ix})' if ix in r_legs else
-                BLUE + ix for ix in p_inds
-            ).replace(f'){GREEN}(', '')
+                PINK + f"({ix})"
+                if ix in l_legs & r_legs
+                else GREEN + f"({ix})"
+                if ix in r_legs
+                else BLUE + ix
+                for ix in p_inds
+            ).replace(f"){GREEN}(", "")
             la = "".join(
-                PINK + f"[{ix}]" if ix in p_legs & r_legs else
-                RED + f"[{ix}]" if ix in r_legs else
-                BLUE + ix for ix in l_inds
-            ).replace(f']{RED}[', '')
+                PINK + f"[{ix}]"
+                if ix in p_legs & r_legs
+                else RED + f"[{ix}]"
+                if ix in r_legs
+                else BLUE + ix
+                for ix in l_inds
+            ).replace(f"]{RED}[", "")
             ra = "".join(
-                PINK + f"[{ix}]" if ix in p_legs & l_legs else
-                RED + f"[{ix}]" if ix in l_legs else
-                GREEN + ix for ix in r_inds
-            ).replace(f']{RED}[', '')
+                PINK + f"[{ix}]"
+                if ix in p_legs & l_legs
+                else RED + f"[{ix}]"
+                if ix in l_legs
+                else GREEN + ix
+                for ix in r_inds
+            ).replace(f"]{RED}[", "")
 
-            entries.append((
-                p,
-                f"{GREY}({i}) cost: {RESET}{p_flops:.1e} "
-                f"{GREY}widths: {RESET}{l_sz:.1f},{r_sz:.1f}->{p_sz:.1f} "
-                f"{GREY}type: {RESET}{type_msg}\n"
-                f"{GREY}inputs: {la},{ra}{RESET}->\n"
-                f"{GREY}output: {pa}\n"
-            ))
+            entries.append(
+                (
+                    p,
+                    f"{GREY}({i}) cost: {RESET}{p_flops:.1e} "
+                    f"{GREY}widths: {RESET}{l_sz:.1f},{r_sz:.1f}->{p_sz:.1f} "
+                    f"{GREY}type: {RESET}{type_msg}\n"
+                    f"{GREY}inputs: {la},{ra}{RESET}->\n"
+                    f"{GREY}output: {pa}\n",
+                )
+            )
 
-        if sort == 'flops':
+        if sort == "flops":
             entries.sort(key=lambda x: self.get_flops(x[0]), reverse=True)
-        if sort == 'size':
+        if sort == "size":
             entries.sort(key=lambda x: self.get_size(x[0]), reverse=True)
 
         entries.append((None, f"{RESET}"))
@@ -2250,11 +2331,14 @@ class ContractionTree:
         """
         return tuple(
             (p, l, r, False, self.get_einsum_eq(p), None)
-            if (prefer_einsum or not self.get_can_dot(p)) else
-            (
-                p, l, r, True,
+            if (prefer_einsum or not self.get_can_dot(p))
+            else (
+                p,
+                l,
+                r,
+                True,
                 self.get_tensordot_axes(p),
-                self.get_tensordot_perm(p)
+                self.get_tensordot_perm(p),
             )
             for p, l, r in self.traverse(order=order)
         )
@@ -2292,13 +2376,14 @@ class ContractionTree:
         try:
             fn = self.contraction_cores[key]
         except KeyError:
-            fn =functools.partial(
+            fn = functools.partial(
                 do_contraction,
                 contractions=self.extract_contractions(order, prefer_einsum),
                 strip_exponent=strip_exponent,
             )
             if autojit:
                 from autoray import autojit as _autojit
+
                 fn = _autojit(fn)
             self.contraction_cores[key] = fn
 
@@ -2354,13 +2439,13 @@ class ContractionTree:
         # handle exponent outside of potential jit
         if isinstance(strip_exponent, dict):
             result, exponent = result
-            if 'exponent' not in strip_exponent:
+            if "exponent" not in strip_exponent:
                 # set the exponent (e.g. first slice)
-                strip_exponent['exponent'] = exponent
+                strip_exponent["exponent"] = exponent
             else:
                 # match the exponent (e.g. subsequent slices)
-                target = strip_exponent['exponent']
-                result = result * 10**(exponent - target)
+                target = strip_exponent["exponent"]
+                result = result * 10 ** (exponent - target)
 
         return result
 
@@ -2399,8 +2484,7 @@ class ContractionTree:
         return temp_arrays
 
     def contract_slice(self, arrays, i, **kwargs):
-        """Get slices ``i`` of ``arrays`` and then contract them.
-        """
+        """Get slices ``i`` of ``arrays`` and then contract them."""
         return self.contract_core(self.slice_arrays(arrays, i), **kwargs)
 
     def gather_slices(self, slices, backend=None, progbar=False):
@@ -2411,18 +2495,21 @@ class ContractionTree:
         """
         if progbar:
             import tqdm
+
             slices = tqdm.tqdm(slices, total=self.multiplicity)
 
-        output_pos = {ix: i for i, ix in enumerate(self.output)
-                      if ix in self.sliced_inds}
+        output_pos = {
+            ix: i for i, ix in enumerate(self.output) if ix in self.sliced_inds
+        }
 
         if not output_pos:
             # we can just sum everything
             return functools.reduce(operator.add, slices)
 
         # else we need to do a multidimensional stack of all the results
-        sliced_pos = {ix: i for i, ix in enumerate(self.sliced_inds)
-                      if ix in self.output}
+        sliced_pos = {
+            ix: i for i, ix in enumerate(self.sliced_inds) if ix in self.output
+        }
 
         # first we sum over non-output sliced indices
         chunks = {}
@@ -2438,8 +2525,10 @@ class ContractionTree:
         def recursively_stack_chunks(loc, rem):
             if not rem:
                 return chunks[loc]
-            arrays = [recursively_stack_chunks(loc + (d,), rem[1:])
-                      for d in range(self.size_dict[rem[0]])]
+            arrays = [
+                recursively_stack_chunks(loc + (d,), rem[1:])
+                for d in range(self.size_dict[rem[0]])
+            ]
             axes = output_pos[rem[0]] - len(loc)
             return do("stack", arrays, axes, like=backend)
 
@@ -2456,7 +2545,8 @@ class ContractionTree:
         # consecutive slices of size ``stepsize`` all belong to the same output
         # block because the sliced indices are sorted output first
         stepsize = prod(
-            d for ix, d in zip(self.sliced_inds, self.sliced_sizes)
+            d
+            for ix, d in zip(self.sliced_inds, self.sliced_sizes)
             if ix not in self.output
         )
 
@@ -2546,7 +2636,8 @@ class ContractionTree:
 
         slices = (
             self.contract_slice(
-                arrays, i,
+                arrays,
+                i,
                 order=order,
                 prefer_einsum=prefer_einsum,
                 strip_exponent=strip_exponent,
@@ -2560,17 +2651,11 @@ class ContractionTree:
         result = self.gather_slices(slices, backend=backend, progbar=progbar)
 
         if strip_exponent:
-            return result, strip_exponent['exponent']
+            return result, strip_exponent["exponent"]
 
         return result
 
-    def contract_mpi(
-        self,
-        arrays,
-        comm=None,
-        root=None,
-        **kwargs
-    ):
+    def contract_mpi(self, arrays, comm=None, root=None, **kwargs):
         """Contract the slices of this tree and sum them in parallel -
         *assuming* we are already running under MPI.
 
@@ -2592,22 +2677,25 @@ class ContractionTree:
         if not set(self.sliced_inds).isdisjoint(set(self.output)):
             raise NotImplementedError(
                 "Sliced and output indices overlap - currently only a simple "
-                "sum of result slices is supported currently.")
+                "sum of result slices is supported currently."
+            )
 
         if comm is None:
             from mpi4py import MPI
+
             comm = MPI.COMM_WORLD
 
         if self.multiplicity < comm.size:
             raise ValueError(
                 f"Need to have more slices than MPI processes, but have "
-                f"{self.multiplicity} and {comm.size} respectively.")
+                f"{self.multiplicity} and {comm.size} respectively."
+            )
 
         # round robin compute each slice, eagerly summing
         result_i = None
         for i in range(comm.rank, self.multiplicity, comm.size):
             # note: fortran ordering is needed for the MPI reduce
-            x = do('asfortranarray', self.contract_slice(arrays, i, **kwargs))
+            x = do("asfortranarray", self.contract_slice(arrays, i, **kwargs))
             if result_i is None:
                 result_i = x
             else:
@@ -2615,13 +2703,13 @@ class ContractionTree:
 
         if root is None:
             # everyone gets the summed result
-            result = do('empty_like', result_i)
+            result = do("empty_like", result_i)
             comm.Allreduce(result_i, result)
             return result
 
         # else we only sum reduce the result to process ``root``
         if comm.rank == root:
-            result = do('empty_like', result_i)
+            result = do("empty_like", result_i)
         else:
             result = None
         comm.Reduce(result_i, result, root=root)
@@ -2643,7 +2731,9 @@ class ContractionTree:
         s = "<{}(N={}, branches={}, complete={})>"
         return s.format(
             self.__class__.__name__,
-            self.N, len(self.children), self.is_complete()
+            self.N,
+            len(self.children),
+            self.is_complete(),
         )
 
 
@@ -2657,116 +2747,114 @@ def _slice_and_reconfigure_tree(tree, *args, **kwargs):
 
 def _get_tree_info(tree):
     return {
-        'flops': tree.total_flops(),
-        'write': tree.total_write(),
-        'size': tree.max_size(),
-        'sliced_inds': frozenset(tree.sliced_inds),
+        "flops": tree.total_flops(),
+        "write": tree.total_write(),
+        "size": tree.max_size(),
+        "sliced_inds": frozenset(tree.sliced_inds),
     }
 
 
 def score_flops(trial):
     return (
-        math.log2(trial['flops']) +
-        math.log2(trial['write']) / 1000 +
-        math.log2(trial['size']) / 1000
+        math.log2(trial["flops"])
+        + math.log2(trial["write"]) / 1000
+        + math.log2(trial["size"]) / 1000
     )
 
 
 def score_write(trial):
     return (
-        math.log2(trial['flops']) / 1000 +
-        math.log2(trial['write']) +
-        math.log2(trial['size']) / 1000
+        math.log2(trial["flops"]) / 1000
+        + math.log2(trial["write"])
+        + math.log2(trial["size"]) / 1000
     )
 
 
 def score_size(trial):
     return (
-        math.log2(trial['flops']) / 1000 +
-        math.log2(trial['write']) / 1000 +
-        math.log2(trial['size'])
+        math.log2(trial["flops"]) / 1000
+        + math.log2(trial["write"]) / 1000
+        + math.log2(trial["size"])
     )
 
 
 def score_combo(trial, factor=DEFAULT_COMBO_FACTOR):
-    return (
-        math.log2(trial['flops'] // 2 + factor * trial['write'])
-    )
+    return math.log2(trial["flops"] // 2 + factor * trial["write"])
 
 
 def score_limit(trial, factor=DEFAULT_COMBO_FACTOR):
-    tree = trial['tree']
+    tree = trial["tree"]
     return math.log2(tree.total_cost(factor=factor, combine=max))
 
 
-def score_size_compressed(trial, chi='auto'):
-    tree = trial['tree']
-    if chi == 'auto':
-        chi = max(tree.size_dict.values())**2
+def score_size_compressed(trial, chi="auto"):
+    tree = trial["tree"]
+    if chi == "auto":
+        chi = max(tree.size_dict.values()) ** 2
     stats = tree.compressed_contract_stats(chi)
 
     size = stats.max_size
-    cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
+    cr = math.log2(size) + math.log2(tree.max_size()) ** 0.5 / 1000
 
     # overwrite stats with compressed versions
-    trial['size'] = size
-    trial['flops'] = stats.flops
-    trial['write'] = stats.write
+    trial["size"] = size
+    trial["flops"] = stats.flops
+    trial["write"] = stats.write
     return cr
 
 
-def score_peak_size_compressed(trial, chi='auto'):
-    tree = trial['tree']
-    if chi == 'auto':
-        chi = max(tree.size_dict.values())**2
+def score_peak_size_compressed(trial, chi="auto"):
+    tree = trial["tree"]
+    if chi == "auto":
+        chi = max(tree.size_dict.values()) ** 2
     stats = tree.compressed_contract_stats(chi)
 
     size = stats.peak_size
-    cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
+    cr = math.log2(size) + math.log2(tree.max_size()) ** 0.5 / 1000
 
     # overwrite stats with compressed versions
-    trial['size'] = size
-    trial['flops'] = stats.flops
-    trial['write'] = stats.write
+    trial["size"] = size
+    trial["flops"] = stats.flops
+    trial["write"] = stats.write
     return cr
 
 
-def score_write_compressed(trial, chi='auto'):
-    tree = trial['tree']
-    if chi == 'auto':
-        chi = max(tree.size_dict.values())**2
+def score_write_compressed(trial, chi="auto"):
+    tree = trial["tree"]
+    if chi == "auto":
+        chi = max(tree.size_dict.values()) ** 2
     stats = tree.compressed_contract_stats(chi)
 
     size = stats.write
-    cr = (math.log2(size) + math.log2(tree.max_size())**0.5 / 1000)
+    cr = math.log2(size) + math.log2(tree.max_size()) ** 0.5 / 1000
 
     # overwrite stats with compressed versions
-    trial['size'] = stats.max_size
-    trial['flops'] = stats.flops
-    trial['write'] = stats.write
+    trial["size"] = stats.max_size
+    trial["flops"] = stats.flops
+    trial["write"] = stats.write
     return cr
 
 
-def score_flops_compressed(trial, chi='auto'):
-    tree = trial['tree']
-    if chi == 'auto':
-        chi = max(tree.size_dict.values())**2
+def score_flops_compressed(trial, chi="auto"):
+    tree = trial["tree"]
+    if chi == "auto":
+        chi = max(tree.size_dict.values()) ** 2
     stats = tree.compressed_contract_stats(chi)
 
     flops = stats.flops
-    cr = (math.log2(flops) + math.log2(tree.max_size())**0.5 / 1000)
+    cr = math.log2(flops) + math.log2(tree.max_size()) ** 0.5 / 1000
 
     # overwrite stats with compressed versions
-    trial['size'] = stats.max_size
-    trial['flops'] = flops
-    trial['write'] = stats.write
+    trial["size"] = stats.max_size
+    trial["flops"] = flops
+    trial["write"] = stats.write
     return cr
 
 
-def score_combo_compressed(trial, chi='auto', factor=DEFAULT_COMBO_FACTOR):
-    tree = trial['tree']
-    if chi == 'auto':
-        chi = max(tree.size_dict.values())**2
+def score_combo_compressed(trial, chi="auto", factor=DEFAULT_COMBO_FACTOR):
+    tree = trial["tree"]
+    if chi == "auto":
+        chi = max(tree.size_dict.values()) ** 2
     stats = tree.compressed_contract_stats(chi)
 
     flops = stats.flops
@@ -2775,9 +2863,9 @@ def score_combo_compressed(trial, chi='auto', factor=DEFAULT_COMBO_FACTOR):
     cr = math.log2(flops + factor * write)
 
     # overwrite stats with compressed versions
-    trial['size'] = stats.max_size
-    trial['flops'] = flops
-    trial['write'] = write
+    trial["size"] = stats.max_size
+    trial["flops"] = flops
+    trial["write"] = write
     return cr
 
 
@@ -2813,41 +2901,41 @@ def parse_minimize(minimize):
 def get_score_fn(minimize):
     which, param = parse_minimize(minimize)
 
-    if which == 'flops':
+    if which == "flops":
         return score_flops
 
-    if which == 'write':
+    if which == "write":
         return score_write
 
-    if which == 'size':
+    if which == "size":
         return score_size
 
-    if which == 'combo':
+    if which == "combo":
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_combo, factor=factor)
 
-    if which == 'limit':
+    if which == "limit":
         factor = float(param) if param else DEFAULT_COMBO_FACTOR
         return functools.partial(score_limit, factor=factor)
 
-    if which in ('max-compressed', 'size-compressed'):
-        chi = int(param) if param else 'auto'
+    if which in ("max-compressed", "size-compressed"):
+        chi = int(param) if param else "auto"
         return functools.partial(score_size_compressed, chi=chi)
 
-    if which == 'peak-compressed':
-        chi = int(param) if param else 'auto'
+    if which == "peak-compressed":
+        chi = int(param) if param else "auto"
         return functools.partial(score_peak_size_compressed, chi=chi)
 
-    if which == 'write-compressed':
-        chi = int(param) if param else 'auto'
+    if which == "write-compressed":
+        chi = int(param) if param else "auto"
         return functools.partial(score_write_compressed, chi=chi)
 
-    if which == 'flops-compressed':
-        chi = int(param) if param else 'auto'
+    if which == "flops-compressed":
+        chi = int(param) if param else "auto"
         return functools.partial(score_flops_compressed, chi=chi)
 
-    if which == 'combo-compressed':
-        chi = int(param) if param else 'auto'
+    if which == "combo-compressed":
+        chi = int(param) if param else "auto"
         return functools.partial(score_combo_compressed, chi=chi)
 
     raise ValueError(f"No score function '{minimize}' found.")
@@ -2861,14 +2949,13 @@ def _describe_tree(tree):
 
 
 class CompressedStatsTracker:
-
     __slots__ = (
-        'flops',
-        'max_size',
-        'peak_size',
-        'write',
-        'current_size',
-        'last_size_change',
+        "flops",
+        "max_size",
+        "peak_size",
+        "write",
+        "current_size",
+        "last_size_change",
     )
 
     def __init__(self, hg):
@@ -2902,8 +2989,7 @@ class CompressedStatsTracker:
         self.last_size_change = -hg.neighborhood_size([i, j])
 
     def update_flops_pre_contract(self, hg, i, j):
-        """Compute the flops just of the contraction.
-        """
+        """Compute the flops just of the contraction."""
         self.flops += hg.contract_pair_cost(i, j)
 
     def update_peak_size_post_contract(self, hg, ij):
@@ -2915,25 +3001,21 @@ class CompressedStatsTracker:
         self.peak_size = max(self.peak_size, self.current_size)
 
     def update_size_post_contract(self, hg, ij):
-        """Compute the size just of the new tensor.
-        """
+        """Compute the size just of the new tensor."""
         sz_ij = hg.node_size(ij)
         self.max_size = max(self.max_size, sz_ij)
         self.write += sz_ij
 
     def update_pre_compress(self, hg, i, j):
-        """Default method computes everything.
-        """
+        """Default method computes everything."""
         self.update_peak_size_pre_compress(hg, i, j)
 
     def update_pre_contract(self, hg, i, j):
-        """Default method computes everything.
-        """
+        """Default method computes everything."""
         self.update_flops_pre_contract(hg, i, j)
 
     def update_post_contract(self, hg, ij):
-        """Default method computes everything.
-        """
+        """Default method computes everything."""
         self.update_peak_size_post_contract(hg, ij)
         self.update_size_post_contract(hg, ij)
 
@@ -2953,61 +3035,43 @@ class CompressedStatsTracker:
 
 
 class CompressedStatsTrackerSize(CompressedStatsTracker):
-
     @property
     def score(self):
-        return (
-            math.log2(self.max_size) +
-            math.log2(self.flops + 1) / 1000
-        )
+        return math.log2(self.max_size) + math.log2(self.flops + 1) / 1000
 
 
 class CompressedStatsTrackerPeak(CompressedStatsTracker):
-
     @property
     def score(self):
-        return (
-            math.log2(self.peak_size) +
-            math.log2(self.flops + 1) / 1000
-        )
+        return math.log2(self.peak_size) + math.log2(self.flops + 1) / 1000
 
 
 class CompressedStatsTrackerWrite(CompressedStatsTracker):
-
     @property
     def score(self):
-        return (
-            math.log2(self.write) +
-            math.log2(self.flops + 1) / 1000
-        )
+        return math.log2(self.write) + math.log2(self.flops + 1) / 1000
 
 
 class CompressedStatsTrackerFlops(CompressedStatsTracker):
-
     @property
     def score(self):
-        return (
-            math.log10(self.flops + 1) +
-            math.log10(self.peak_size) / 1000
-        )
+        return math.log10(self.flops + 1) + math.log10(self.peak_size) / 1000
 
 
 class CompressedStatsTrackerCombo(CompressedStatsTracker):
-
     factor = DEFAULT_COMBO_FACTOR
 
     @property
     def score(self):
-        return (
-            math.log2(self.flops + self.factor * self.write + 1)
-        )
+        return math.log2(self.flops + self.factor * self.write + 1)
+
 
 _trackers = {
-    'size': CompressedStatsTrackerSize,
-    'peak': CompressedStatsTrackerPeak,
-    'write': CompressedStatsTrackerWrite,
-    'flops': CompressedStatsTrackerFlops,
-    'combo': CompressedStatsTrackerCombo,
+    "size": CompressedStatsTrackerSize,
+    "peak": CompressedStatsTrackerPeak,
+    "write": CompressedStatsTrackerWrite,
+    "flops": CompressedStatsTrackerFlops,
+    "combo": CompressedStatsTrackerCombo,
 }
 
 
@@ -3024,16 +3088,26 @@ class ContractionTreeCompressed(ContractionTree):
     """
 
     @classmethod
-    def from_path(cls, inputs, output, size_dict, *,
-                  path=None, ssa_path=None, check=False, **kwargs):
+    def from_path(
+        cls,
+        inputs,
+        output,
+        size_dict,
+        *,
+        path=None,
+        ssa_path=None,
+        check=False,
+        **kwargs,
+    ):
         """Create a (completed) ``ContractionTreeCompressed`` from the usual
         inputs plus a standard contraction path or 'ssa_path' - you need to
         supply one. This also set the default 'surface' traversal ordering to
         be the initial path.
         """
         if int(path is None) + int(ssa_path is None) != 1:
-            raise ValueError("Exactly one of ``path`` or ``ssa_path`` must be "
-                             "supplied.")
+            raise ValueError(
+                "Exactly one of ``path`` or ``ssa_path`` must be " "supplied."
+            )
 
         if path is not None:
             ssa_path = linear_to_ssa(path)
@@ -3054,7 +3128,6 @@ class ContractionTreeCompressed(ContractionTree):
 
 
 class ContractionTreeMulti(ContractionTree):
-
     def set_varmults(self, varmults):
         self._varmults = varmults
 
@@ -3088,30 +3161,32 @@ class PartitionTreeBuilder:
         self.partition_fn = partition_fn
 
     def build_divide(
-        self, inputs, output, size_dict,
+        self,
+        inputs,
+        output,
+        size_dict,
         random_strength=0.01,
         cutoff=10,
         parts=2,
         parts_decay=0.5,
-        sub_optimize='auto',
-        super_optimize='auto-hq',
+        sub_optimize="auto",
+        super_optimize="auto-hq",
         check=False,
-        **partition_opts
+        **partition_opts,
     ):
-        tree = ContractionTree(inputs, output, size_dict,
-                               track_flops=True,
-                               track_childless=True)
+        tree = ContractionTree(
+            inputs, output, size_dict, track_flops=True, track_childless=True
+        )
         rand_size_dict = jitter_dict(size_dict, random_strength)
 
-        dynamic_imbalance = (
-            ('imbalance' in partition_opts) and
-            ('imbalance_decay' in partition_opts)
+        dynamic_imbalance = ("imbalance" in partition_opts) and (
+            "imbalance_decay" in partition_opts
         )
         if dynamic_imbalance:
-            imbalance = partition_opts.pop('imbalance')
-            imbalance_decay = partition_opts.pop('imbalance_decay')
+            imbalance = partition_opts.pop("imbalance")
+            imbalance_decay = partition_opts.pop("imbalance_decay")
 
-        dynamic_fix = partition_opts.get('fix_output_nodes', None) == 'auto'
+        dynamic_fix = partition_opts.get("fix_output_nodes", None) == "auto"
 
         while tree.childless:
             tree_node = next(iter(tree.childless))
@@ -3122,7 +3197,8 @@ class PartitionTreeBuilder:
             if subsize <= cutoff:
                 tree.contract_nodes(
                     [node_from_single(x) for x in subgraph],
-                    optimize=sub_optimize, check=check
+                    optimize=sub_optimize,
+                    check=check,
                 )
                 continue
 
@@ -3135,41 +3211,46 @@ class PartitionTreeBuilder:
             # let the imbalance either rise or fall
             if dynamic_imbalance:
                 if imbalance_decay >= 0:
-                    imbalance_s = s ** imbalance_decay * imbalance
+                    imbalance_s = s**imbalance_decay * imbalance
                 else:
-                    imbalance_s = 1 - s ** -imbalance_decay * (1 - imbalance)
-                partition_opts['imbalance'] = imbalance_s
+                    imbalance_s = 1 - s**-imbalance_decay * (1 - imbalance)
+                partition_opts["imbalance"] = imbalance_s
 
             if dynamic_fix:
                 parts_s = 2
-                partition_opts['fix_output_nodes'] = (s == 1.0)
+                partition_opts["fix_output_nodes"] = s == 1.0
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
             inputs = tuple(map(oset, tree.node_to_terms(subgraph)))
             output = oset(tree.get_legs(tree_node))
             membership = self.partition_fn(
-                inputs, output, rand_size_dict,
-                parts=parts_s, **partition_opts,
+                inputs,
+                output,
+                rand_size_dict,
+                parts=parts_s,
+                **partition_opts,
             )
 
             # divide subgraph up e.g. if we enumerate the subgraph index sets
             # (0, 1, 2, 3, 4, 5, 6, 7, 8, ...) ->
             # ({0, 1, 3, 5, 6}, {2, 4}, {7, 8})
-            new_subgs = tuple(map(
-                node_from_seq, separate(subgraph, membership)
-            ))
+            new_subgs = tuple(
+                map(node_from_seq, separate(subgraph, membership))
+            )
 
             if len(new_subgs) == 1:
                 # no communities found - contract all remaining
                 tree.contract_nodes(
                     tuple(map(node_from_single, subgraph)),
-                    optimize=sub_optimize, check=check
+                    optimize=sub_optimize,
+                    check=check,
                 )
                 continue
 
             tree.contract_nodes(
-                new_subgs, optimize=super_optimize, check=check)
+                new_subgs, optimize=super_optimize, check=check
+            )
 
         if check:
             assert tree.is_complete()
@@ -3177,16 +3258,19 @@ class PartitionTreeBuilder:
         return tree
 
     def build_agglom(
-        self, inputs, output, size_dict,
+        self,
+        inputs,
+        output,
+        size_dict,
         random_strength=0.01,
         groupsize=4,
         check=False,
-        sub_optimize='greedy',
-        **partition_opts
+        sub_optimize="greedy",
+        **partition_opts,
     ):
-        tree = ContractionTree(inputs, output, size_dict,
-                               track_flops=True,
-                               track_childless=True)
+        tree = ContractionTree(
+            inputs, output, size_dict, track_flops=True, track_childless=True
+        )
         rand_size_dict = jitter_dict(size_dict, random_strength)
         leaves = tuple(tree.gen_leaves())
         for node in leaves:
@@ -3198,7 +3282,11 @@ class PartitionTreeBuilder:
 
             inputs = [oset(tree.get_legs(node)) for node in leaves]
             membership = self.partition_fn(
-                inputs, output, rand_size_dict, parts=parts, **partition_opts,
+                inputs,
+                output,
+                rand_size_dict,
+                parts=parts,
+                **partition_opts,
             )
             leaves = [
                 tree.contract_nodes(group, check=check, optimize=sub_optimize)
@@ -3220,74 +3308,6 @@ class PartitionTreeBuilder:
         return self.build_agglom(inputs, output, size_dict, **partition_opts)
 
 
-def calc_edge_weight(ix, size_dict, scale='log'):
-
-    if scale in ('const', None, False):
-        return 1
-
-    w = size_dict[ix]
-
-    if scale == 'linear':
-        w = 1000 * w
-    elif scale == 'log':
-        w = int(1000 * math.log2(w)) + 1
-    elif scale == 'exp':
-        w = 2**w
-
-    return int(w)
-
-
-def calc_edge_weight_float(ix, size_dict, scale='log'):
-
-    if scale in ('const', None, False):
-        return 1.0
-
-    w = size_dict[ix]
-
-    if scale == 'linear':
-        w
-    elif scale == 'log':
-        w = math.log2(w)
-    elif scale == 'exp':
-        w = 2**w
-
-    return w
-
-
-def calc_node_weight(term, size_dict, scale='linear'):
-    if scale in ('const', None, False):
-        return 1
-
-    w = compute_size_by_dict(term, size_dict)
-
-    # scale up by a thousand so we can add small integer jitter
-    if scale == 'linear':
-        w = 1000 * w
-    elif scale == 'log':
-        w = 1000 * math.log2(w)
-    elif scale == 'exp':
-        w = 2**w
-
-    return int(w)
-
-
-def calc_node_weight_float(term, size_dict, scale='linear'):
-    if scale in ('const', None, False):
-        return 1.0
-
-    w = compute_size_by_dict(term, size_dict)
-
-    # scale up by a thousand so we can add small integer jitter
-    if scale == 'linear':
-        w
-    elif scale == 'log':
-        w = math.log2(w)
-    elif scale == 'exp':
-        w = 2**w
-
-    return w
-
-
 def jitter(x, strength):
     return x * (1 + strength * random.expovariate(1.0))
 
@@ -3306,753 +3326,3 @@ def separate(xs, blocks):
     x_b = list(sorter.items())
     x_b.sort()
     return [x[1] for x in x_b]
-
-
-class LineGraph:
-    """Very simple line-graph builder and file writer.
-    """
-
-    def __init__(self, inputs, output):
-        self.inputs = inputs
-        self.nodes = tuple(set.union(*inputs))
-        self.nodemap = {ix: i for i, ix in enumerate(self.nodes)}
-
-        # num nodes in dual = num edges in real graph
-        self.number_of_nodes = len(self.nodemap)
-
-        self.edges = []
-        for term in inputs:
-            for ix1, ix2 in itertools.combinations(term, 2):
-                self.edges.append((self.nodemap[ix1], self.nodemap[ix2]))
-        for ix1, ix2 in itertools.combinations(output, 2):
-            self.edges.append((self.nodemap[ix1], self.nodemap[ix2]))
-        self.number_of_edges = len(self.edges)
-
-    def to_gr_str(self):
-        ls = [f"p tw {self.number_of_nodes} {self.number_of_edges}"]
-        for i, j in self.edges:
-            ls.append(f"{i + 1} {j + 1}")
-        return "\n".join(ls)
-
-    def to_gr_file(self, fname):
-        contents = self.to_gr_str()
-        with open(fname, 'w') as f:
-            f.write(contents)
-
-    def to_cnf_str(self):
-        ls = [f"p cnf {self.number_of_nodes} {self.number_of_edges}"]
-        for i, j in self.edges:
-            ls.append(f"{i + 1} {j + 1} 0")
-        return "\n".join(ls)
-
-    def to_cnf_file(self, fname):
-        contents = self.to_cnf_str()
-        with open(fname, 'w') as f:
-            f.write(contents)
-
-
-# best: use built in
-if hasattr(int, 'bit_count'):
-
-    def popcount(x):
-        return x.bit_count()
-
-else:
-    # second best, gmpy2 is installed
-    try:
-        from gmpy2 import popcount
-
-    except ImportError:
-        # finally, use string method
-
-        def popcount(x):
-            return bin(x).count('1')
-
-
-def dict_affine_renorm(d):
-    dmax = max(d.values())
-    dmin = min(d.values())
-    if dmax == dmin:
-        dmin = 0
-        if dmax == 0.0:
-            dmax = 1.0
-    return {k: (v - dmin) / (dmax - dmin) for k, v in d.items()}
-
-
-class HyperGraph:
-    """Simple hypergraph builder and writer.
-
-    Parameters
-    ----------
-    inputs : sequence of list[str] or dict[int, list[str]]
-        The nodes. If given as a dict, the keys will be taken as the node
-        enumeration rather than ``range(len(inputs))``.
-    output : str, optional
-        Output indices.
-    size_dict : dict[str, int], optional
-        Size of each index.
-
-    Attributes
-    ----------
-    nodes : dict[int, list[str]]
-        Mapping of node to the list of edges incident to it.
-    edges : dict[str, list[int]]
-        Mapping of hyper edges to list of nodes it is incident to.
-    num_nodes : int
-        The number of nodes.
-    num_edges : int
-        The number of hyper-edges.
-    """
-
-    __slots__ = ('inputs', 'output', 'size_dict',
-                 'nodes', 'edges', 'node_counter')
-
-    def __init__(self, inputs, output=None, size_dict=None):
-        self.inputs = inputs
-        self.output = [] if output is None else list(output)
-        self.size_dict = {} if size_dict is None else dict(size_dict)
-
-        if isinstance(inputs, dict):
-            self.nodes = {int(k): tuple(v) for k, v in inputs.items()}
-        else:
-            self.nodes = dict(enumerate(map(tuple, inputs)))
-
-        self.edges = collections.defaultdict(tuple)
-        for i, term in self.nodes.items():
-            for e in term:
-                self.edges[e] += (i,)
-
-        self.node_counter = self.num_nodes - 1
-
-    def copy(self):
-        """Copy this ``HyperGraph``.
-        """
-        new = object.__new__(self.__class__)
-        new.inputs = self.inputs
-        new.output = self.output
-        new.size_dict = self.size_dict.copy()
-        new.nodes = self.nodes.copy()
-        new.edges = self.edges.copy()
-        new.node_counter = self.node_counter
-        return new
-
-    @classmethod
-    def from_edges(cls, edges, output=(), size_dict=()):
-        self = cls.__new__(cls)
-        self.edges = collections.defaultdict(tuple)
-        for e, e_nodes in edges.items():
-            self.edges[e] = tuple(e_nodes)
-        self.output = output
-        self.size_dict = dict(size_dict)
-
-        self.nodes = collections.defaultdict(tuple)
-        for e, e_nodes in self.edges.items():
-            for i in e_nodes:
-                self.nodes[i] += (e,)
-
-        self.node_counter = self.num_nodes - 1
-
-        return self
-
-    def get_num_nodes(self):
-        return len(self.nodes)
-
-    @property
-    def num_nodes(self):
-        return len(self.nodes)
-
-    def get_num_edges(self):
-        return len(self.edges)
-
-    @property
-    def num_edges(self):
-        return len(self.edges)
-
-    def __len__(self):
-        return self.num_nodes
-
-    def edges_size(self, es):
-        """Get the combined, i.e. product, size of all edges in ``es``.
-        """
-        return prod(map(self.size_dict.__getitem__, es))
-
-    def bond_size(self, i, j):
-        """Get the combined, i.e. product, size of edges shared by nodes ``i``
-        and ``j``.
-        """
-        return self.edges_size(set(self.nodes[i]).intersection(self.nodes[j]))
-
-    def node_size(self, i):
-        """Get the size of the term represented by node ``i``.
-        """
-        return self.edges_size(self.nodes[i])
-
-    def neighborhood_size(self, nodes):
-        """Get the size of nodes in the immediate neighborhood of ``nodes``.
-        """
-        neighborhood = {
-            nn
-            for n in nodes for e in self.get_node(n) for nn in self.get_edge(e)
-        }
-        return sum(map(self.node_size, neighborhood))
-
-    def contract_pair_cost(self, i, j):
-        """Get the cost of contracting nodes ``i`` and ``j`` - the product of
-        the dimensions of the indices involved.
-        """
-        return self.edges_size(set(self.get_node(i) + self.get_node(j)))
-
-    def total_node_size(self):
-        """Get the total size of all nodes.
-        """
-        return sum(map(self.node_size, self.nodes))
-
-    def output_nodes(self):
-        """Get the nodes with output indices.
-        """
-        return unique(i for e in self.output for i in self.edges[e])
-
-    def neighbors(self, i):
-        """Get the neighbors of node ``i``.
-        """
-        return unique(
-            j for e in self.nodes[i] for j in self.edges[e]
-            if (j != i)
-        )
-
-    def neighbor_edges(self, i):
-        """Get the edges incident to all neighbors of node ``i``, (including
-        its own edges).
-        """
-        return unique(itertools.chain.from_iterable(
-            map(self.get_node, self.neighbors(i))
-        ))
-
-    def has_node(self, i):
-        """Does this hypergraph have node ``i``?
-        """
-        return i in self.nodes
-
-    def get_node(self, i):
-        """Get the edges node ``i`` is incident to.
-        """
-        return self.nodes[i]
-
-    def get_edge(self, e):
-        """Get the nodes edge ``e`` is incident to.
-        """
-        return self.edges[e]
-
-    def has_edge(self, e):
-        """Does this hypergraph have edge ``e``?
-        """
-        return e in self.edges
-
-    def next_node(self):
-        """Get the next available node identifier.
-        """
-        # always increment to try and generate unique ids
-        self.node_counter += 1
-        # ... but also check node is valid
-        while self.node_counter in self.nodes:
-            self.node_counter += 1
-        return self.node_counter
-
-    def add_node(self, inds, node=None):
-        """Add a node with ``inds``, and optional identifier ``node``. The
-        identifier will be generated if not given and returned.
-        """
-        if node is None:
-            node = self.next_node()
-        inds = tuple(inds)
-        self.nodes[node] = inds
-        for e in inds:
-            self.edges[e] += (node,)
-        return node
-
-    def remove_node(self, i):
-        """Remove node ``i`` from this hypergraph.
-        """
-        inds = self.nodes.pop(i)
-        for e in inds:
-            e_nodes = self.edges[e] = tuple(j for j in self.edges[e] if j != i)
-            if not e_nodes:
-                del self.edges[e]
-        return inds
-
-    def remove_edge(self, e):
-        """Remove edge ``e`` from this hypergraph.
-        """
-        for i in self.edges[e]:
-            self.nodes[i] = tuple(d for d in self.nodes[i] if d != e)
-        del self.edges[e]
-
-    def contract(self, i, j, node=None):
-        """Combine node ``i`` and node ``j``.
-        """
-        inds_i = self.remove_node(i)
-        inds_j = self.remove_node(j)
-        inds_ij = unique(
-            ind for ind in inds_i + inds_j
-            # index will only still be here if its not only on i and j
-            if (ind in self.edges) or (ind in self.output)
-        )
-        return self.add_node(inds_ij, node=node)
-
-    def compress(self, chi, edges=None):
-        """'Compress' multiedges, combining their size up to a maximum of
-        ``chi``.
-        """
-        if edges is None:
-            edges = self.edges
-
-        # find edges which are incident to the same set of nodes
-        incidences = collections.defaultdict(list)
-        for e in unique(edges):
-            if e not in self.output:
-                nodes = frozenset(self.edges[e])
-                incidences[nodes].append(e)
-
-        for es in incidences.values():
-            if len(es) > 1:
-                # combine edges into first, capping size at `chi`
-                new_size = self.edges_size(es)
-                e_keep, *es_del = es
-                for e in es_del:
-                    self.remove_edge(e)
-                self.size_dict[e_keep] = min(new_size, chi)
-
-    def compute_contracted_inds(self, nodes):
-        """Generate the output indices if one were to contract ``nodes``.
-        """
-        snodes = set(nodes)
-        return unique(
-            e for i in nodes for e in self.get_node(i)
-            # keep index if it appears on any other nodes or in output
-            if set(self.edges[e]) - snodes or e in self.output
-        )
-
-    def candidate_contraction_size(self, i, j, chi=None):
-        """Get the size of the node created if ``i`` and ``j`` were contracted,
-        optionally including the effect of first compressing bonds to size
-        ``chi``.
-        """
-        # figure out the indices of the contracted nodes
-        new_es = tuple(self.compute_contracted_inds((i, j)))
-
-        if chi is None:
-            return self.edges_size(new_es)
-
-        incidences = collections.defaultdict(list)
-        for e in new_es:
-            # compressable indices -> those which will not be incident to the
-            # exact same set of nodes
-            contracted_neighbs = frozenset(
-                i if k == j else k for k in self.edges[e]
-            )
-            incidences[contracted_neighbs].append(e)
-
-        # each group of compressed inds maxes out at size `chi`
-        return prod(
-            min(chi, self.edges_size(es)) for es in incidences.values()
-        )
-
-    def all_shortest_distances(
-        self,
-        nodes=None,
-    ):
-        if nodes is None:
-            nodes = set(self.nodes)
-        elif not isinstance(nodes, set):
-            nodes = set(nodes)
-
-        # build lazily
-        neighbors_map = {}
-
-        n = len(nodes)
-        ncomb = n * (n - 1) // 2
-        distances = {}
-
-        visitors = {node: {node} for node in nodes}
-        for d in range(1, self.num_nodes):
-            any_change = False
-            previous_visitors = {
-                k: v.copy() for k, v in visitors.items()
-            }
-            for i, ivis in previous_visitors.items():
-
-                try:
-                    ineighbs = neighbors_map[i]
-                except KeyError:
-                    ineighbs = neighbors_map[i] = tuple(self.neighbors(i))
-
-                for j in ineighbs:
-                    try:
-                        visitors[j] |= ivis
-                    except KeyError:
-                        visitors[j] = ivis.copy()
-                        # won't get caught in the later any_change check
-                        any_change = True
-
-            for i in nodes:
-                for j in visitors[i] - previous_visitors[i]:
-                    if (i < j) and (j in nodes):
-                        distances[i, j] = d
-                    any_change = True
-
-            if not any_change:
-                # also ened to check non target nodes
-                any_change |= any(
-                    ivis != visitors[i]
-                    for i, ivis in previous_visitors.items()
-                )
-
-            if (len(distances) == ncomb) or (not any_change):
-                break
-
-        return distances
-
-    def all_shortest_distances_condensed(
-        self,
-        nodes=None,
-    ):
-        if nodes is None:
-            nodes = tuple(self.nodes)
-        distances = self.all_shortest_distances(nodes=nodes)
-
-        default_distance = 10 * self.num_nodes
-
-        condensed = []
-        for i in range(len(nodes)):
-            for j in range(i + 1, len(nodes)):
-                ni = nodes[i]
-                nj = nodes[j]
-                key = (ni, nj) if ni < nj else (nj, ni)
-                condensed.append(distances.get(key, default_distance))
-
-        return condensed
-
-    def simple_distance(self, region, p=2):
-        """Compute a simple distance metric from nodes in ``region`` to all
-        others. Unlike graph distance, relative connectedness is taken into
-        account.
-        """
-        region = set(region)
-        distances = {i: 0 for i in region}
-        queue = list(region)
-        surface = collections.defaultdict(lambda: 0)
-
-        for d in itertools.count(1):
-            surface.clear()
-
-            while queue:
-                i = queue.pop()
-                for j in self.neighbors(i):
-                    if j not in region:
-                        surface[j] += 1
-
-            for j, c in surface.items():
-                region.add(j)
-                queue.append(j)
-                distances[j] = d + (1 / c)**p
-
-            if not queue:
-                break
-
-        return dict_affine_renorm(distances)
-
-    def simple_closeness(self, p=0.75, mu=0.5):
-        """Compute a rough hypergraph 'closeness'.
-
-        Parameters
-        ----------
-        p : float, optional
-            Once any node has had ``H.num_nodes**p`` visitors terminate. Set
-            greater than 1.0 for no limit (slower).
-        mu : float, optional
-            Let the visitor score decay with this power. The higher this is,
-            the more local connectivity is favored.
-
-        Returns
-        -------
-        scores : dict[int, float]
-            The simple hypergraph closenesses - higher being more central.
-        """
-        sz_stop = self.num_nodes**p
-        should_stop = False
-
-        # which nodes have reached which other nodes (bitmap set)
-        visitors = {i: 1 << i for i in self.nodes}
-
-        # store the number of unique visitors - the change is this each step
-        #    is the number of new shortest paths of length ``d``
-        num_visitors = {i: 1 for i in self.nodes}
-
-        # the total weighted score - combining num visitors and their distance
-        scores = {i: 0.0 for i in self.nodes}
-
-        # pre-cache the lists of neighbors
-        neighbors = {i: list(self.neighbors(i)) for i in self.nodes}
-
-        # at each iteration expand all nodes visitors to their neighbors
-        for d in self.nodes:
-
-            # do a parallel update
-            previous_visitors = visitors.copy()
-
-            for i in self.nodes:
-                for j in neighbors[i]:
-                    visitors[i] |= previous_visitors[j]
-
-                # visitors are worth less the further they've come from
-                new_nv = popcount(visitors[i])
-                scores[i] += (new_nv - num_visitors[i]) / (d + 1)**mu
-                num_visitors[i] = new_nv
-
-                # once any node has reached a certain number of visitors stop
-                should_stop |= (new_nv >= sz_stop)
-
-            if should_stop:
-                break
-
-        # finally rescale the values between 0.0 and 1.0
-        return dict_affine_renorm(scores)
-
-    def simple_centrality(self, r=None, smoothness=2, **closeness_opts):
-        """A simple algorithm for large hypergraph centrality. First we find
-        a rough closeness centrality, then relax / smooth this by nodes
-        iteratively radiating their centrality to their neighbors.
-
-        Parameters
-        ----------
-        r : None or int, optional
-            Number of iterations. Defaults to
-            ``max(10, int(self.num_nodes**0.5))``.
-        smoothness : float, optional
-            The smoothness. In conjunction with a high value of ``r`` this will
-            create a smooth gradient from one of the hypergraph to the other.
-        closeness_opts
-            Supplied to ``HyperGraph.simple_closeness`` as the starting point.
-
-        Returns
-        -------
-        dict[int, float]
-        """
-        # take a rough closeness as the starting point
-        c = self.simple_closeness(**closeness_opts)
-
-        # pre-cache the lists of neighbors
-        neighbors = {i: list(self.neighbors(i)) for i in self.nodes}
-
-        if r is None:
-            # take the propagation time as sqrt hypergraph size
-            r = max(10, int(self.num_nodes**0.5))
-
-        for _ in range(r):
-            # do a parallel update
-            previous_c = c.copy()
-
-            # spread the centrality of each node into its neighbors
-            for i in self.nodes:
-                ci = previous_c[i]
-                for j in neighbors[i]:
-                    c[j] += smoothness * ci / r
-
-            # then rescale all the values between 0.0 and 1.0
-            c = dict_affine_renorm(c)
-
-        return c
-
-    def compute_loops(self, start=None, max_loop_length=None):
-        """Generate all loops up to a certain length in this hypergraph.
-
-        Parameters
-        ----------
-        start : sequence of int, optional
-            Only generate loops including these nodes, defaults to all.
-        max_loop_length : None or int, optional
-            The maximum loop length to search for. If ``None``, then this is
-            set automatically by the length of the first loop found.
-
-        Yields
-        ------
-        loop : tuple[int]
-            A set of nodes that form a loop.
-        """
-        if start is None:
-            start = self.nodes
-
-        # start paths beginning at every node
-        queue = [(i,) for i in start]
-        # cache neighbors for speed
-        neighbors = {}
-
-        seen = set()
-        while queue:
-            # consider all the ways to extend each path
-            path = queue.pop(0)
-
-            jf = path[-1]
-            try:
-                j_neighbs = neighbors[jf]
-            except KeyError:
-                j_neighbs = neighbors[jf] = tuple(self.neighbors(jf))
-
-            for j in j_neighbs:
-                i0 = path[0]
-                # check for valid loop ...
-                if (
-                    # is not trivial
-                    (len(path) > 2) and
-                    # ends where it starts
-                    (j == i0) and
-                    # and is not just a cyclic permutation of existing loop
-                    (frozenset(path) not in seen)
-                ):
-                    yield tuple(sorted(path))
-                    seen.add(frozenset(path))
-                    if max_loop_length is None:
-                        # automatically set the max loop length
-                        max_loop_length = len(path) + 1
-
-                # path hits itself too early
-                elif j in path:
-                    continue
-
-                # keep extending path, but only if
-                elif (
-                    # we haven't found any loops yet
-                    (max_loop_length is None) or
-                    # or this loops is short
-                    (len(path) < max_loop_length)
-                ):
-                    queue.append(path + (j,))
-
-    def get_laplacian(self):
-        """Get the graph Laplacian.
-        """
-        import numpy as np
-
-        lp = np.zeros((self.num_nodes, self.num_nodes))
-
-        for i, term in self.nodes.items():
-            lp[i, i] = len(term)
-
-        for i, j in self.edges.values():
-            lp[i, j] = lp[j, i] = -1
-
-        return lp
-
-    def get_resistance_distances(self):
-        """Get the resistance distance between all nodes of the raw graph.
-        """
-        import numpy as np
-
-        lp = self.get_laplacian()
-        lp += (1 / self.num_nodes)
-        lp = np.linalg.inv(lp)
-        d = np.array(np.diag(lp))  # needs to be copy
-        lp *= -2
-        lp += d.reshape(1, -1)
-        lp += d.reshape(-1, 1)
-
-        return lp
-
-    def resistance_centrality(self, rescale=True):
-        """Compute the centrality in terms of the total resistance distance
-        to all other nodes.
-        """
-        rd = self.get_resistance_distances()
-        cents = dict(enumerate(-rd.sum(axis=1)))
-        if rescale:
-            cents = dict_affine_renorm(cents)
-        return cents
-
-    def to_networkx(H, as_tree_leaves=False):
-        """Convert to a networkx Graph, with hyperedges represented as nodes.
-
-        Parameters
-        ----------
-        as_tree_leaves : bool, optional
-            If true, then the nodes are converted to 'tree leaf' form, i.e.
-            map node ``i`` to ``frozenset([i])``, to match the nodes in a
-            ``ContractionTree``.
-        """
-        import networkx as nx
-
-        # any_hyper is just a custom attribute
-        G = nx.Graph(any_hyper=False)
-        for ix, nodes in H.edges.items():
-
-            if as_tree_leaves:
-                nodes = [frozenset([node]) for node in nodes]
-
-            if len(nodes) == 2:
-                # regular edge
-                G.add_edge(*nodes, ind=ix, hyperedge=False)
-            else:
-                # hyperedge
-                G.graph['any_hyper'] = True
-                G.add_node(ix, hyperedge=True)
-                for nd in nodes:
-                    G.add_edge(ix, nd, ind=ix, hyperedge=True)
-
-        for nd in G.nodes:
-            G.nodes[nd].setdefault('hyperedge', False)
-
-        return G
-
-    def compute_weights(
-        self,
-        weight_edges='const',
-        weight_nodes='const',
-    ):
-        winfo = {}
-
-        winfo['node_weights'] = tuple(
-            calc_node_weight(term, self.size_dict, weight_nodes)
-            for term in self.nodes.values()
-        )
-
-        winfo['edge_list'] = tuple(self.edges)
-        winfo['edge_weight_map'] = {
-            e: calc_edge_weight(e, self.size_dict, weight_edges)
-            for e in winfo['edge_list']
-        }
-        winfo['edge_weights'] = tuple(
-            winfo['edge_weight_map'][e] for e in winfo['edge_list']
-        )
-
-        winfo['has_edge_weights'] = weight_edges in ('log', 'linear')
-        winfo['has_node_weights'] = weight_nodes in ('log', 'linear')
-        winfo['fmt'] = {
-            (False, False): "",
-            (False, True): "10",
-            (True, False): "1",
-            (True, True): "11",
-        }[winfo['has_edge_weights'], winfo['has_node_weights']]
-
-        return winfo
-
-    plot = plot_hypergraph
-
-    def __repr__(self):
-        return f"<HyperGraph(|V|={self.num_nodes}, |E|={self.num_edges})>"
-
-
-def get_hypergraph(inputs, output=None, size_dict=None, accel=False):
-    """Single entry-point for creating a, possibly accelerated, HyperGraph.
-    """
-    if accel == 'auto':
-        accel = HyperGraphRust is not None
-
-    if accel:
-        if not isinstance(inputs, dict):
-            inputs = {i: list(term) for i, term in enumerate(inputs)}
-        if not isinstance(output, list):
-            output = [] if output is None else list(output)
-        if not isinstance(size_dict, dict):
-            size_dict = {} if size_dict is None else dict(size_dict)
-        return HyperGraphRust(inputs, output, size_dict)
-
-    return HyperGraph(inputs, output, size_dict)

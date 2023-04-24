@@ -7,7 +7,8 @@ import subprocess
 
 from opt_einsum.paths import PathOptimizer
 
-from ..core import ContractionTree, LineGraph
+from ..core import ContractionTree
+from ..hypergraph import LineGraph
 from ..hyperoptimizers.hyper import register_hyper_function
 
 

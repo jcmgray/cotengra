@@ -22,6 +22,8 @@ from .core import (
     ContractionTree,
     ContractionTreeCompressed,
     ContractionTreeMulti,
+)
+from .hypergraph import (
     HyperGraph,
     get_hypergraph,
 )

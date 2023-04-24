@@ -447,6 +447,13 @@ class BitSetInt(int):
     def __len__(self):
         return f"{self:b}".count("1")
 
+    def iter_sparse(self):
+        x = self
+        while x:
+            i = x.bit_length() - 1
+            yield i
+            x ^= 1 << i
+
     def __iter__(self):
         return (x for x, b in enumerate(bin(self)[:1:-1]) if b == "1")
 
@@ -726,7 +733,51 @@ def rand_equation(
     return inputs, output, shapes, size_dict
 
 
+def rand_tree(
+    n, reg,
+    n_out=0,
+    n_hyper_in=0,
+    n_hyper_out=0,
+    d_min=2,
+    d_max=3,
+    seed=None,
+    optimize="greedy",
+):
+    from .core import ContractionTree
+
+    inputs, output, _, size_dict = rand_equation(
+        n, reg,
+        n_out=n_out,
+        n_hyper_in=n_hyper_in,
+        n_hyper_out=n_hyper_out,
+        d_min=d_min,
+        d_max=d_max,
+        seed=seed,
+    )
+    tree = ContractionTree(inputs, output, size_dict)
+    tree.contract_nodes(tuple(tree.gen_leaves()), optimize=optimize)
+    return tree
+
+
 def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
+    """Create a random contraction equation that corresponds to a lattice.
+
+    Parameters
+    ----------
+    dims : sequence of int
+        The size of each dimension, with the dimensionality being the length
+        of the sequence.
+    cyclic : bool or sequence of bool, optional
+        Whether each dimension is cyclic or not. If a sequence, must be the
+        same length as ``dims``.
+    d_min : int, optional
+        The minimum size of an index.
+    d_max : int, optional
+        The maximum size of an index. If ``None``, defaults to ``d_min``, i.e.
+        all indices are the same size.
+    seed : None or int, optional
+        Seed for ``np.random.default_rng`` for repeatibility.
+    """
     import numpy as np
     import opt_einsum as oe
 
@@ -766,11 +817,10 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
     inputs = tuple(map("".join, terms))
     output = ()
 
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     size_dict = {
-        ix: np.random.randint(d_min, d_max + 1)
+        ix: rng.integers(d_min, d_max + 1)
         for ix in symbol_map.values()
     }
 
