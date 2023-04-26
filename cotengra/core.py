@@ -1,4 +1,3 @@
-import re
 import math
 import random
 import warnings
@@ -37,6 +36,7 @@ from .parallel import (
     can_scatter,
 )
 from .hypergraph import get_hypergraph
+from .scoring import get_score_fn, CompressedStatsTracker
 from .contract import do_contraction
 from .plot import (
     plot_tree_ring,
@@ -105,7 +105,7 @@ class ContractionTree:
 
     Attributes
     ----------
-    children : dict[node, tuple[node]
+    children : dict[node, tuple[node]]
         Mapping of each node to two children.
     info : dict[node, dict]
         Information about the tree nodes. The key is the set of inputs (a
@@ -662,17 +662,27 @@ class ContractionTree:
         for p, l, r in self.traverse(order):
             li = tree_map[l]
             ri = tree_map[r]
-            tracker.update_pre_compress(hg, li, ri)
+
+            tracker.update_pre_step()
+
             if compress_late:
+                tracker.update_pre_compress(hg, li, ri)
                 # compress just before we contract tensors
                 hg.compress(chi=chi, edges=hg.get_node(li))
                 hg.compress(chi=chi, edges=hg.get_node(ri))
+                tracker.update_post_compress(hg, li, ri)
+
             tracker.update_pre_contract(hg, li, ri)
             pi = tree_map[p] = hg.contract(li, ri)
             tracker.update_post_contract(hg, pi)
+
             if not compress_late:
                 # compress as soon as we can after contracting tensors
+                tracker.update_pre_compress(hg, pi)
                 hg.compress(chi=chi, edges=hg.get_node(pi))
+                tracker.update_post_compress(hg, pi)
+
+            tracker.update_post_step()
 
         return tracker
 
@@ -1198,45 +1208,16 @@ class ContractionTree:
         tree.total_flops()
         tree.max_size()
 
+        scorer = get_score_fn(minimize)
+
         if optimize is None:
-            opt = DynamicProgramming(minimize=minimize)
+            opt = DynamicProgramming(
+                minimize=scorer.get_dynamic_programming_minimize()
+            )
         else:
             opt = optimize
 
-        minimize, param = score_matcher.findall(minimize)[0]
-        factor = float(param) if param else DEFAULT_COMBO_FACTOR
-
-        if minimize == "flops":
-
-            def cost(node):
-                return tree.get_flops(node) // 2
-
-        elif minimize == "write":
-
-            def cost(node):
-                return tree.get_size(node)
-
-        elif minimize == "size":
-
-            def cost(node):
-                return tree.get_size(node)
-
-        elif minimize == "combo":
-
-            def cost(node):
-                return tree.get_flops(node) // 2 + factor * tree.get_size(node)
-
-        elif minimize == "limit":
-
-            def cost(node):
-                return max(
-                    tree.get_flops(node) // 2, factor * tree.get_size(node)
-                )
-
-        else:
-            # default to a very small cost cap
-            def cost(_):
-                return 1
+        cost = getattr(scorer, "cost_local_tree_node", lambda _: 1)
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -1282,12 +1263,12 @@ class ContractionTree:
                     continue
 
                 # else remove the branches, keeping track of current cost
-                current_cost = cost(sub_root)
+                current_cost = cost(tree, sub_root)
                 for node in sub_branches:
                     if minimize == "size":
-                        current_cost = max(current_cost, cost(node))
+                        current_cost = max(current_cost, cost(tree, node))
                     else:
-                        current_cost += cost(node)
+                        current_cost += cost(tree, node)
                     tree._remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap
@@ -1375,7 +1356,7 @@ class ContractionTree:
         parallel_maxiter_steps : int, optional
             If parallelizing, how many steps to break each reconfiguration into
             in order to evenly saturate many processes.
-        minimize : {'flops', 'size'}, optional
+        minimize : {'flops', 'size', ..., Objective}, optional
             Whether to minimize the total flops or maximum size of the
             contraction tree.
         progbar : bool, optional
@@ -1522,7 +1503,7 @@ class ContractionTree:
             twice that of computing the original contraction all at once.
         temperature : float, optional
             How much to randomize the repeated search.
-        minimize : {'flops', 'size', ...}, optional
+        minimize : {'flops', 'size', ..., Objective}, optional
             Which metric to score the overhead increase against.
         allow_outer : bool, optional
             Whether to allow slicing of outer indices.
@@ -1588,6 +1569,8 @@ class ContractionTree:
         temperature : float, optional
             The temperature to supply to ``SliceFinder`` for searching for
             indices.
+        minimize : {'flops', 'size', ..., Objective}, optional
+            The metric to minimize when slicing and reconfiguring subtrees.
         max_repeats : int, optional
             The number of slicing attempts to perform per search.
         progbar : bool, optional
@@ -1603,6 +1586,7 @@ class ContractionTree:
         tree = self if inplace else self.copy()
 
         reconf_opts = {} if reconf_opts is None else dict(reconf_opts)
+        minimize = get_score_fn(minimize)
         reconf_opts.setdefault("minimize", minimize)
         forested_reconf = reconf_opts.pop("forested", False)
 
@@ -1619,6 +1603,7 @@ class ContractionTree:
                     target_slices=step_size,
                     minimize=minimize,
                     allow_outer=allow_outer,
+                    max_repeats=max_repeats,
                 )
                 if forested_reconf:
                     tree.subtree_reconfigure_forest_(**reconf_opts)
@@ -1812,6 +1797,7 @@ class ContractionTree:
         self,
         chi,
         minimize="peak",
+        compress_late=True,
         order_only=False,
         max_nodes="auto",
         max_time=None,
@@ -1875,6 +1861,7 @@ class ContractionTree:
         opt = CompressedExhaustive(
             chi=chi,
             minimize=minimize,
+            compress_late=compress_late,
             local_score=local_score,
             max_nodes=max_nodes,
             max_time=max_time,
@@ -2754,332 +2741,11 @@ def _get_tree_info(tree):
     }
 
 
-def score_flops(trial):
-    return (
-        math.log2(trial["flops"])
-        + math.log2(trial["write"]) / 1000
-        + math.log2(trial["size"]) / 1000
-    )
-
-
-def score_write(trial):
-    return (
-        math.log2(trial["flops"]) / 1000
-        + math.log2(trial["write"])
-        + math.log2(trial["size"]) / 1000
-    )
-
-
-def score_size(trial):
-    return (
-        math.log2(trial["flops"]) / 1000
-        + math.log2(trial["write"]) / 1000
-        + math.log2(trial["size"])
-    )
-
-
-def score_combo(trial, factor=DEFAULT_COMBO_FACTOR):
-    return math.log2(trial["flops"] // 2 + factor * trial["write"])
-
-
-def score_limit(trial, factor=DEFAULT_COMBO_FACTOR):
-    tree = trial["tree"]
-    return math.log2(tree.total_cost(factor=factor, combine=max))
-
-
-def score_size_compressed(trial, chi="auto"):
-    tree = trial["tree"]
-    if chi == "auto":
-        chi = max(tree.size_dict.values()) ** 2
-    stats = tree.compressed_contract_stats(chi)
-
-    size = stats.max_size
-    cr = math.log2(size) + math.log2(tree.max_size()) ** 0.5 / 1000
-
-    # overwrite stats with compressed versions
-    trial["size"] = size
-    trial["flops"] = stats.flops
-    trial["write"] = stats.write
-    return cr
-
-
-def score_peak_size_compressed(trial, chi="auto"):
-    tree = trial["tree"]
-    if chi == "auto":
-        chi = max(tree.size_dict.values()) ** 2
-    stats = tree.compressed_contract_stats(chi)
-
-    size = stats.peak_size
-    cr = math.log2(size) + math.log2(tree.max_size()) ** 0.5 / 1000
-
-    # overwrite stats with compressed versions
-    trial["size"] = size
-    trial["flops"] = stats.flops
-    trial["write"] = stats.write
-    return cr
-
-
-def score_write_compressed(trial, chi="auto"):
-    tree = trial["tree"]
-    if chi == "auto":
-        chi = max(tree.size_dict.values()) ** 2
-    stats = tree.compressed_contract_stats(chi)
-
-    size = stats.write
-    cr = math.log2(size) + math.log2(tree.max_size()) ** 0.5 / 1000
-
-    # overwrite stats with compressed versions
-    trial["size"] = stats.max_size
-    trial["flops"] = stats.flops
-    trial["write"] = stats.write
-    return cr
-
-
-def score_flops_compressed(trial, chi="auto"):
-    tree = trial["tree"]
-    if chi == "auto":
-        chi = max(tree.size_dict.values()) ** 2
-    stats = tree.compressed_contract_stats(chi)
-
-    flops = stats.flops
-    cr = math.log2(flops) + math.log2(tree.max_size()) ** 0.5 / 1000
-
-    # overwrite stats with compressed versions
-    trial["size"] = stats.max_size
-    trial["flops"] = flops
-    trial["write"] = stats.write
-    return cr
-
-
-def score_combo_compressed(trial, chi="auto", factor=DEFAULT_COMBO_FACTOR):
-    tree = trial["tree"]
-    if chi == "auto":
-        chi = max(tree.size_dict.values()) ** 2
-    stats = tree.compressed_contract_stats(chi)
-
-    flops = stats.flops
-    write = stats.write
-
-    cr = math.log2(flops + factor * write)
-
-    # overwrite stats with compressed versions
-    trial["size"] = stats.max_size
-    trial["flops"] = flops
-    trial["write"] = write
-    return cr
-
-
-score_matcher = re.compile(
-    # exact scoring functions
-    r"("
-    r"flops|"
-    r"size|"
-    r"write|"
-    r"combo|"
-    r"limit|"
-    # compressed scoring functions
-    r"flops-compressed|"
-    r"size-compressed|"
-    r"max-compressed|"
-    r"peak-compressed|"
-    r"write-compressed|"
-    r"combo-compressed"
-    r")-*(\d*)"
-)
-
-
-def parse_minimize(minimize):
-    match = score_matcher.fullmatch(minimize)
-    if not match:
-        raise ValueError(f"No score function '{minimize}' found.")
-
-    which, param = match.groups()
-    return which, param
-
-
-@functools.lru_cache(maxsize=128)
-def get_score_fn(minimize):
-    which, param = parse_minimize(minimize)
-
-    if which == "flops":
-        return score_flops
-
-    if which == "write":
-        return score_write
-
-    if which == "size":
-        return score_size
-
-    if which == "combo":
-        factor = float(param) if param else DEFAULT_COMBO_FACTOR
-        return functools.partial(score_combo, factor=factor)
-
-    if which == "limit":
-        factor = float(param) if param else DEFAULT_COMBO_FACTOR
-        return functools.partial(score_limit, factor=factor)
-
-    if which in ("max-compressed", "size-compressed"):
-        chi = int(param) if param else "auto"
-        return functools.partial(score_size_compressed, chi=chi)
-
-    if which == "peak-compressed":
-        chi = int(param) if param else "auto"
-        return functools.partial(score_peak_size_compressed, chi=chi)
-
-    if which == "write-compressed":
-        chi = int(param) if param else "auto"
-        return functools.partial(score_write_compressed, chi=chi)
-
-    if which == "flops-compressed":
-        chi = int(param) if param else "auto"
-        return functools.partial(score_flops_compressed, chi=chi)
-
-    if which == "combo-compressed":
-        chi = int(param) if param else "auto"
-        return functools.partial(score_combo_compressed, chi=chi)
-
-    raise ValueError(f"No score function '{minimize}' found.")
-
-
 def _describe_tree(tree):
     return (
         f"log2[SIZE]: {math.log2(tree.max_size()):.2f} "
         f"log10[FLOPs]: {math.log10(tree.total_flops()):.2f}"
     )
-
-
-class CompressedStatsTracker:
-    __slots__ = (
-        "flops",
-        "max_size",
-        "peak_size",
-        "write",
-        "current_size",
-        "last_size_change",
-    )
-
-    def __init__(self, hg):
-        self.flops = 0
-        self.max_size = 0
-        self.current_size = 0
-        self.last_size_change = 0
-
-        # initial tensors contribute to size
-        for i in hg.nodes:
-            sz_i = hg.node_size(i)
-            self.max_size = max(self.max_size, sz_i)
-            self.current_size += sz_i
-
-        self.write = self.peak_size = self.current_size
-
-    def copy(self):
-        new = object.__new__(self.__class__)
-        new.flops = self.flops
-        new.max_size = self.max_size
-        new.peak_size = self.peak_size
-        new.write = self.write
-        new.current_size = self.current_size
-        new.last_size_change = self.last_size_change
-        return new
-
-    def update_peak_size_pre_compress(self, hg, i, j):
-        """Subtract tensors size and also their neighbors size (since both will
-        change with compression).
-        """
-        self.last_size_change = -hg.neighborhood_size([i, j])
-
-    def update_flops_pre_contract(self, hg, i, j):
-        """Compute the flops just of the contraction."""
-        self.flops += hg.contract_pair_cost(i, j)
-
-    def update_peak_size_post_contract(self, hg, ij):
-        """Add new tensors size and also its neighbors (since these will have
-        changed with compression).
-        """
-        self.last_size_change += hg.neighborhood_size([ij])
-        self.current_size += self.last_size_change
-        self.peak_size = max(self.peak_size, self.current_size)
-
-    def update_size_post_contract(self, hg, ij):
-        """Compute the size just of the new tensor."""
-        sz_ij = hg.node_size(ij)
-        self.max_size = max(self.max_size, sz_ij)
-        self.write += sz_ij
-
-    def update_pre_compress(self, hg, i, j):
-        """Default method computes everything."""
-        self.update_peak_size_pre_compress(hg, i, j)
-
-    def update_pre_contract(self, hg, i, j):
-        """Default method computes everything."""
-        self.update_flops_pre_contract(hg, i, j)
-
-    def update_post_contract(self, hg, ij):
-        """Default method computes everything."""
-        self.update_peak_size_post_contract(hg, ij)
-        self.update_size_post_contract(hg, ij)
-
-    @property
-    def score(self):
-        raise NotImplementedError
-
-    def __repr__(self):
-        return (
-            f"<{self.__class__.__name__}("
-            f"max_size={math.log2(self.max_size):.2f}, "
-            f"peak_size={math.log2(self.peak_size):.2f}, "
-            f"write={math.log2(self.write):.2f}, "
-            f"flops={math.log10(self.flops):.2f}"
-            f")>"
-        )
-
-
-class CompressedStatsTrackerSize(CompressedStatsTracker):
-    @property
-    def score(self):
-        return math.log2(self.max_size) + math.log2(self.flops + 1) / 1000
-
-
-class CompressedStatsTrackerPeak(CompressedStatsTracker):
-    @property
-    def score(self):
-        return math.log2(self.peak_size) + math.log2(self.flops + 1) / 1000
-
-
-class CompressedStatsTrackerWrite(CompressedStatsTracker):
-    @property
-    def score(self):
-        return math.log2(self.write) + math.log2(self.flops + 1) / 1000
-
-
-class CompressedStatsTrackerFlops(CompressedStatsTracker):
-    @property
-    def score(self):
-        return math.log10(self.flops + 1) + math.log10(self.peak_size) / 1000
-
-
-class CompressedStatsTrackerCombo(CompressedStatsTracker):
-    factor = DEFAULT_COMBO_FACTOR
-
-    @property
-    def score(self):
-        return math.log2(self.flops + self.factor * self.write + 1)
-
-
-_trackers = {
-    "size": CompressedStatsTrackerSize,
-    "peak": CompressedStatsTrackerPeak,
-    "write": CompressedStatsTrackerWrite,
-    "flops": CompressedStatsTrackerFlops,
-    "combo": CompressedStatsTrackerCombo,
-}
-
-
-def get_compressed_stats_tracker(minimize):
-    """Get the correct ``CompressedStatsTracker`` class for the given
-    ``minimize`` target.
-    """
-    return _trackers[minimize]
 
 
 class ContractionTreeCompressed(ContractionTree):

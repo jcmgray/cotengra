@@ -9,12 +9,11 @@ from math import log2, log10
 
 from opt_einsum.paths import PathOptimizer
 
+from ..scoring import get_score_fn
 from ..core import (
     ContractionTree,
     ContractionTreeCompressed,
     ContractionTreeMulti,
-    get_score_fn,
-    score_matcher,
 )
 from ..utils import DiskDict
 from ..parallel import parse_parallel_arg, get_n_workers, submit, should_nest
@@ -368,7 +367,7 @@ class HyperOptimizer(PathOptimizer):
         else:
             self._methods = list(methods)
 
-        # which score to feed to the hyper optimizer
+        # which score to feed to the hyper optimizer (setter below handles)
         self.minimize = minimize
         self.compressed = compressed
         self.multicontraction = multicontraction
@@ -456,10 +455,7 @@ class HyperOptimizer(PathOptimizer):
 
         if self.reconf_opts is not None:
             if self.compressed:
-                match = score_matcher.fullmatch(self.minimize)
-                minimize, param = match.groups()
-                self.reconf_opts.setdefault("chi", int(param))
-                self.reconf_opts.setdefault("minimize", minimize)
+                self.reconf_opts.setdefault("minimize", self.minimize)
                 trial_fn = CompressedReconfTrial(trial_fn, **self.reconf_opts)
             else:
                 self.reconf_opts.setdefault("minimize", self.minimize)

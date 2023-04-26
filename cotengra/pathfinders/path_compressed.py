@@ -10,7 +10,6 @@ from opt_einsum.paths import ssa_to_linear
 from ..core import (
     get_hypergraph,
     ContractionTreeCompressed,
-    get_compressed_stats_tracker,
 )
 
 
@@ -52,6 +51,7 @@ class CompressedExhaustive:
         self,
         chi,
         minimize="peak",
+        compress_late=True,
         max_nodes=float("inf"),
         max_time=None,
         local_score=None,
@@ -61,6 +61,7 @@ class CompressedExhaustive:
     ):
         self.chi = chi
         self.minimize = minimize
+        self.compress_late = compress_late
         if best_score is None:
             self.best_score = float("inf")
         else:
@@ -106,7 +107,7 @@ class CompressedExhaustive:
             # maps node integer to subgraph
             tree_map = {i: frozenset([i]) for i in hg.nodes}
             # keeps track of scores on the fly
-            tracker0 = get_compressed_stats_tracker(self.minimize)(hg)
+            tracker0 = self.minimize.get_compressed_stats_tracker(hg)
             ssa_path0 = ()
 
             # the actual queue is a heap so need to reference candidates by int
@@ -135,7 +136,7 @@ class CompressedExhaustive:
             The hypergraph to contract.
         ssa_path : list
             The contraction path so far.
-        tracker : CompressedStatsTrackerFlops
+        tracker : CompressedStatsTracker
             Scoring object that tracks costs of current compressed contraction.
         high_priority : bool, optional
             If True, the contraction will be assessed before any other normal
@@ -159,12 +160,25 @@ class CompressedExhaustive:
         tracker = tracker.copy()
 
         # simulate a contraction step while tracking costs
-        tracker.update_pre_compress(hg, i, j)
-        # compress late - just before contraction
-        hg.compress(self.chi, hg.get_node(i) + hg.get_node(j))
+        tracker.update_pre_step()
+
+        if self.compress_late:
+            tracker.update_pre_compress(hg, i, j)
+            # compress late - just before contraction
+            hg.compress(self.chi, hg.get_node(i) + hg.get_node(j))
+            tracker.update_post_compress(hg, i, j)
+
         tracker.update_pre_contract(hg, i, j)
         ij = hg.contract(i, j)
         tracker.update_post_contract(hg, ij)
+
+        if not self.compress_late:
+            tracker.update_pre_compress(hg, ij)
+            # compress early - immediately after contraction
+            hg.compress(self.chi, hg.get_node(ij))
+            tracker.update_post_compress(hg, ij)
+
+        tracker.update_post_step()
 
         if tracker.score >= self.best_score:
             # already worse than best score seen -> drop

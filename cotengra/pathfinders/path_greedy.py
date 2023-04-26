@@ -292,6 +292,8 @@ class GreedyCompressed:
 
             # perform contraction
             i12 = self.hg.contract(i1, i2)
+
+            # do early compression
             self.hg.compress(chi=self.chi, edges=self.hg.get_node(i12))
 
             # build the path
