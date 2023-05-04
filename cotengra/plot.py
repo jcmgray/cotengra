@@ -135,6 +135,9 @@ def plot_scatter(
         y = getattr(yminimize, 'name', y)
         factor = getattr(yminimize, 'factor', 64)
 
+    if factor is None:
+        factor = 64
+
     N = len(self.scores)
     data = collections.defaultdict(lambda: collections.defaultdict(list))
 

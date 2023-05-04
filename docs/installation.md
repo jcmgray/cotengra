@@ -65,7 +65,7 @@ The parallel functionality can requires any of the following:
 The following packages enable visualization:
 
 * [`networkx`](https://networkx.org/) for most visualizations
-* [`hypernetx`](https://github.com/pnnl/HyperNetX) for the 'rubberband' visualization
+* [`quimb`](https://github.com/jcmgray/quimb) for the 'rubberband' visualization
 
 
 ## Contraction
