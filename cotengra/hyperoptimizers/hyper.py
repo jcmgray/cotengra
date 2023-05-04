@@ -104,12 +104,7 @@ def list_hyper_functions():
 def find_tree(*args, **kwargs):
     method = kwargs.pop("method")
     tree = _PATH_FNS[method](*args, **kwargs)
-    return {
-        "tree": tree,
-        "flops": tree.total_flops(),
-        "write": tree.total_write(),
-        "size": tree.max_size(),
-    }
+    return {"tree": tree}
 
 
 class TrialConvertTree:
@@ -237,17 +232,7 @@ class CompressedReconfTrial:
     def __call__(self, *args, **kwargs):
         trial = self.trial_fn(*args, **kwargs)
         tree = trial["tree"]
-
-        trial.setdefault("original_flops", tree.total_flops())
-        trial.setdefault("original_write", tree.total_write())
-        trial.setdefault("original_size", tree.max_size())
-
         tree.compressed_reconfigure_(chi=self.chi, **self.opts)
-
-        trial["flops"] = tree.total_flops()
-        trial["write"] = tree.total_write()
-        trial["size"] = tree.max_size()
-
         return trial
 
 

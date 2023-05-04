@@ -37,6 +37,14 @@ class Objective:
 
 # ------------------------ exact contraction scoring ------------------------ #
 
+def ensure_basic_quantities_are_computed(trial):
+    if "flops" not in trial:
+        trial["flops"] = trial["tree"].total_flops()
+    if "write" not in trial:
+        trial["write"] = trial["tree"].total_size()
+    if "size" not in trial:
+        trial["size"] = trial["tree"].max_size()
+
 
 class ExactObjective(Objective):
     """Mixin class for all exact objectives."""
@@ -90,6 +98,7 @@ class FlopsObjective(ExactObjective):
         return "flops"
 
     def __call__(self, trial):
+        ensure_basic_quantities_are_computed(trial)
         return (
             math.log2(trial["flops"])
             + self.secondary_weight * math.log2(trial["write"])
@@ -129,6 +138,7 @@ class WriteObjective(ExactObjective):
         return "write"
 
     def __call__(self, trial):
+        ensure_basic_quantities_are_computed(trial)
         return (
             +self.secondary_weight * math.log2(trial["flops"])
             + math.log2(trial["write"])
@@ -166,6 +176,7 @@ class SizeObjective(ExactObjective):
         return "size"
 
     def __call__(self, trial):
+        ensure_basic_quantities_are_computed(trial)
         return (
             +self.secondary_weight * math.log2(trial["flops"])
             + self.secondary_weight * math.log2(trial["write"])
@@ -213,6 +224,7 @@ class ComboObjective(ExactObjective):
         return f"combo-{self.factor}"
 
     def __call__(self, trial):
+        ensure_basic_quantities_are_computed(trial)
         return (
             # use ops
             math.log2(trial["flops"] // 2 + self.factor * trial["write"])
@@ -268,69 +280,100 @@ class LimitObjective(ExactObjective):
 
 class CompressedStatsTracker:
     __slots__ = (
+        "chi",
         "flops",
         "max_size",
         "peak_size",
         "write",
-        "current_size",
-        "last_size_change",
+        "total_size",
+        "total_size_post_contract",
+        "contracted_size",
+        "size_change",
+        "flops_change",
     )
 
-    def __init__(self, hg):
+    def __init__(self, hg, chi):
+
+        if chi == "auto":
+            self.chi = max(hg.size_dict.values())**2
+        else:
+            self.chi = chi
+
+        # local params -> don't depend on history
+        self.total_size = 0
+        self.total_size_post_contract = 0
+        self.contracted_size = 0
+        self.size_change = 0
+        self.flops_change = 0
+
+        # global params -> depend on history
         self.flops = 0
         self.max_size = 0
-        self.current_size = 0
-        self.last_size_change = 0
 
         # initial tensors contribute to size
         for i in hg.nodes:
             sz_i = hg.node_size(i)
             self.max_size = max(self.max_size, sz_i)
-            self.current_size += sz_i
+            self.total_size += sz_i
 
-        self.write = self.peak_size = self.current_size
+        self.write = self.peak_size = self.total_size
 
     def copy(self):
         new = object.__new__(self.__class__)
-        new.flops = self.flops
-        new.max_size = self.max_size
-        new.peak_size = self.peak_size
-        new.write = self.write
-        new.current_size = self.current_size
-        new.last_size_change = self.last_size_change
+        for attr in self.__slots__:
+            setattr(new, attr, getattr(self, attr))
         return new
 
     def update_pre_step(self):
-        self.last_size_change = -self.current_size
+        self.size_change = 0
+        self.flops_change = 0
 
     def update_pre_compress(self, hg, *nodes):
         # subtract tensors size and also their neighbors size (since both will
         # change with compression)
-        self.current_size -= hg.neighborhood_size(nodes)
+        self.size_change -= hg.neighborhood_size(nodes)
+        self.flops_change += hg.neighborhood_compress_cost(self.chi, nodes)
 
     def update_post_compress(self, hg, *nodes):
         # add new tensors size and also its neighbors (since these will have
         # changed with compression)
-        self.current_size += hg.neighborhood_size(nodes)
+        self.size_change += hg.neighborhood_size(nodes)
 
     def update_pre_contract(self, hg, i, j):
-        # add flops of just the contraction
-        self.flops += hg.contract_pair_cost(i, j)
         # remove pair of tensors from size
-        self.current_size -= hg.node_size(i) + hg.node_size(j)
+        self.size_change -= hg.node_size(i) + hg.node_size(j)
+        # add flops of just the contraction
+        self.flops_change += hg.contract_pair_cost(i, j)
 
     def update_post_contract(self, hg, ij):
-        sz_ij = hg.node_size(ij)
-        self.current_size += sz_ij
-        # total size of intemediate contracted tensors
-        self.write += sz_ij
-        # largest tensor encountered
-        self.max_size = max(self.max_size, sz_ij)
+        self.contracted_size = hg.node_size(ij)
+        self.size_change += self.contracted_size
+
+        # compute here before potential compressions:
         # the peak total size of concurrent intermediates
-        self.peak_size = max(self.peak_size, self.current_size)
+        self.total_size_post_contract = self.total_size + self.size_change
 
     def update_post_step(self):
-        self.last_size_change += self.current_size
+        self.max_size = max(self.max_size, self.contracted_size)
+        self.peak_size = max(self.peak_size, self.total_size_post_contract)
+        self.total_size += self.size_change
+        self.flops += self.flops_change
+        self.write += self.contracted_size
+
+    def update_score(self, other):
+        self.flops = other.flops + self.flops_change
+        self.write = other.write + self.contracted_size
+        self.max_size = max(other.max_size, self.contracted_size)
+        self.peak_size = max(other.peak_size, self.total_size_post_contract)
+
+        if self.max_size > self.peak_size:
+            raise RuntimeError(
+                f"max_size={self.max_size} > peak_size={self.peak_size}"
+            )
+
+    @property
+    def combo_score(self):
+        return math.log2(self.flops + DEFAULT_COMBO_FACTOR * self.write)
 
     @property
     def score(self):
@@ -339,18 +382,21 @@ class CompressedStatsTracker:
     def __repr__(self):
         return (
             f"<{self.__class__.__name__}("
-            f"max_size={math.log2(self.max_size):.2f}, "
-            f"peak_size={math.log2(self.peak_size):.2f}, "
-            f"write={math.log2(self.write):.2f}, "
-            f"flops={math.log10(self.flops):.2f}"
+            f"max_size={math.log2(max(1, self.max_size)):.2f}, "
+            f"peak_size={math.log2(max(1, self.peak_size)):.2f}, "
+            f"write={math.log2(max(1, self.write)):.2f}, "
+            f"flops={math.log10(max(1, self.flops)):.2f}"
             f")>"
         )
 
 
 class CompressedStatsTrackerSize(CompressedStatsTracker):
-    def __init__(self, hg, secondary_weight=1e-3):
+
+    __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
+
+    def __init__(self, hg, chi, secondary_weight=1e-3):
         self.secondary_weight = secondary_weight
-        super().__init__(hg)
+        super().__init__(hg, chi)
 
     @property
     def score(self):
@@ -361,9 +407,12 @@ class CompressedStatsTrackerSize(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerPeak(CompressedStatsTracker):
-    def __init__(self, hg, secondary_weight=1e-3):
+
+    __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
+
+    def __init__(self, hg, chi, secondary_weight=1e-3):
         self.secondary_weight = secondary_weight
-        super().__init__(hg)
+        super().__init__(hg, chi)
 
     @property
     def score(self):
@@ -374,9 +423,12 @@ class CompressedStatsTrackerPeak(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerWrite(CompressedStatsTracker):
-    def __init__(self, hg, secondary_weight=1e-3):
+
+    __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
+
+    def __init__(self, hg, chi, secondary_weight=1e-3):
         self.secondary_weight = secondary_weight
-        super().__init__(hg)
+        super().__init__(hg, chi)
 
     @property
     def score(self):
@@ -387,9 +439,12 @@ class CompressedStatsTrackerWrite(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerFlops(CompressedStatsTracker):
-    def __init__(self, hg, secondary_weight=1e-3):
+
+    __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
+
+    def __init__(self, hg, chi, secondary_weight=1e-3):
         self.secondary_weight = secondary_weight
-        super().__init__(hg)
+        super().__init__(hg, chi)
 
     @property
     def score(self):
@@ -400,9 +455,12 @@ class CompressedStatsTrackerFlops(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerCombo(CompressedStatsTracker):
-    def __init__(self, hg, factor=DEFAULT_COMBO_FACTOR):
+
+    __slots__ = CompressedStatsTracker.__slots__ + ("factor",)
+
+    def __init__(self, hg, chi, factor=DEFAULT_COMBO_FACTOR):
         self.factor = factor
-        super().__init__(hg)
+        super().__init__(hg, chi)
 
     @property
     def score(self):
@@ -459,8 +517,8 @@ class CompressedSizeObjective(CompressedObjective):
         Whether to compress the neighboring tensors just after (early) or just
         before (late) contracting tensors. Default is False, i.e. early.
     secondary_weight : float, optional
-        Weighting factor for secondary objectives (sqrt of maximum
-        *uncompressed* tensor size). Default is 1e-3.
+        Weighting factor for secondary objectives (flops and write).
+        Default is 1e-3.
     """
 
     __slots__ = ("chi", "compress_late", "secondary_weight")
@@ -476,16 +534,15 @@ class CompressedSizeObjective(CompressedObjective):
 
     def get_compressed_stats_tracker(self, hg):
         return CompressedStatsTrackerSize(
-            hg, secondary_weight=self.secondary_weight
+            hg, self.chi, secondary_weight=self.secondary_weight
         )
 
     def __call__(self, trial):
-        max_size_uncompressed = trial["tree"].max_size()
-
         stats = self.compute_compressed_stats(trial)
         cr = (
             math.log2(stats.max_size)
-            + math.log2(max_size_uncompressed) ** 0.5 * self.secondary_weight
+            + self.secondary_weight * math.log2(stats.flops)
+            + self.secondary_weight * math.log2(stats.write)
         )
 
         # overwrite stats with compressed versions
@@ -510,8 +567,8 @@ class CompressedPeakObjective(CompressedObjective):
         Whether to compress the neighboring tensors just after (early) or just
         before (late) contracting tensors. Default is False, i.e. early.
     secondary_weight : float, optional
-        Weighting factor for secondary objectives (sqrt of maximum
-        *uncompressed* tensor size). Default is 1e-3.
+        Weighting factor for secondary objectives (flops and write).
+        Default is 1e-3.
     """
 
     __slots__ = ("chi", "compress_late", "secondary_weight")
@@ -527,16 +584,15 @@ class CompressedPeakObjective(CompressedObjective):
 
     def get_compressed_stats_tracker(self, hg):
         return CompressedStatsTrackerPeak(
-            hg, secondary_weight=self.secondary_weight
+            hg, chi=self.chi, secondary_weight=self.secondary_weight
         )
 
     def __call__(self, trial):
-        max_size_uncompressed = trial["tree"].max_size()
-
         stats = self.compute_compressed_stats(trial)
         cr = (
             math.log2(stats.peak_size)
-            + math.log2(max_size_uncompressed) ** 0.5 * self.secondary_weight
+            + self.secondary_weight * math.log2(stats.flops)
+            + self.secondary_weight * math.log2(stats.write)
         )
 
         # overwrite stats with compressed versions
@@ -561,8 +617,8 @@ class CompressedWriteObjective(CompressedObjective):
         Whether to compress the neighboring tensors just after (early) or just
         before (late) contracting tensors. Default is False, i.e. early.
     secondary_weight : float, optional
-        Weighting factor for secondary objectives (sqrt of maximum
-        *uncompressed* tensor size). Default is 1e-3.
+        Weighting factor for secondary objectives (flops and peak size).
+        Default is 1e-3.
     """
 
     __slots__ = ("chi", "compress_late", "secondary_weight")
@@ -578,16 +634,15 @@ class CompressedWriteObjective(CompressedObjective):
 
     def get_compressed_stats_tracker(self, hg):
         return CompressedStatsTrackerWrite(
-            hg, secondary_weight=self.secondary_weight
+            hg, chi=self.chi, secondary_weight=self.secondary_weight
         )
 
     def __call__(self, trial):
-        max_size_uncompressed = trial["tree"].max_size()
-
         stats = self.compute_compressed_stats(trial)
         cr = (
             math.log2(stats.write)
-            + math.log2(max_size_uncompressed) ** 0.5 * self.secondary_weight
+            + self.secondary_weight * math.log2(stats.flops)
+            + self.secondary_weight * math.log2(stats.peak_size)
         )
 
         # overwrite stats with compressed versions
@@ -612,8 +667,8 @@ class CompressedFlopsObjective(CompressedObjective):
         Whether to compress the neighboring tensors just after (early) or just
         before (late) contracting tensors. Default is False, i.e. early.
     secondary_weight : float, optional
-        Weighting factor for secondary objectives (sqrt of maximum
-        *uncompressed* tensor size). Default is 1e-3.
+        Weighting factor for secondary objectives (write and peak size).
+        Default is 1e-3.
     """
 
     __slots__ = ("chi", "compress_late", "secondary_weight")
@@ -629,16 +684,15 @@ class CompressedFlopsObjective(CompressedObjective):
 
     def get_compressed_stats_tracker(self, hg):
         return CompressedStatsTrackerFlops(
-            hg, secondary_weight=self.secondary_weight
+            hg, chi=self.chi, secondary_weight=self.secondary_weight
         )
 
     def __call__(self, trial):
-        max_size_uncompressed = trial["tree"].max_size()
-
         stats = self.compute_compressed_stats(trial)
         cr = (
             math.log2(stats.flops)
-            + math.log2(max_size_uncompressed) ** 0.5 * self.secondary_weight
+            + self.secondary_weight * math.log2(stats.write)
+            + self.secondary_weight * math.log2(stats.peak_size)
         )
 
         # overwrite stats with compressed versions
@@ -661,7 +715,9 @@ class CompressedComboObjective(CompressedObjective):
         super().__init__(chi=chi, compress_late=compress_late)
 
     def get_compressed_stats_tracker(self, hg):
-        return CompressedStatsTrackerCombo(hg, factor=self.factor)
+        return CompressedStatsTrackerCombo(
+            hg, chi=self.chi, factor=self.factor
+        )
 
     def __call__(self, trial):
         stats = self.compute_compressed_stats(trial)

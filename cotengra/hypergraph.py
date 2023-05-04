@@ -151,6 +151,46 @@ class HyperGraph:
         """
         return self.edges_size(set(self.get_node(i) + self.get_node(j)))
 
+    def neighborhood_compress_cost(self, chi, nodes):
+        region_edges = {
+            e
+            for n in nodes
+            for e in self.get_node(n)
+        }
+
+        # group edges that are incident to the same set of nodes
+        incidences = {}
+        for e in region_edges:
+            if e not in self.output:
+                e_nodes = frozenset(self.get_edge(e))
+                incidences.setdefault(e_nodes, []).append(e)
+
+        # ignore intra-region bonds (assuming we are about to contract these)
+        incidences.pop(frozenset(nodes), None)
+
+        # compute the cost dominated by QR reductions onto bond
+        C = 0
+        for e_nodes, edges in incidences.items():
+            da = self.edges_size(edges)
+
+            if da > chi:
+                # large multibond shared by e_nodes -> should compress
+                for node in e_nodes:
+                    # get outer edges and size
+                    outer_edges = [
+                        e for e in self.get_node(node) if e not in edges
+                    ]
+                    db = self.edges_size(outer_edges)
+
+                    # estimate QR cost
+                    da, db = sorted((da, db))
+                    C += da**2 * db
+
+        if C < 0:
+            raise ValueError("Negative cost!?", C)
+
+        return C
+
     def total_node_size(self):
         """Get the total size of all nodes."""
         return sum(map(self.node_size, self.nodes))

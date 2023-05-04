@@ -657,7 +657,7 @@ class ContractionTree:
         # conversion between tree nodes <-> hypergraph nodes during contraction
         tree_map = dict(zip(self.gen_leaves(), range(hg.get_num_nodes())))
 
-        tracker = CompressedStatsTracker(hg)
+        tracker = CompressedStatsTracker(hg, chi)
 
         for p, l, r in self.traverse(order):
             li = tree_map[l]
@@ -1891,6 +1891,65 @@ class ContractionTree:
 
     compressed_reconfigure_ = functools.partialmethod(
         compressed_reconfigure, inplace=True
+    )
+
+    def windowed_reconfigure(
+        self,
+        minimize,
+        order_only=False,
+        window_size=20,
+        max_iterations=100,
+        max_window_tries=1000,
+        score_temperature=0.0,
+        queue_temperature=1.0,
+        scorer=None,
+        queue_scorer=None,
+        seed=None,
+        inplace=False,
+        progbar=False,
+        **kwargs,
+    ):
+        from .pathfinders.path_compressed import WindowedOptimizer
+
+        wo = WindowedOptimizer(
+            self.inputs,
+            self.output,
+            self.size_dict,
+            minimize=minimize,
+            ssa_path=self.get_ssa_path(),
+            seed=seed,
+        )
+
+        wo.refine(
+            window_size=window_size,
+            max_iterations=max_iterations,
+            order_only=order_only,
+            max_window_tries=max_window_tries,
+            score_temperature=score_temperature,
+            queue_temperature=queue_temperature,
+            scorer=scorer,
+            queue_scorer=queue_scorer,
+            progbar=progbar,
+            **kwargs,
+        )
+        ssa_path = wo.get_ssa_path()
+
+        rtree = self.__class__.from_path(
+            self.inputs,
+            self.output,
+            self.size_dict,
+            ssa_path=ssa_path,
+        )
+
+        if inplace:
+            self.set_state_from(rtree)
+            rtree = self
+        rtree.set_surface_order_from_path(ssa_path)
+
+        return rtree
+
+    windowed_reconfigure_ = functools.partialmethod(
+        windowed_reconfigure, inplace=True
     )
 
     def flat_tree(self, order=None):

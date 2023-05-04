@@ -1,6 +1,8 @@
 import math
 import functools
 import importlib
+import itertools
+import collections
 
 import numpy as np
 
@@ -120,21 +122,18 @@ def plot_scatter(
     y="flops",
     figsize=(5, 5),
 ):
-    import math
-    import itertools
-    import collections
     import matplotlib.pyplot as plt
     import cotengra as ctg
 
     factor = None
     if x not in ("trial", "score"):
-        x, factor = ctg.core.parse_minimize(x)
+        xminimize = ctg.scoring.get_score_fn(x)
+        x = getattr(xminimize, 'name', x)
+        factor = getattr(xminimize, 'factor', 64)
     if y not in ("trial", "score"):
-        y, factor = ctg.core.parse_minimize(y)
-    if factor:
-        factor = int(factor)
-    else:
-        factor = 64
+        yminimize = ctg.scoring.get_score_fn(y)
+        y = getattr(yminimize, 'name', y)
+        factor = getattr(yminimize, 'factor', 64)
 
     N = len(self.scores)
     data = collections.defaultdict(lambda: collections.defaultdict(list))
@@ -250,12 +249,18 @@ def tree_to_networkx(tree):
 
     G = nx.Graph()
 
-    for p, l, r in tree.traverse():
+    for c, (p, l, r) in enumerate(tree.traverse()):
         G.add_edge(
-            p, l, size=math.log10(tree.get_size(l) + 1) + 1, weight=len(l)
+            p, l,
+            size=math.log10(tree.get_size(l) + 1) + 1,
+            weight=len(l),
+            contraction=c,
         )
         G.add_edge(
-            p, r, size=math.log10(tree.get_size(r) + 1) + 1, weight=len(r)
+            p, r,
+            size=math.log10(tree.get_size(r) + 1) + 1,
+            weight=len(r),
+            contraction=c,
         )
 
     for node in tree.info:
@@ -528,9 +533,11 @@ def plot_tree(
     edge_scale=1.0,
     node_scale=1.0,
     highlight=(),
+    edge_color="size",
     edge_colormap="GnBu",
-    node_colormap="YlOrRd",
     edge_max_width=None,
+    node_colormap="YlOrRd",
+    node_color="flops",
     node_max_size=None,
     figsize=(5, 5),
     raw_edge_color=None,
@@ -570,12 +577,23 @@ def plot_tree(
     ]
 
     # tree edge colors
-    ew_range = min(edge_weights), max(edge_weights)
-    enorm = mpl.colors.Normalize(*ew_range, clip=True)
-    if not isinstance(edge_colormap, mpl.colors.Colormap):
-        edge_colormap = getattr(mpl.cm, edge_colormap)
-    emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_colormap)
-    edge_colors = [emapper.to_rgba(x) for x in edge_weights]
+    if edge_color == "order":
+        ew_range = 0, tree.N - 1
+        enorm = mpl.colors.Normalize(*ew_range, clip=True)
+        if not isinstance(edge_colormap, mpl.colors.Colormap):
+            edge_colormap = getattr(mpl.cm, edge_colormap)
+        emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_colormap)
+        edge_colors = [
+            emapper.to_rgba(d['contraction'])
+            for _, _, d in G_tree.edges(data=True)
+        ]
+    else:
+        ew_range = min(edge_weights), max(edge_weights)
+        enorm = mpl.colors.Normalize(*ew_range, clip=True)
+        if not isinstance(edge_colormap, mpl.colors.Colormap):
+            edge_colormap = getattr(mpl.cm, edge_colormap)
+        emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_colormap)
+        edge_colors = [emapper.to_rgba(x) for x in edge_weights]
 
     # tree node colors
     nw_range = min(node_weights), max(node_weights)
@@ -1024,6 +1042,7 @@ def plot_slicings_alt(
 
 
 @show_and_close
+@use_neutral_style
 def plot_hypergraph(
     H,
     *,
@@ -1046,7 +1065,7 @@ def plot_hypergraph(
     draw_edge_labels=None,
     edge_labels_font_size=8,
     edge_labels_font_family="monospace",
-    return_pos=False,
+    info=None,
     ax=None,
     figsize=(5, 5),
 ):
@@ -1077,7 +1096,7 @@ def plot_hypergraph(
     if pos is None:
         pos = get_nice_pos(
             G,
-            dim=2,
+            dim=dim,
             layout=layout,
             initial_layout=initial_layout,
             iterations=iterations,
@@ -1156,30 +1175,22 @@ def plot_hypergraph(
             },
         )
 
-    if return_pos:
-        return fig, ax, pos
+    if info is not None and "pos" in info:
+        info["pos"] = pos
 
     return fig, ax
 
 
-def tree_to_hypernetx(tree, order=None):
-    from hypernetx import Hypergraph
-
-    nodes = {}
-    for i, (p, l, r) in enumerate(tree.traverse(order=order)):
-        nodes[str(i)] = list(p)
-    return Hypergraph(nodes)
-
-
+@show_and_close
 def plot_tree_rubberband(
     tree,
     order=None,
-    colormap="rainbow",
+    colormap="Spectral",
     with_edge_labels=None,
     with_node_labels=None,
     highlight=(),
     centrality=False,
-    layout=None,
+    layout="auto",
     node_size=None,
     node_color=(0.5, 0.5, 0.5, 1.0),
     edge_alpha=1 / 3,
@@ -1193,15 +1204,15 @@ def plot_tree_rubberband(
     figsize=(5, 5),
 ):
     """Plot a ``ContractionTree`` using 'rubberbands' to represent intermediate
-    contractions / subgraphs - requires ``hypernetx``. This can be intuitive
+    contractions / subgraphs - requires ``quimb``. This can be intuitive
     for small and planar contractions.
     """
-    from hypernetx.drawing import draw
+    from quimb.experimental.schematic import Drawing
     import matplotlib as mpl
 
-    hg = tree_to_hypernetx(tree, order=order)
     H = tree.get_hypergraph()
-    fig, ax, pos = plot_hypergraph(
+    info = {"pos": None}
+    fig, ax = plot_hypergraph(
         H,
         highlight=highlight,
         centrality=centrality,
@@ -1216,23 +1227,34 @@ def plot_tree_rubberband(
         edge_labels_font_family=edge_labels_font_family,
         iterations=iterations,
         figsize=figsize,
-        return_pos=True,
+        info=info,
+        show_and_close=False,
     )
+    pos = info["pos"]
 
     if isinstance(colormap, str):
         cmap = mpl.cm.get_cmap(colormap)
     else:
         cmap = colormap
 
-    draw(
-        hg,
-        pos=pos,
-        ax=ax,
-        with_node_labels=with_node_labels,
-        with_edge_labels=with_edge_labels,
-        edges_kwargs={
-            "edgecolors": cmap(np.linspace(0.0, 1.0, hg.number_of_edges())),
-        },
-    )
+    d = Drawing(ax=ax)
+
+    counts = collections.defaultdict(int)
+    for i, (p, _, _) in enumerate(tree.traverse()):
+        pts = [pos[node] for node in p]
+        for node in p:
+            counts[node] += 1
+        radius = [0.05 + 0.01 * counts[node] for node in p]
+        prog = i / (tree.N - 2)
+        color = cmap(prog)
+        d.patch_around(
+            pts,
+            resolution=20,
+            radius=radius,
+            edgecolor=color,
+            facecolor='none',
+            linestyle='-',
+            zorder=-prog,
+        )
 
     return fig, ax

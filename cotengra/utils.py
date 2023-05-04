@@ -820,10 +820,37 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
     rng = np.random.default_rng(seed)
 
     size_dict = {
-        ix: rng.integers(d_min, d_max + 1)
+        # avoid overflow issues by converting back to python int
+        ix: int(rng.integers(d_min, d_max + 1))
         for ix in symbol_map.values()
     }
 
     shapes = tuple(tuple(size_dict[ix] for ix in term) for term in terms)
 
     return inputs, output, shapes, size_dict
+
+
+class GumbelBatchedGenerator:
+    """Get a gumbel random number generator, that pre-batches the numbers using
+    numpy for both speed and repeatibility.
+
+    Parameters
+    ----------
+    rng : np.random.Generator
+        The random number generator to use.
+    batch : int, optional
+        The number of random numbers to generate at once.
+    """
+
+    def __init__(self, rng, batch=1000):
+        self.rng = rng
+        self.batch = batch
+        self.i = 0
+        self.gs = iter(())
+
+    def __call__(self):
+        try:
+            return next(self.gs)
+        except StopIteration:
+            self.gs = iter(self.rng.gumbel(size=self.batch))
+            return next(self.gs)

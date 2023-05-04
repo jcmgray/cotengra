@@ -1,10 +1,10 @@
 import math
 import heapq
-import random
 import functools
 import itertools
 import collections
 
+import numpy as np
 from opt_einsum.paths import (
     ssa_greedy_optimize,
     register_path_fn,
@@ -18,7 +18,7 @@ from ..core import (
     ContractionTree,
     get_hypergraph,
 )
-from ..utils import oset
+from ..utils import oset, GumbelBatchedGenerator
 from ..hyperoptimizers.hyper import register_hyper_function
 
 # ------------------------------ GREEDY HYPER ------------------------------- #
@@ -149,17 +149,6 @@ def _binary_combine(func, x, y):
         return abs(x - y)
 
 
-def gumbel():
-    return -math.log(-math.log(random.uniform(0.0, 1.0)))
-
-
-# try:
-#    import numba as nb
-#    gumbel = nb.njit(gumbel)
-# except ImportError:
-#    pass
-
-
 class GreedyCompressed:
     """A greedy contraction path finder that takes into account the effect of
     compression, and can also make use of subgraph size and centrality.
@@ -213,6 +202,7 @@ class GreedyCompressed:
         score_centrality="diff",
         temperature=0.0,
         score_perm="",
+        seed=None,
     ):
         self.chi = chi
         self.coeff_size_compressed = coeff_size_compressed
@@ -226,6 +216,8 @@ class GreedyCompressed:
         self.score_centrality = score_centrality
         self.temperature = temperature
         self.score_perm = score_perm
+        self.rng = np.random.default_rng(seed)
+        self.gumbel = GumbelBatchedGenerator(self.rng)
 
     def _score(self, i1, i2):
         # the two inputs tensors (with prior compressions)
@@ -257,7 +249,7 @@ class GreedyCompressed:
                 self.score_centrality, self.sgcents[i1], self.sgcents[i2]
             ),
             # randomize using boltzmann sampling trick
-            "T": max(0.0, self.temperature) * gumbel(),
+            "T": max(0.0, self.temperature) * self.gumbel(),
         }
         if self.score_perm == "":
             return sum(scores.values())
@@ -411,6 +403,7 @@ class GreedySpan:
         score_perm="CNDLTI",
         distance_p=1,
         distance_steal="abs",
+        seed=None,
     ):
         self.start = start
         self.coeff_connectivity = coeff_connectivity
@@ -422,13 +415,15 @@ class GreedySpan:
         self.score_perm = score_perm
         self.distance_p = distance_p
         self.distance_steal = distance_steal
+        self.rng = np.random.default_rng(seed)
+        self.gumbel = GumbelBatchedGenerator(self.rng)
 
     def get_ssa_path(self, inputs, output, size_dict):
         self.hg = get_hypergraph(inputs, output, size_dict, accel="auto")
         self.cents = self.hg.simple_centrality()
 
         def region_choose_sorter(node):
-            return self.cents[node] + 1e-6 * random.random()
+            return self.cents[node] + 1e-6 * self.rng.random()
 
         if output:
             region = oset(self.hg.output_nodes())
@@ -497,7 +492,7 @@ class GreedySpan:
                 "N": self.coeff_ndim * len(inputs[i]),
                 "D": self.coeff_distance * distances[i],
                 "L": self.coeff_next_centrality * self.cents[i],
-                "T": max(0.0, self.temperature) * gumbel(),
+                "T": max(0.0, self.temperature) * self.gumbel(),
                 "I": -i,
             }
             if self.score_perm == "":

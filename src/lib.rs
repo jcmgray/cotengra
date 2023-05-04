@@ -321,6 +321,58 @@ impl HyperGraph {
         self.edges_size(&inds)
     }
 
+    fn neighborhood_compress_cost(&mut self, chi: u128, nodes: Vec<Node>) -> u128 {
+        let mut edges: Vec<String> = Vec::new();
+        let mut ignored_nodes: BTreeSet<Node> = BTreeSet::new();
+        for i in nodes {
+            {
+                edges.extend(self.get_node(i));
+                ignored_nodes.insert(i);
+            }
+        }
+        edges = edges.into_iter().unique().collect();
+
+        self.work_incidences.clear();
+        for e in edges {
+            if !self.output.contains(&e) {
+                let e_nodes: BTreeSet<Node> = self.edges[&e].iter().cloned().collect();
+                self.work_incidences
+                    .entry(e_nodes)
+                    .or_insert(Vec::new())
+                    .push(e);
+            }
+        }
+
+        // let ignored_nodes: BTreeSet<Node> = nodes.clone().iter().cloned().collect();
+        self.work_incidences.remove(&ignored_nodes);
+
+        let mut cost = 0;
+        let mut da;
+        let mut db;
+        let mut outer_edges: Vec<String>;
+
+        for (e_nodes, edges) in self.work_incidences.drain().collect_vec() {
+            da = self.edges_size(&edges);
+            if da > chi {
+                for node in e_nodes {
+                    // get edges that
+                    outer_edges = self
+                        .get_node(node)
+                        .into_iter()
+                        .filter(|e| !edges.contains(e))
+                        .collect();
+                    db = self.edges_size(&outer_edges);
+                    if da <= db {
+                        cost += da.pow(2) * db;
+                    } else {
+                        cost += da * db.pow(2);
+                    }
+                }
+            }
+        }
+        cost
+    }
+
     fn get_node(&self, i: Node) -> Vec<String> {
         self.nodes[&i].clone()
     }
@@ -490,13 +542,11 @@ impl HyperGraph {
             for (&i, ivis) in &previous_visitors {
                 // send i's visitors to its neighbors
                 // for &j in &neighbor_map[&i] {
-                for &j in
-                    neighbor_map
+                for &j in neighbor_map
                     .entry(i)
-                    .or_insert_with_key(
-                        |&i|
-                        self.neighbors(i)
-                    ).iter() {
+                    .or_insert_with_key(|&i| self.neighbors(i))
+                    .iter()
+                {
                     visitors
                         .entry(j)
                         // also populating newly encountered neighbors
@@ -720,7 +770,8 @@ impl HyperGraph {
 
 // ----------------------------------------------------------------------------
 
-#[pyfunction(smoothness = "2.0", p = "0.75", mu = "0.5")]
+#[pyfunction]
+#[pyo3(signature = (nodes, smoothness = 2.0, p = 0.75, mu = 0.5))]
 fn nodes_to_centrality(
     nodes: Dict<Node, Vec<String>>,
     smoothness: f64,
@@ -732,7 +783,8 @@ fn nodes_to_centrality(
     Ok(hg.simple_centrality(smoothness, p, mu, Some(neighbor_map)))
 }
 
-#[pyfunction(smoothness = "2.0", p = "0.75", mu = "0.5")]
+#[pyfunction]
+#[pyo3(signature = (edges, smoothness = 2.0, p = 0.75, mu = 0.5))]
 fn edges_to_centrality(
     edges: Dict<String, Vec<Node>>,
     smoothness: f64,
