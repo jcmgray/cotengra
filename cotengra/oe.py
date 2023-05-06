@@ -17,6 +17,7 @@ from opt_einsum.paths import (
     PathOptimizer,
     register_path_fn,
     ssa_to_linear,
+    ssa_greedy_optimize,
 )
 from opt_einsum.path_random import thermal_chooser
 
@@ -39,4 +40,5 @@ __all__ = (
     "register_path_fn",
     "ssa_to_linear",
     "thermal_chooser",
+    "ssa_greedy_optimize",
 )
