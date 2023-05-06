@@ -7,53 +7,52 @@ import functools
 import collections
 from string import ascii_letters
 
-from opt_einsum.helpers import compute_size_by_dict, flop_count
-from opt_einsum.paths import get_path_fn, DynamicProgramming, linear_to_ssa
+from .oe import (
+    compute_size_by_dict,
+    DEFAULT_COMBO_FACTOR,
+    DynamicProgramming,
+    flop_count,
+    get_path_fn,
+    linear_to_ssa,
+)
 from autoray import do
 
 from .utils import (
-    deprecated,
-    MaxCounter,
     BitSet,
-    node_from_seq,
-    node_from_single,
-    node_supremum,
-    node_get_single_el,
-    is_valid_node,
-    oset,
+    deprecated,
+    dynary,
     groupby,
     interleave,
-    unique,
+    is_valid_node,
+    MaxCounter,
+    node_from_seq,
+    node_from_single,
+    node_get_single_el,
+    node_supremum,
+    oset,
     prod,
-    dynary,
+    unique,
 )
 from .parallel import (
-    parse_parallel_arg,
+    can_scatter,
     maybe_leave_pool,
     maybe_rejoin_pool,
-    submit,
+    parse_parallel_arg,
     scatter,
-    can_scatter,
+    submit,
 )
 from .hypergraph import get_hypergraph
 from .scoring import get_score_fn, CompressedStatsTracker
 from .contract import do_contraction
 from .plot import (
-    plot_tree_ring,
-    plot_tree_tent,
-    plot_tree_span,
-    plot_tree_rubberband,
-    plot_contractions,
     plot_contractions_alt,
+    plot_contractions,
     plot_hypergraph,
+    plot_tree_ring,
+    plot_tree_rubberband,
+    plot_tree_span,
+    plot_tree_tent,
 )
-
-# the default weighting for comparing flops vs mops
-try:
-    from opt_einsum.paths import DEFAULT_COMBO_FACTOR
-except ImportError:
-    DEFAULT_COMBO_FACTOR = 64
-
 
 def cached_node_property(name):
     """Decorator for caching information about nodes."""
@@ -2900,7 +2899,7 @@ class PartitionTreeBuilder:
         **partition_opts,
     ):
         tree = ContractionTree(
-            inputs, output, size_dict, track_flops=True, track_childless=True
+            inputs, output, size_dict, track_childless=True
         )
         rand_size_dict = jitter_dict(size_dict, random_strength)
 
@@ -2994,7 +2993,7 @@ class PartitionTreeBuilder:
         **partition_opts,
     ):
         tree = ContractionTree(
-            inputs, output, size_dict, track_flops=True, track_childless=True
+            inputs, output, size_dict, track_childless=True
         )
         rand_size_dict = jitter_dict(size_dict, random_strength)
         leaves = tuple(tree.gen_leaves())

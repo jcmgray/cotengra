@@ -5,8 +5,8 @@ import collections
 from time import sleep
 
 import tqdm
-from opt_einsum.paths import ssa_to_linear
 
+from ..oe import ssa_to_linear
 from ..scoring import get_score_fn
 from ..core import (
     get_hypergraph,

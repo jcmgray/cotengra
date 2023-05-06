@@ -686,14 +686,16 @@ def rand_equation(
     size_dict : dict[str, int]
     """
     import numpy as np
-    import opt_einsum as oe
+    from .oe import get_symbol
 
     if seed is not None:
         np.random.seed(seed)
 
     num_inds = max((n * reg) // 2, n_hyper_out + n_hyper_in + n_out)
-    size_dict = {oe.get_symbol(i): np.random.randint(d_min, d_max + 1)
-                 for i in range(num_inds)}
+    size_dict = {
+        get_symbol(i): np.random.randint(d_min, d_max + 1)
+        for i in range(num_inds)
+    }
 
     inds = iter(size_dict)
     inputs = [[] for _ in range(n)]
@@ -779,7 +781,7 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
         Seed for ``np.random.default_rng`` for repeatibility.
     """
     import numpy as np
-    import opt_einsum as oe
+    from .oe import get_symbol
 
     if d_max is None:
         d_max = d_min
@@ -791,7 +793,7 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
         cyclics = (cyclic,) * ndim
 
     symbol_map = collections.defaultdict(
-        map(oe.get_symbol, itertools.count()).__next__
+        map(get_symbol, itertools.count()).__next__
     )
 
     terms = []
@@ -854,3 +856,9 @@ class GumbelBatchedGenerator:
         except StopIteration:
             self.gs = iter(self.rng.gumbel(size=self.batch))
             return next(self.gs)
+
+
+class BadTrial(Exception):
+    """Use this to indicate that a trial contraction tree was bad.
+    """
+    pass

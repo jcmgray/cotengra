@@ -6,8 +6,7 @@ import warnings
 import tempfile
 import subprocess
 
-from opt_einsum.paths import PathOptimizer
-
+from ..oe import PathOptimizer
 from .treedecomp import td_str_to_tree_decomposition, td_to_eo
 from ..core import ContractionTree
 from ..hypergraph import LineGraph

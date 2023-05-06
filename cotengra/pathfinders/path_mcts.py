@@ -1,8 +1,7 @@
 import math
 import random
 
-from opt_einsum.paths import ssa_to_linear
-
+from ..oe import ssa_to_linear
 from ..core import ContractionTreeCompressed, get_hypergraph
 
 

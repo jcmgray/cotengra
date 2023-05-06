@@ -5,10 +5,7 @@ import math
 import functools
 
 # the default weighting for comparing flops vs mops
-try:
-    from opt_einsum.paths import DEFAULT_COMBO_FACTOR
-except ImportError:
-    DEFAULT_COMBO_FACTOR = 64
+from .oe import DEFAULT_COMBO_FACTOR
 
 
 class Objective:
@@ -62,7 +59,7 @@ class ExactObjective(Objective):
         raise NotImplementedError
 
     def get_dynamic_programming_minimize(self):
-        """Get the argument for `opt_einsum.DynamicProgramming`, used in
+        """Get the argument for `DynamicProgramming`, used in
         subtree reconfiguration.
         """
         raise NotImplementedError

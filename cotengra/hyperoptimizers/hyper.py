@@ -7,15 +7,16 @@ import importlib
 import collections
 from math import log2, log10
 
-from opt_einsum.paths import PathOptimizer
+import numpy as np
 
+from ..oe import PathOptimizer
 from ..scoring import get_score_fn
 from ..core import (
     ContractionTree,
     ContractionTreeCompressed,
     ContractionTreeMulti,
 )
-from ..utils import DiskDict
+from ..utils import DiskDict, BadTrial
 from ..parallel import parse_parallel_arg, get_n_workers, submit, should_nest
 from ..plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 
@@ -237,19 +238,40 @@ class CompressedReconfTrial:
 
 
 class ComputeScore:
+    """The final score wrapper, that performs some simple arithmetic on the
+    trial score to make it more suitable for hyper-optimization.
+    """
+
     def __init__(
         self,
         fn,
         score_fn,
-        score_compression,
+        score_compression=0.75,
+        score_smudge=1e-6,
+        seed=0,
     ):
         self.fn = fn
         self.score_fn = score_fn
         self.score_compression = score_compression
+        self.score_smudge = score_smudge
+        self.rng = np.random.default_rng(seed)
 
     def __call__(self, *args, **kwargs):
-        trial = self.fn(*args, **kwargs)
-        trial["score"] = self.score_fn(trial) ** self.score_compression
+        ti = time.time()
+        try:
+            trial = self.fn(*args, **kwargs)
+            trial["score"] = self.score_fn(trial) ** self.score_compression
+            # random smudge is for baytune/scikit-learn nan/inf bug
+            trial["score"] += self.rng.normal(scale=self.score_smudge)
+        except BadTrial:
+            trial = {
+                "score": float("inf"),
+                "flops": float("inf"),
+                "write": float("inf"),
+                "size": float("inf"),
+            }
+        tf = time.time()
+        trial["time"] = tf - ti
         return trial
 
 
@@ -268,7 +290,7 @@ class HyperOptimizer(PathOptimizer):
     ----------
     methods : None or sequence[str] or str, optional
         Which method(s) to use from ``list_hyper_functions()``.
-    minimize : {'flops', 'write', 'size', 'combo' or callable}, optional
+    minimize : str, Objective or callable, optional
         How to score each trial, used to train the optimizer and rank the
         results. If a custom callable, it should take a ``trial`` dict as its
         argument and return a single float.
@@ -341,6 +363,7 @@ class HyperOptimizer(PathOptimizer):
         self.method_choices = []
         self.param_choices = []
         self.scores = []
+        self.times = []
         self.costs_flops = []
         self.costs_write = []
         self.costs_size = []
@@ -389,9 +412,9 @@ class HyperOptimizer(PathOptimizer):
     def minimize(self, minimize):
         self._minimize = minimize
         if callable(minimize):
-            self._score_fn = minimize
+            self._minimize_score_fn = minimize
         else:
-            self._score_fn = get_score_fn(minimize)
+            self._minimize_score_fn = get_score_fn(minimize)
 
     @property
     def parallel(self):
@@ -417,7 +440,6 @@ class HyperOptimizer(PathOptimizer):
 
     def setup(self, inputs, output, size_dict):
         trial_fn = find_tree
-        nested_parallel = should_nest(self._pool)
 
         if self.compressed:
             assert not self.multicontraction
@@ -426,6 +448,8 @@ class HyperOptimizer(PathOptimizer):
         if self.multicontraction:
             assert not self.compressed
             trial_fn = TrialTreeMulti(trial_fn, self.varmults, self.numconfigs)
+
+        nested_parallel = should_nest(self._pool)
 
         if self.slicing_opts is not None:
             self.slicing_opts.setdefault("minimize", self.minimize)
@@ -450,17 +474,11 @@ class HyperOptimizer(PathOptimizer):
         # make sure score computation is performed worker side
         trial_fn = ComputeScore(
             trial_fn,
-            score_fn=self._score_fn,
+            score_fn=self._minimize_score_fn,
             score_compression=self.score_compression,
         )
 
         return trial_fn, (inputs, output, size_dict)
-
-    def get_score(self, trial):
-        import random
-
-        # random smudge is for baytune/scikit-learn nan/inf bug
-        return trial["score"] * random.gauss(1.0, 1e-6)
 
     def _maybe_cancel_futures(self):
         if self._pool is not None:
@@ -469,7 +487,7 @@ class HyperOptimizer(PathOptimizer):
                 f.cancel()
 
     def _maybe_report_result(self, setting, trial):
-        score = self.get_score(trial)
+        score = trial["score"]
 
         new_best = score < self.best_score
         if new_best:
@@ -485,6 +503,12 @@ class HyperOptimizer(PathOptimizer):
 
         self.method_choices.append(setting["method"])
         self.param_choices.append(setting["params"])
+        # keep track of all costs and sizes
+        self.costs_flops.append(trial["flops"])
+        self.costs_write.append(trial["write"])
+        self.costs_size.append(trial["size"])
+        self.scores.append(trial["score"])
+        self.times.append(trial["time"])
 
     def _gen_results(self, repeats, trial_fn, trial_args):
         constants = get_hyper_constants()
@@ -594,12 +618,6 @@ class HyperOptimizer(PathOptimizer):
 
         # assess the trials
         for trial in trials:
-            # keep track of all costs and sizes
-            self.costs_flops.append(trial["flops"])
-            self.costs_write.append(trial["write"])
-            self.costs_size.append(trial["size"])
-            self.scores.append(trial["score"])
-
             # check if we have found a new best
             if trial["score"] < self.best["score"]:
                 self.trials_since_best = 0
@@ -698,11 +716,14 @@ class HyperOptimizer(PathOptimizer):
             )
 
     def to_df(self):
+        """Create a single ``pandas.DataFrame`` with all trials and scores.
+        """
         import pandas
 
         return pandas.DataFrame(
             data={
                 "run": list(range(len(self.costs_size))),
+                "time": self.times,
                 "method": self.method_choices,
                 "size": list(map(log2, self.costs_size)),
                 "flops": list(map(log10, self.costs_flops)),
@@ -713,6 +734,31 @@ class HyperOptimizer(PathOptimizer):
                 "score": self.scores,
             }
         ).sort_values(by="method")
+
+    def to_dfs_parametrized(self):
+        """Create a ``pandas.DataFrame`` for each method, with all parameters
+        and scores for each trial.
+        """
+        import pandas as pd
+
+        rows = {}
+        for i in range(len(self.scores)):
+            row = {
+                'run': i,
+                'time': self.times[i],
+                **self.param_choices[i],
+                'flops': log10(self.costs_flops[i]),
+                'write': log2(self.costs_write[i]),
+                'size': log2(self.costs_size[i]),
+                'score': self.scores[i],
+            }
+            method = self.method_choices[i]
+            rows.setdefault(method, []).append(row)
+
+        return {
+            method: pd.DataFrame(rows[method]).sort_values(by='score')
+            for method in rows
+        }
 
     plot_trials = plot_trials
     plot_trials_alt = plot_trials_alt

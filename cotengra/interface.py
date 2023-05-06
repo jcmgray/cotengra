@@ -1,8 +1,8 @@
 import itertools
 
-import opt_einsum as oe
 import autoray as ar
 
+from .oe import get_path_fn, find_output_str
 from .core import ContractionTree
 
 
@@ -49,12 +49,12 @@ def contract_expression(
     else:
         constants = ()
 
-    # construct the internal opt_einsum data
+    # construct the individual terms and find explicit output
     try:
         lhs, output = eq.split('->')
     except ValueError:
         lhs = eq
-        output = oe.parser.find_output_str(lhs)
+        output = find_output_str(lhs)
 
     inputs = lhs.split(',')
 
@@ -110,7 +110,7 @@ def contract_expression(
         else:
             # opt_einsum style - get the actual path generating function
             if isinstance(optimize, str):
-                optimize = oe.paths.get_path_fn(optimize)
+                optimize = get_path_fn(optimize)
             path = optimize(inputs, output, size_dict)
             tree = None
 

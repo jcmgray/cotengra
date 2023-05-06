@@ -6,7 +6,7 @@ import math
 import itertools
 import collections
 
-from opt_einsum.helpers import compute_size_by_dict
+from .oe import compute_size_by_dict
 
 from .plot import (
     plot_hypergraph,

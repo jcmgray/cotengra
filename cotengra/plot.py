@@ -449,7 +449,11 @@ def get_nice_pos(
 
     if layout in ("dot", "neato", "fdp", "sfdp"):
         pos = layout_pygraphviz(G, prog=layout, dim=dim)
-        return massage_pos(pos, flatten=flatten)
+
+        if dim == 2:
+            pos = massage_pos(pos, flatten=flatten)
+
+        return pos
 
     import networkx as nx
 

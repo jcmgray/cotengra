@@ -2,8 +2,7 @@ import random
 import collections
 from math import log
 
-from opt_einsum.contract import PathInfo
-from opt_einsum.helpers import compute_size_by_dict, flop_count
+from .oe import compute_size_by_dict, flop_count, PathInfo
 
 from .utils import MaxCounter, oset
 from .scoring import get_score_fn

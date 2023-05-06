@@ -5,12 +5,12 @@ import itertools
 import collections
 
 import numpy as np
-from opt_einsum.paths import (
+from ..oe import (
     ssa_greedy_optimize,
     register_path_fn,
     ssa_to_linear,
+    thermal_chooser,
 )
-from opt_einsum.path_random import thermal_chooser
 
 from ..core import (
     ContractionTreeCompressed,
@@ -18,7 +18,7 @@ from ..core import (
     ContractionTree,
     get_hypergraph,
 )
-from ..utils import oset, GumbelBatchedGenerator
+from ..utils import oset, GumbelBatchedGenerator, BadTrial
 from ..hyperoptimizers.hyper import register_hyper_function
 
 # ------------------------------ GREEDY HYPER ------------------------------- #
@@ -202,6 +202,7 @@ class GreedyCompressed:
         score_centrality="diff",
         temperature=0.0,
         score_perm="",
+        early_terminate_size=None,
         seed=None,
     ):
         self.chi = chi
@@ -216,6 +217,7 @@ class GreedyCompressed:
         self.score_centrality = score_centrality
         self.temperature = temperature
         self.score_perm = score_perm
+        self.early_terminate_size = early_terminate_size
         self.rng = np.random.default_rng(seed)
         self.gumbel = GumbelBatchedGenerator(self.rng)
 
@@ -284,6 +286,12 @@ class GreedyCompressed:
 
             # perform contraction
             i12 = self.hg.contract(i1, i2)
+
+            if self.early_terminate_size is not None:
+                if self.hg.node_size(i12) > self.early_terminate_size:
+                    # super bad contractions can be very slow, so simply
+                    # terminate early and flag them
+                    raise BadTrial
 
             # do early compression
             self.hg.compress(chi=self.chi, edges=self.hg.get_node(i12))
@@ -357,6 +365,9 @@ register_hyper_function(
         "temperature": {"type": "FLOAT", "min": -0.1, "max": 1.0},
         "chi": {"type": "INT", "min": 2, "max": 128},
     },
+    constants={
+        "early_terminate_size": 2**100,
+    }
 )
 
 
