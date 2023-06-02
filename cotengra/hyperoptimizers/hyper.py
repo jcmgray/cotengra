@@ -385,6 +385,7 @@ class HyperOptimizer(PathOptimizer):
 
         inf = float("inf")
         self.best = {"score": inf, "size": inf, "flops": inf}
+        self.trials_since_best = 0
 
         self.slicing_opts = (
             None if slicing_opts is None else dict(slicing_opts)

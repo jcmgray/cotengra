@@ -1,0 +1,2 @@
+# ensure cotengra appears as a python project on github
+*.ipynb linguist-language=Python

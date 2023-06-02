@@ -2,8 +2,8 @@ import random
 import collections
 from math import log
 
-from .oe import compute_size_by_dict, flop_count, PathInfo
-
+from .oe import compute_size_by_dict, flop_count
+from .core import ContractionTree
 from .utils import MaxCounter, oset
 from .scoring import get_score_fn
 from .plot import plot_slicings, plot_slicings_alt
@@ -251,12 +251,13 @@ class SliceFinder:
         self.info = tree_or_info
 
         # the unsliced cost
-        if isinstance(tree_or_info, PathInfo):
-            self.cost0 = ContractionCosts.from_info(tree_or_info)
-            self.forbidden = set(tree_or_info.output_subscript)
-        else:
+        if isinstance(tree_or_info, ContractionTree):
             self.cost0 = ContractionCosts.from_contraction_tree(tree_or_info)
             self.forbidden = set(tree_or_info.output)
+        else:
+            # assume ``opt_einsum.PathInfo``
+            self.cost0 = ContractionCosts.from_info(tree_or_info)
+            self.forbidden = set(tree_or_info.output_subscript)
 
         if allow_outer == 'only':
             # invert so only outer indices are allowed
