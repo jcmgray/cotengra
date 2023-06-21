@@ -54,6 +54,7 @@ from .plot import (
     plot_tree_tent,
 )
 
+
 def cached_node_property(name):
     """Decorator for caching information about nodes."""
 
@@ -332,6 +333,62 @@ class ContractionTree:
         lhs, output = eq.split("->")
         inputs = lhs.split(",")
         return cls(inputs, output, size_dict, **kwargs)
+
+    def get_eq(self):
+        """Get the einsum equation corresponding to this tree. Note that this
+        is the total (or original) equation, so includes indices which have
+        been sliced.
+
+        Returns
+        -------
+        eq : str
+        """
+        return ",".join(self.inputs) + "->" + self.output
+
+    def get_shapes(self):
+        """Get the shapes of the input tensors corresponding to this tree.
+
+        Returns
+        -------
+        shapes : tuple[tuple[int]]
+        """
+        return tuple(
+            tuple(self.size_dict[ix] for ix in term) for term in self.inputs
+        )
+
+    def get_eq_sliced(self):
+        """Get the einsum equation corresponding to a single sliced of this
+        tree, i.e. with sliced indices removed.
+
+        Returns
+        -------
+        eq : str
+        """
+        return (
+            ",".join(
+                (
+                    "".join(ix for ix in term if ix not in self.sliced_inds)
+                    for term in self.inputs
+                )
+            )
+            + "->"
+            + "".join(ix for ix in self.output if ix not in self.sliced_inds)
+        )
+
+    def get_shapes_sliced(self):
+        """Get the shapes of the input tensors corresponding to a single sliced
+        of this tree, i.e. with sliced indices removed.
+
+        Returns
+        -------
+        shapes : tuple[tuple[int]]
+        """
+        return tuple(
+            tuple(
+                self.size_dict[ix] for ix in term if ix not in self.sliced_inds
+            )
+            for term in self.inputs
+        )
 
     @classmethod
     def from_edge_path(
@@ -2898,9 +2955,7 @@ class PartitionTreeBuilder:
         check=False,
         **partition_opts,
     ):
-        tree = ContractionTree(
-            inputs, output, size_dict, track_childless=True
-        )
+        tree = ContractionTree(inputs, output, size_dict, track_childless=True)
         rand_size_dict = jitter_dict(size_dict, random_strength)
 
         dynamic_imbalance = ("imbalance" in partition_opts) and (
@@ -2992,9 +3047,7 @@ class PartitionTreeBuilder:
         sub_optimize="greedy",
         **partition_opts,
     ):
-        tree = ContractionTree(
-            inputs, output, size_dict, track_childless=True
-        )
+        tree = ContractionTree(inputs, output, size_dict, track_childless=True)
         rand_size_dict = jitter_dict(size_dict, random_strength)
         leaves = tuple(tree.gen_leaves())
         for node in leaves:

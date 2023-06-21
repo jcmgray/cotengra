@@ -9,7 +9,10 @@ with open(path.join(here, "README.md"), encoding="utf-8") as f:
 
 setup(
     name="cotengra",
-    description="opt_einsum compatible contractors for large tensor networks",
+    description=(
+        "Hyper optimized contraction trees "
+        "for large tensor networks and einsums."
+    ),
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/jcmgray/cotengra",
