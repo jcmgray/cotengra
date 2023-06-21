@@ -230,7 +230,8 @@ class CompressedExhaustive:
             pbar.set_description(
                 f"[{c}] "
                 f"cands:{len(self.cands)} "
-                f"best:{self.best_score:.2f}"
+                f"best:{self.best_score:.2f}",
+                refresh=False
             )
 
     def run(self, inputs, output, size_dict):
@@ -476,7 +477,7 @@ class CompressedTreeRefiner:
 
             self._process_result(tree, key, time, old, new)
             if self.progbar:
-                its.set_description(f"worst: {self.scores[0]}")
+                its.set_description(f"worst: {self.scores[0]}", refresh=False)
 
         if self.plot:
             import matplotlib.pyplot as plt
@@ -905,7 +906,7 @@ class WindowedOptimizer:
             )
 
             if progbar:
-                its.set_description(f"{self.tracker}")
+                its.set_description(f"{self.tracker}", refresh=False)
 
     def get_ssa_path(self):
         bitpath = [

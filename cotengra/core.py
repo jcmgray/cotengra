@@ -1233,7 +1233,7 @@ class ContractionTree:
             import tqdm
 
             pbar = tqdm.tqdm()
-            pbar.set_description(_describe_tree(tree))
+            pbar.set_description(_describe_tree(tree), refresh=False)
 
         r = 0
         try:
@@ -1281,7 +1281,7 @@ class ContractionTree:
 
                 if progbar:
                     pbar.update()
-                    pbar.set_description(_describe_tree(tree))
+                    pbar.set_description(_describe_tree(tree), refresh=False)
 
                 # if we have reconfigured simply re-add all candidates
                 candidates, weights = tree.calc_subtree_candidates(
@@ -1391,7 +1391,7 @@ class ContractionTree:
             import tqdm
 
             pbar = tqdm.tqdm(total=num_restarts)
-            pbar.set_description(_describe_tree(tree))
+            pbar.set_description(_describe_tree(tree), refresh=False)
 
         try:
             for _ in range(num_restarts):
@@ -1450,7 +1450,7 @@ class ContractionTree:
                         d = _describe_tree(forest[0])
                     else:
                         d = submit(pool, _describe_tree, forest[0]).result()
-                    pbar.set_description(d)
+                    pbar.set_description(d, refresh=False)
 
         finally:
             if progbar:
@@ -1593,7 +1593,7 @@ class ContractionTree:
             import tqdm
 
             pbar = tqdm.tqdm()
-            pbar.set_description(_describe_tree(tree))
+            pbar.set_description(_describe_tree(tree), refresh=False)
 
         try:
             while tree.max_size() > target_size:
@@ -1611,7 +1611,7 @@ class ContractionTree:
 
                 if progbar:
                     pbar.update()
-                    pbar.set_description(_describe_tree(tree))
+                    pbar.set_description(_describe_tree(tree), refresh=False)
         finally:
             if progbar:
                 pbar.close()
@@ -1696,7 +1696,7 @@ class ContractionTree:
             import tqdm
 
             pbar = tqdm.tqdm()
-            pbar.set_description(_describe_tree(tree))
+            pbar.set_description(_describe_tree(tree), refresh=False)
 
         next_size = tree.max_size()
 
@@ -1771,7 +1771,7 @@ class ContractionTree:
                         d = _describe_tree(forest[0])
                     else:
                         d = submit(pool, _describe_tree, forest[0]).result()
-                    pbar.set_description(d)
+                    pbar.set_description(d, refresh=False)
 
                 if res[0]["size"] <= target_size:
                     break

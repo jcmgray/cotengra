@@ -614,7 +614,9 @@ class HyperOptimizer(PathOptimizer):
             import tqdm
 
             pbar = tqdm.tqdm(trials, total=self.max_repeats)
-            pbar.set_description(progress_description(self.best))
+            pbar.set_description(
+                progress_description(self.best), refresh=False
+            )
             trials = pbar
 
         # assess the trials
@@ -627,7 +629,9 @@ class HyperOptimizer(PathOptimizer):
                 self.best["params"]["method"] = self.method_choices[-1]
 
                 if self.progbar:
-                    pbar.set_description(progress_description(self.best))
+                    pbar.set_description(
+                        progress_description(self.best), refresh=False
+                    )
 
             else:
                 self.trials_since_best += 1

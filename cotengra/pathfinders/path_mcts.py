@@ -261,7 +261,8 @@ class MCTS:
         self.pbar.set_description(
             f"lq:{len(self.leaves) if self.leaves is not None else None} "
             f"best:{math.log2(self.best_score):.2f} "
-            f"tree:{len(self.parents)} "
+            f"tree:{len(self.parents)} ",
+            refresh=False,
         )
         # back track upwards updating backward_score
         while node is not self.root:
