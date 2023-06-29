@@ -249,7 +249,11 @@ class HyperGraph:
         inds = tuple(inds)
         self.nodes[node] = inds
         for e in inds:
-            self.edges[e] += (node,)
+            try:
+                self.edges[e] += (node,)
+            except KeyError:
+                # if we just contracted a node with output index, can be empty
+                self.edges[e] = (node,)
         return node
 
     def remove_node(self, i):
