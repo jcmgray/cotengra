@@ -68,7 +68,7 @@ def contract_expression(
 
         elif len(term) == len(output):
             # transpose contraction
-            perm = tuple(map(output.find, inputs[0]))
+            perm = tuple(map(inputs[0].find, output))
 
             def fn(*arrays, backend=None):
                 return ar.do('transpose', arrays[0], perm, like=backend)
