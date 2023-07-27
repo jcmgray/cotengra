@@ -639,10 +639,21 @@ class DiskDict:
                 raise
             fname = self._path.joinpath(k)
             if not fname.exists():
-                raise
-            with open(fname, 'rb') as f:
-                self._mem_cache[k] = v = pickle.load(f)
-                return v
+                raise KeyError
+
+            for _ in range(3):
+                try:
+                    with open(fname, 'rb') as f:
+                        self._mem_cache[k] = v = pickle.load(f)
+                        return v
+                except EOFError:
+                    # file was not written completely yet
+                    # e.g. by another process
+                    import time
+
+                    time.sleep(0.01)
+
+            raise KeyError
 
 
 def rand_equation(
