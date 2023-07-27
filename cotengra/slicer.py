@@ -52,16 +52,15 @@ class ContractionCosts:
         self._where = collections.defaultdict(set)
 
         for i, c in enumerate(self.contractions):
+            self._flops += c["flops"]
+            self._sizes.add(c["size"])
 
-            self._flops += c['flops']
-            self._sizes.add(c['size'])
-
-            for ix in c['involved'].union(c['legs']):
+            for ix in c["involved"].union(c["legs"]):
                 d = self.size_dict[ix]
-                self._flop_reductions[ix] += int((1 - 1 / d) * c['flops'])
+                self._flop_reductions[ix] += int((1 - 1 / d) * c["flops"])
                 self._where[ix].add(i)
-                if ix in c['legs']:
-                    self._write_reductions[ix] += int((1 - 1 / d) * c['size'])
+                if ix in c["legs"]:
+                    self._write_reductions[ix] += int((1 - 1 / d) * c["size"])
 
         self.nslices = nslices
         if original_flops is None:
@@ -69,8 +68,7 @@ class ContractionCosts:
         self.original_flops = original_flops
 
     def _set_state_from(self, other):
-        """Copy all internal structure from another ``ContractionCosts``.
-        """
+        """Copy all internal structure from another ``ContractionCosts``."""
         self.size_dict = other.size_dict.copy()
         self.contractions = tuple(c.copy() for c in other.contractions)
         self.nslices = other.nslices
@@ -82,8 +80,7 @@ class ContractionCosts:
         self._where = other._where.copy()
 
     def copy(self):
-        """Get a copy of this ``ContractionCosts``.
-        """
+        """Get a copy of this ``ContractionCosts``."""
         new = object.__new__(ContractionCosts)
         new._set_state_from(self)
         return new
@@ -106,32 +103,35 @@ class ContractionCosts:
 
     @classmethod
     def from_info(cls, info, **kwargs):
-        """Generate a set of contraction costs from a ``PathInfo`` object.
-        """
+        """Generate a set of contraction costs from a ``PathInfo`` object."""
         cs = []
         size_dict = info.size_dict
 
         # add all the input 'contractions'
-        for term in info.input_subscripts.split(','):
-            cs.append({
-                'involved': oset(),
-                'legs': oset(term),
-                'size': compute_size_by_dict(term, size_dict),
-                'flops': 0,
-            })
+        for term in info.input_subscripts.split(","):
+            cs.append(
+                {
+                    "involved": oset(),
+                    "legs": oset(term),
+                    "size": compute_size_by_dict(term, size_dict),
+                    "flops": 0,
+                }
+            )
 
         for c in info.contraction_list:
             eq = c[2]
-            lhs, rhs = eq.split('->')
+            lhs, rhs = eq.split("->")
             legs = oset(rhs)
-            involved = oset.union(*map(oset, lhs.split(',')))
+            involved = oset.union(*map(oset, lhs.split(",")))
 
-            cs.append({
-                'involved': involved,
-                'legs': legs,
-                'size': compute_size_by_dict(legs, size_dict),
-                'flops': flop_count(involved, c[1], 2, size_dict),
-            })
+            cs.append(
+                {
+                    "involved": involved,
+                    "legs": legs,
+                    "size": compute_size_by_dict(legs, size_dict),
+                    "flops": flop_count(involved, c[1], 2, size_dict),
+                }
+            )
 
         return cls(cs, size_dict)
 
@@ -141,17 +141,19 @@ class ContractionCosts:
         object.
         """
         size_dict = contraction_tree.size_dict
-        cs = ({
-            'involved': oset(contraction_tree.get_involved(node)),
-            'legs': oset(contraction_tree.get_legs(node)),
-            'size': contraction_tree.get_size(node),
-            'flops': contraction_tree.get_flops(node),
-        } for node in contraction_tree.info)
+        cs = (
+            {
+                "involved": oset(contraction_tree.get_involved(node)),
+                "legs": oset(contraction_tree.get_legs(node)),
+                "size": contraction_tree.get_size(node),
+                "flops": contraction_tree.get_flops(node),
+            }
+            for node in contraction_tree.info
+        )
         return cls(cs, size_dict, **kwargs)
 
     def remove(self, ix, inplace=False):
-        """
-        """
+        """ """
         cost = self if inplace else self.copy()
 
         d = cost.size_dict[ix]
@@ -162,33 +164,34 @@ class ContractionCosts:
             c = cost.contractions[i]
 
             # update the potential flops reductions of other inds
-            for oix in c['involved']:
+            for oix in c["involved"]:
                 di = cost.size_dict[oix]
                 cost._flop_reductions[oix] -= int(
-                    (1 - 1 / di) * c['flops'] * (1 - 1 / d))
+                    (1 - 1 / di) * c["flops"] * (1 - 1 / d)
+                )
 
             # update the actual flops reduction
-            old_flops = c['flops']
+            old_flops = c["flops"]
             new_flops = old_flops // d
-            cost._flops += (new_flops - old_flops)
-            c['flops'] = new_flops
-            c['involved'] = c['involved'].difference(ix_s)
+            cost._flops += new_flops - old_flops
+            c["flops"] = new_flops
+            c["involved"] = c["involved"].difference(ix_s)
 
             # update the tensor sizes
-            if ix in c['legs']:
-
+            if ix in c["legs"]:
                 # update the potential size reductions of other inds
-                for oix in c['legs']:
+                for oix in c["legs"]:
                     di = cost.size_dict[oix]
                     cost._write_reductions[oix] -= int(
-                        (1 - 1 / di) * c['size'] * (1 - 1 / d))
+                        (1 - 1 / di) * c["size"] * (1 - 1 / d)
+                    )
 
-                old_size = c['size']
+                old_size = c["size"]
                 new_size = old_size // d
                 cost._sizes.discard(old_size)
                 cost._sizes.add(new_size)
-                c['size'] = new_size
-                c['legs'] = c['legs'].difference(ix_s)
+                c["size"] = new_size
+                c["legs"] = c["legs"].difference(ix_s)
 
         del cost.size_dict[ix]
         del cost._flop_reductions[ix]
@@ -197,10 +200,13 @@ class ContractionCosts:
         return cost
 
     def __repr__(self):
-        s = ("<ContractionCosts(flops={:.3e}, size={:.3e}, "
-             "nslices={:.3e}, overhead={:.3f})>")
-        return s.format(self.total_flops, self.size,
-                        self.nslices, self.overhead)
+        s = (
+            "<ContractionCosts(flops={:.3e}, size={:.3e}, "
+            "nslices={:.3e}, overhead={:.3f})>"
+        )
+        return s.format(
+            self.total_flops, self.size, self.nslices, self.overhead
+        )
 
 
 class SliceFinder:
@@ -238,7 +244,7 @@ class SliceFinder:
         target_overhead=None,
         target_slices=None,
         temperature=0.01,
-        minimize='flops',
+        minimize="flops",
         allow_outer=True,
     ):
         if all(
@@ -246,7 +252,8 @@ class SliceFinder:
         ):
             raise ValueError(
                 "You need to specify at least one of `target_size`, "
-                "`target_overhead` or `target_slices`.")
+                "`target_overhead` or `target_slices`."
+            )
 
         self.info = tree_or_info
 
@@ -259,7 +266,7 @@ class SliceFinder:
             self.cost0 = ContractionCosts.from_info(tree_or_info)
             self.forbidden = set(tree_or_info.output_subscript)
 
-        if allow_outer == 'only':
+        if allow_outer == "only":
             # invert so only outer indices are allowed
             self.forbidden = set(self.cost0.size_dict) - self.forbidden
         elif allow_outer:  # is True
@@ -291,12 +298,12 @@ class SliceFinder:
         target_overhead=None,
         target_slices=None,
     ):
-        """Return the best contraction slicing, subject to target filters.
-        """
-        target_size = self._maybe_default('target_size', target_size)
-        target_overhead = self._maybe_default('target_overhead',
-                                              target_overhead)
-        target_slices = self._maybe_default('target_slices', target_slices)
+        """Return the best contraction slicing, subject to target filters."""
+        target_size = self._maybe_default("target_size", target_size)
+        target_overhead = self._maybe_default(
+            "target_overhead", target_overhead
+        )
+        target_slices = self._maybe_default("target_slices", target_slices)
 
         size_specified = target_size is not None
         overhead_specified = target_overhead is not None
@@ -304,12 +311,14 @@ class SliceFinder:
 
         valid = filter(
             lambda x: (
-                (not size_specified or (x[1].size <= target_size)) and
-                (not overhead_specified or (x[1].overhead <=
-                                            target_overhead)) and
-                (not slices_specified or (x[1].nslices >= target_slices))
+                (not size_specified or (x[1].size <= target_size))
+                and (
+                    not overhead_specified
+                    or (x[1].overhead <= target_overhead)
+                )
+                and (not slices_specified or (x[1].nslices >= target_slices))
             ),
-            self.costs.items()
+            self.costs.items(),
         )
 
         if size_specified or slices_specified:
@@ -327,18 +336,24 @@ class SliceFinder:
 
         return sorted(valid, key=best_scorer)[:k]
 
-    def trial(self, target_size=None, target_overhead=None, target_slices=None,
-              temperature=None):
+    def trial(
+        self,
+        target_size=None,
+        target_overhead=None,
+        target_slices=None,
+        temperature=None,
+    ):
         """A single slicing attempt, greedily select indices from the popular
         pool, subject to the score function, terminating when any of the
         target criteria are met.
         """
         # optionally override some defaults
-        temperature = self._maybe_default('temperature', temperature)
-        target_size = self._maybe_default('target_size', target_size)
-        target_overhead = self._maybe_default('target_overhead',
-                                              target_overhead)
-        target_slices = self._maybe_default('target_slices', target_slices)
+        temperature = self._maybe_default("temperature", temperature)
+        target_size = self._maybe_default("target_size", target_size)
+        target_overhead = self._maybe_default(
+            "target_overhead", target_overhead
+        )
+        target_slices = self._maybe_default("target_slices", target_slices)
 
         size_specified = target_size is not None
         overhead_specified = target_overhead is not None
@@ -349,20 +364,21 @@ class SliceFinder:
         cost = self.costs[ix_sl]
 
         already_satisfied = (
-            (size_specified and (cost.size <= target_size)) or
-            (overhead_specified and (cost.overhead > target_overhead)) or
-            (slices_specified and (cost.nslices >= target_slices))
+            (size_specified and (cost.size <= target_size))
+            or (overhead_specified and (cost.overhead > target_overhead))
+            or (slices_specified and (cost.nslices >= target_slices))
         )
 
         while not already_satisfied:
             ix = max(
-                cost.size_dict, key=lambda ix:
+                cost.size_dict,
+                key=lambda ix:
                 # the base score
                 self.minimize.score_slice_index(cost, ix) -
                 # a smudge that replicates boltzmann sampling
                 temperature * log(-log(random.random())) -
                 # penalize forbidden (outer) indices
-                (0 if ix not in self.forbidden else float('inf'))
+                (0 if ix not in self.forbidden else float("inf")),
             )
             if ix in self.forbidden:
                 raise RuntimeError("Ran out of valid indices to slice.")
@@ -393,18 +409,28 @@ class SliceFinder:
 
         return cost
 
-    def search(self, max_repeats=16, temperature=None,
-               target_size=None, target_overhead=None, target_slices=None):
-        """Repeat trial several times and return the best found so far.
-        """
+    def search(
+        self,
+        max_repeats=16,
+        temperature=None,
+        target_size=None,
+        target_overhead=None,
+        target_slices=None,
+    ):
+        """Repeat trial several times and return the best found so far."""
         for _ in range(max_repeats):
-            self.trial(target_overhead=target_overhead,
-                       target_slices=target_slices,
-                       target_size=target_size,
-                       temperature=temperature)
+            self.trial(
+                target_overhead=target_overhead,
+                target_slices=target_slices,
+                target_size=target_size,
+                temperature=temperature,
+            )
 
-        return self.best(target_overhead=target_overhead,
-                         target_slices=target_slices, target_size=target_size)
+        return self.best(
+            target_overhead=target_overhead,
+            target_slices=target_slices,
+            target_size=target_size,
+        )
 
     plot_slicings = plot_slicings
     plot_slicings_alt = plot_slicings_alt
