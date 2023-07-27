@@ -5,7 +5,6 @@ import operator
 import itertools
 import functools
 import collections
-from string import ascii_letters
 
 from .oe import (
     compute_size_by_dict,
@@ -14,6 +13,7 @@ from .oe import (
     flop_count,
     get_path_fn,
     linear_to_ssa,
+    get_symbol,
 )
 from autoray import do
 
@@ -592,7 +592,7 @@ class ContractionTree:
         l_inds, r_inds, p_inds = map(self.get_inds, (l, r, node))
         # we need to map any extended unicode characters into ascii
         char_mapping = {
-            ord(ix): ascii_letters[i]
+            ord(ix): get_symbol(i)
             for i, ix in enumerate(unique(itertools.chain(l_inds, r_inds)))
         }
         return f"{l_inds},{r_inds}->{p_inds}".translate(char_mapping)
