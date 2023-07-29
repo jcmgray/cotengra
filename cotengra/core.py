@@ -2656,7 +2656,7 @@ class ContractionTree:
 
         return recursively_stack_chunks((), tuple(output_pos))
 
-    def gen_output_chunks(self, arrays, **contract_opts):
+    def gen_output_chunks(self, arrays, progbar=False, **contract_opts):
         """Generate each output chunk of the contraction - i.e. take care of
         summing internally sliced indices only first. This assumes that the
         ``sliced_inds`` are sorted by whether they appear in the output or not
@@ -2672,7 +2672,14 @@ class ContractionTree:
             if ix not in self.output
         )
 
-        for o in range(self.nslices // stepsize):
+        if progbar:
+            import tqdm
+
+            it = tqdm.trange(self.nslices // stepsize)
+        else:
+            it = range(self.nslices // stepsize)
+
+        for o in it:
             chunk = self.contract_slice(arrays, o * stepsize, **contract_opts)
             for j in range(1, stepsize):
                 i = o * stepsize + j

@@ -29,8 +29,8 @@ advanced.ipynb
 visualization.ipynb
 contraction.ipynb
 trees.ipynb
+index_examples.md
 ```
-
 
 ```{toctree}
 :caption: Development
