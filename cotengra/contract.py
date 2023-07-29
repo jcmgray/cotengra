@@ -3,10 +3,36 @@
 import functools
 import itertools
 import operator
+import contextlib
 
-from autoray import do, shape
+from autoray import do, shape, infer_backend_multi, get_lib_fn
 
 from .utils import node_from_single
+
+
+DEFAULT_IMPLEMENTATION = "auto"
+
+
+def set_default_implementation(impl):
+    global DEFAULT_IMPLEMENTATION
+    DEFAULT_IMPLEMENTATION = impl
+
+
+def get_default_implementation():
+    return DEFAULT_IMPLEMENTATION
+
+
+@contextlib.contextmanager
+def default_implementation(impl):
+    """Context manager for temporarily setting the default implementation.
+    """
+    global DEFAULT_IMPLEMENTATION
+    old_impl = DEFAULT_IMPLEMENTATION
+    DEFAULT_IMPLEMENTATION = impl
+    try:
+        yield
+    finally:
+        DEFAULT_IMPLEMENTATION = old_impl
 
 
 @functools.lru_cache(2**12)
@@ -537,6 +563,7 @@ def do_contraction(
     contractions,
     strip_exponent=False,
     check_zero=False,
+    implementation="auto",
     backend=None,
     progbar=False,
 ):
@@ -586,6 +613,25 @@ def do_contraction(
         The exponent of the output in base 10, returned only if
         ``strip_exponent==True``.
     """
+    if backend is None:
+        backend = infer_backend_multi(*arrays)
+
+    if implementation == "auto":
+        if backend == "numpy":
+            # by default only replace numpy's einsum/tensordot
+            implementation = "cotengra"
+        else:
+            implementation = "autoray"
+
+    if implementation == "cotengra":
+        _einsum, _tensordot = einsum, tensordot
+    elif implementation == "autoray":
+        _einsum = get_lib_fn(backend, "einsum")
+        _tensordot = get_lib_fn(backend, "tensordot")
+    else:
+        # manually supplied
+        _einsum, _tensordot = implementation
+
     # temporary storage for intermediates
     N = len(arrays)
     temps = {
@@ -606,17 +652,17 @@ def do_contraction(
         r_array = temps.pop(r)
 
         if tdot:
-            p_array = do("tensordot", l_array, r_array, arg, like=backend)
+            p_array = _tensordot(l_array, r_array, arg)
             if perm:
                 p_array = do("transpose", p_array, perm, like=backend)
         else:
-            p_array = einsum(arg, l_array, r_array, backend=backend)
+            p_array = _einsum(arg, l_array, r_array)
 
         if exponent is not None:
-            factor = do("max", do("abs", p_array))
+            factor = do("max", do("abs", p_array, like=backend), like=backend)
             if check_zero and float(factor) == 0.0:
                 return 0.0, 0.0
-            exponent = exponent + do("log10", factor)
+            exponent = exponent + do("log10", factor, like=backend)
             p_array = p_array / factor
 
         # insert the new intermediate array
@@ -626,3 +672,152 @@ def do_contraction(
         return p_array, exponent
 
     return p_array
+
+
+class CuQuantumContractor:
+    def __init__(
+        self,
+        tree,
+        handle_slicing=False,
+        autotune=False,
+        **kwargs,
+    ):
+        if handle_slicing:
+            self.eq = tree.get_eq()
+            self.shapes = tree.get_shapes()
+        else:
+            self.eq = tree.get_eq_sliced()
+            self.shapes = tree.get_shapes_sliced()
+
+        if tree.is_complete():
+            kwargs.setdefault("optimize", {})
+            kwargs["optimize"].setdefault("path", tree.get_path())
+
+            if handle_slicing and tree.sliced_inds:
+                kwargs["optimize"].setdefault(
+                    "slicing",
+                    [(ix, tree.size_dict[ix] - 1) for ix in tree.sliced_inds],
+                )
+
+        self.kwargs = kwargs
+        self.autotune = (3 if autotune is True else autotune)
+        self.handle = None
+        self.network = None
+
+    def setup(self, *arrays):
+        from cuquantum import cutensornet as cutn
+        from cuquantum import Network, NetworkOptions
+
+        self.handle = cutn.create()
+        self.network = Network(
+            self.eq,
+            *arrays,
+            options=NetworkOptions(handle=self.handle),
+        )
+        self.network.contract_path(**self.kwargs)
+        if self.autotune:
+            self.network.autotune(iterations=self.autotune)
+
+    def __call__(
+        self,
+        *arrays,
+        check_zero=False,
+        backend=None,
+        progbar=False,
+    ):
+        # can't handle these yet
+        assert not check_zero
+        assert not progbar
+        assert backend is None
+
+        if self.network is None:
+            self.setup(*arrays)
+        else:
+            self.network.reset_operands(*arrays)
+
+        return self.network.contract()
+
+    def __del__(self):
+        from cuquantum import cutensornet as cutn
+
+        if self.network is not None:
+            self.network.free()
+        if self.handle is not None:
+            cutn.destroy(self.handle)
+
+
+def make_contractor(
+    tree,
+    order=None,
+    prefer_einsum=False,
+    strip_exponent=False,
+    implementation=None,
+    autojit=False,
+):
+    """Get a reusable function which performs the contraction corresponding
+    to ``tree``.
+
+    Parameters
+    ----------
+    tree : ContractionTree
+        The contraction tree.
+    order : str or callable, optional
+        Supplied to :meth:`ContractionTree.traverse`, the order in which
+        to perform the pairwise contractions given by the tree.
+    prefer_einsum : bool, optional
+        Prefer to use ``einsum`` for pairwise contractions, even if
+        ``tensordot`` can perform the contraction.
+    strip_exponent : bool, optional
+        If ``True``, the function will strip the exponent from the output
+        array and return it separately.
+    implementation : str or tuple[callable, callable], optional
+        What library to use to actually perform the contractions. Options are
+
+        - "auto": let cotengra choose
+        - "autoray": dispatch with autoray, using the ``tensordot`` and
+          ``einsum`` implementation of the backend
+        - "cotengra": use the ``tensordot`` and ``einsum`` implementation of
+          cotengra, which is based on batch matrix multiplication. This is
+          faster for some backends like numpy, and also enables libraries
+          which don't yet provide ``tensordot`` and ``einsum`` to be used.
+        - "cuquantum": use the cuquantum library to perform the whole
+          contraction (not just individual contractions).
+        - tuple[callable, callable]: manually supply the ``tensordot`` and
+          ``einsum`` implementations to use.
+
+    autojit : bool, optional
+        If ``True``, use :func:`autoray.autojit` to compile the contraction
+        function.
+
+    Returns
+    -------
+    fn : callable
+        The contraction function, with signature ``fn(*arrays)``.
+    """
+    if implementation is None:
+        implementation = get_default_implementation()
+
+    if implementation == "cuquantum":
+        from .contract import CuQuantumContractor
+
+        if strip_exponent:
+            raise ValueError(
+                "strip_exponent=True not supported with cuQuantum"
+            )
+        fn = CuQuantumContractor(tree)
+
+    else:
+        fn = functools.partial(
+            do_contraction,
+            contractions=tree.extract_contractions(
+                order, prefer_einsum
+            ),
+            strip_exponent=strip_exponent,
+            implementation=implementation,
+        )
+        if autojit:
+            from autoray import autojit as _autojit
+
+            fn = _autojit(fn)
+
+    return fn

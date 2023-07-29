@@ -43,7 +43,7 @@ from .parallel import (
 )
 from .hypergraph import get_hypergraph
 from .scoring import get_score_fn, CompressedStatsTracker
-from .contract import do_contraction
+from .contract import make_contractor
 from .plot import (
     plot_contractions_alt,
     plot_contractions,
@@ -2450,13 +2450,16 @@ class ContractionTree:
         order=None,
         prefer_einsum=False,
         strip_exponent=False,
+        implementation=None,
         autojit=False,
     ):
         """Get a reusable function which performs the contraction corresponding
-        to this tree.
+        to this tree, cached.
 
         Parameters
         ----------
+        tree : ContractionTree
+            The contraction tree.
         order : str or callable, optional
             Supplied to :meth:`ContractionTree.traverse`, the order in which
             to perform the pairwise contractions given by the tree.
@@ -2466,6 +2469,21 @@ class ContractionTree:
         strip_exponent : bool, optional
             If ``True``, the function will strip the exponent from the output
             array and return it separately.
+        implementation : str or tuple[callable, callable], optional
+            What library to use to actually perform the contractions. Options are
+
+            - "auto": let cotengra choose
+            - "autoray": dispatch with autoray, using the ``tensordot`` and
+            ``einsum`` implementation of the backend
+            - "cotengra": use the ``tensordot`` and ``einsum`` implementation of
+            cotengra, which is based on batch matrix multiplication. This is
+            faster for some backends like numpy, and also enables libraries
+            which don't yet provide ``tensordot`` and ``einsum`` to be used.
+            - "cuquantum": use the cuquantum library to perform the whole
+            contraction (not just individual contractions).
+            - tuple[callable, callable]: manually supply the ``tensordot`` and
+            ``einsum`` implementations to use.
+
         autojit : bool, optional
             If ``True``, use :func:`autoray.autojit` to compile the contraction
             function.
@@ -2473,21 +2491,26 @@ class ContractionTree:
         Returns
         -------
         fn : callable
+            The contraction function, with signature ``fn(*arrays)``.
         """
-        key = (autojit, order, prefer_einsum, strip_exponent)
+        key = (
+            autojit,
+            order,
+            prefer_einsum,
+            strip_exponent,
+            implementation,
+        )
         try:
             fn = self.contraction_cores[key]
         except KeyError:
-            fn = functools.partial(
-                do_contraction,
-                contractions=self.extract_contractions(order, prefer_einsum),
+            fn = self.contraction_cores[key] = make_contractor(
+                tree=self,
+                order=order,
+                prefer_einsum=prefer_einsum,
                 strip_exponent=strip_exponent,
+                implementation=implementation,
+                autojit=autojit,
             )
-            if autojit:
-                from autoray import autojit as _autojit
-
-                fn = _autojit(fn)
-            self.contraction_cores[key] = fn
 
         return fn
 
@@ -2499,6 +2522,7 @@ class ContractionTree:
         strip_exponent=False,
         check_zero=False,
         backend=None,
+        implementation=None,
         autojit=False,
         progbar=False,
     ):
@@ -2529,6 +2553,7 @@ class ContractionTree:
             order=order,
             prefer_einsum=prefer_einsum,
             strip_exponent=strip_exponent is not False,
+            implementation=implementation,
             autojit=autojit,
         )
         result = fn(
@@ -2608,16 +2633,11 @@ class ContractionTree:
             # we can just sum everything
             return functools.reduce(operator.add, slices)
 
-        # else we need to do a multidimensional stack of all the results
-        sliced_pos = {
-            ix: i for i, ix in enumerate(self.sliced_inds) if ix in self.output
-        }
-
         # first we sum over non-output sliced indices
         chunks = {}
         for i, s in enumerate(slices):
-            loc = dynary(i, self.sliced_sizes)
-            key = tuple(loc[sliced_pos[ix]] for ix in output_pos)
+            key_slice = self.slice_key(i)
+            key = tuple(key_slice[ix] for ix in output_pos)
             try:
                 chunks[key] = chunks[key] + s
             except KeyError:
@@ -2667,6 +2687,7 @@ class ContractionTree:
         strip_exponent=False,
         check_zero=False,
         backend=None,
+        implementation="auto",
         autojit=False,
         progbar=False,
     ):
@@ -2728,6 +2749,7 @@ class ContractionTree:
                 strip_exponent=strip_exponent,
                 check_zero=check_zero,
                 backend=backend,
+                implementation=implementation,
                 autojit=autojit,
                 progbar=progbar,
             )
@@ -2745,6 +2767,7 @@ class ContractionTree:
                 strip_exponent=strip_exponent,
                 check_zero=check_zero,
                 backend=backend,
+                implementation=implementation,
                 autojit=autojit,
             )
             for i in range(self.multiplicity)

@@ -7,6 +7,114 @@ from numpy.testing import assert_allclose
 import opt_einsum as oe
 
 
+# these are taken from opt_einsum
+test_case_eqs = [
+    # Test scalar-like operations
+    "a,->a",
+    "ab,->ab",
+    ",ab,->ab",
+    ",,->",
+    # Test hadamard-like products
+    "a,ab,abc->abc",
+    "a,b,ab->ab",
+    # Test index-transformations
+    "ea,fb,gc,hd,abcd->efgh",
+    "ea,fb,abcd,gc,hd->efgh",
+    "abcd,ea,fb,gc,hd->efgh",
+    # Test complex contractions
+    "acdf,jbje,gihb,hfac,gfac,gifabc,hfac",
+    "acdf,jbje,gihb,hfac,gfac,gifabc,hfac",
+    "cd,bdhe,aidb,hgca,gc,hgibcd,hgac",
+    "abhe,hidj,jgba,hiab,gab",
+    "bde,cdh,agdb,hica,ibd,hgicd,hiac",
+    "chd,bde,agbc,hiad,hgc,hgi,hiad",
+    "chd,bde,agbc,hiad,bdi,cgh,agdb",
+    "bdhe,acad,hiab,agac,hibd",
+    # Test collapse
+    "ab,ab,c->",
+    "ab,ab,c->c",
+    "ab,ab,cd,cd->",
+    "ab,ab,cd,cd->ac",
+    "ab,ab,cd,cd->cd",
+    "ab,ab,cd,cd,ef,ef->",
+    # Test outer prodcuts
+    "ab,cd,ef->abcdef",
+    "ab,cd,ef->acdf",
+    "ab,cd,de->abcde",
+    "ab,cd,de->be",
+    "ab,bcd,cd->abcd",
+    "ab,bcd,cd->abd",
+    # Random test cases that have previously failed
+    "eb,cb,fb->cef",
+    "dd,fb,be,cdb->cef",
+    "bca,cdb,dbf,afc->",
+    "dcc,fce,ea,dbf->ab",
+    "fdf,cdd,ccd,afe->ae",
+    "abcd,ad",
+    "ed,fcd,ff,bcf->be",
+    "baa,dcf,af,cde->be",
+    "bd,db,eac->ace",
+    "fff,fae,bef,def->abd",
+    "efc,dbc,acf,fd->abe",
+    # Inner products
+    "ab,ab",
+    "ab,ba",
+    "abc,abc",
+    "abc,bac",
+    "abc,cba",
+    # GEMM test cases
+    "ab,bc",
+    "ab,cb",
+    "ba,bc",
+    "ba,cb",
+    "abcd,cd",
+    "abcd,ab",
+    "abcd,cdef",
+    "abcd,cdef->feba",
+    "abcd,efdc",
+    # Inner than dot
+    "aab,bc->ac",
+    "ab,bcc->ac",
+    "aab,bcc->ac",
+    "baa,bcc->ac",
+    "aab,ccb->ac",
+    # Randomly built test caes
+    "aab,fa,df,ecc->bde",
+    "ecb,fef,bad,ed->ac",
+    "bcf,bbb,fbf,fc->",
+    "bb,ff,be->e",
+    "bcb,bb,fc,fff->",
+    "fbb,dfd,fc,fc->",
+    "afd,ba,cc,dc->bf",
+    "adb,bc,fa,cfc->d",
+    "bbd,bda,fc,db->acf",
+    "dba,ead,cad->bce",
+    "aef,fbc,dca->bde",
+]
+
+
+def has_repeated_index(equation):
+    terms = equation.split("->")[0].split(",")
+    for term in terms:
+        if len(set(term)) != len(term):
+            return True
+    return False
+
+
+@pytest.mark.parametrize("case", test_case_eqs)
+def test_basic_equations(case):
+
+    if has_repeated_index(case):
+        pytest.xfail("repeated indices not supported")
+
+    shapes,_ = ctg.utils.equation_to_shapes(case)
+    arrays = [np.random.rand(*s) for s in shapes]
+    x = np.einsum(case, *arrays)
+    expr = ctg.contract_expression(case, *shapes)
+    y = expr(*arrays)
+    assert_allclose(x, y)
+
+
 @pytest.mark.parametrize("n", [10])
 @pytest.mark.parametrize("d_min", [2])
 @pytest.mark.parametrize("d_max", [4])

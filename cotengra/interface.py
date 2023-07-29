@@ -6,11 +6,22 @@ from .oe import get_path_fn, find_output_str
 from .core import ContractionTree
 
 
+class Variadic:
+
+    def __init__(self, fn, **kwargs):
+        self.fn = fn
+        self.kwargs = kwargs
+
+    def __call__(self, *arrays, **kwargs):
+        return self.fn(arrays, **self.kwargs, **kwargs)
+
+
 def contract_expression(
     eq,
     *shapes,
     optimize='auto',
     constants=None,
+    implementation=None,
     autojit=False,
     sort_contraction_indices=False,
 ):
@@ -64,6 +75,8 @@ def contract_expression(
             # no-op contraction
 
             def fn(*arrays, backend=None):
+                if backend is None:
+                    return arrays[0]
                 return ar.do('array', arrays[0], like=backend)
 
         elif len(term) == len(output):
@@ -122,7 +135,18 @@ def contract_expression(
         if sort_contraction_indices:
             tree.sort_contraction_indices()
 
-        fn = tree.get_contractor(autojit=autojit)
+        if not tree.sliced_inds:
+            fn = tree.get_contractor(
+                autojit=autojit,
+                implementation=implementation,
+            )
+        else:
+            # can't extract pure sliced contraction function yet...
+            fn = Variadic(
+                tree.contract,
+                autojit=autojit,
+                implementation=implementation,
+            )
 
     return fn
 
@@ -132,6 +156,7 @@ def _contract_expression_with_constants(
     *shapes,
     optimize='auto',
     constants=None,
+    implementation=None,
     autojit=False,
     sort_contraction_indices=False,
 ):
@@ -159,6 +184,7 @@ def _contract_expression_with_constants(
         *shapes_only,
         optimize=optimize,
         constants=None,
+        implementation=implementation,
         # wait to jit until after constants are folded
         autojit=False,
         sort_contraction_indices=sort_contraction_indices,

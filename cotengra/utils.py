@@ -843,6 +843,41 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
     return inputs, output, shapes, size_dict
 
 
+def equation_to_shapes(eq, d_min=2, d_max=3, seed=None):
+    """Generate some shapes from an equation string.
+
+    Parameters
+    ----------
+    eq : str
+        The equation string.
+    d_min : int, optional
+        The minimum size of an index.
+    d_max : int, optional
+        The maximum size of an index.
+    seed : None or int, optional
+        Seed for ``np.random.default_rng`` for repeatibility. If
+        ``d_min == d_max`` then this doesn't matter.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    lhs = eq.split('->')[0]
+
+    shapes = []
+    size_dict = {}
+    for term in lhs.split(','):
+        shape = []
+        for ix in term:
+            try:
+                d = size_dict[ix]
+            except KeyError:
+                d = size_dict[ix] = rng.integers(d_min, d_max + 1)
+            shape.append(d)
+        shapes.append(tuple(shape))
+
+    return shapes, size_dict
+
+
 class GumbelBatchedGenerator:
     """Get a gumbel random number generator, that pre-batches the numbers using
     numpy for both speed and repeatibility.
