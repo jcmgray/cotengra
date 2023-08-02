@@ -2470,19 +2470,21 @@ class ContractionTree:
             If ``True``, the function will strip the exponent from the output
             array and return it separately.
         implementation : str or tuple[callable, callable], optional
-            What library to use to actually perform the contractions. Options are
+            What library to use to actually perform the contractions. Options
+            are:
 
             - "auto": let cotengra choose
             - "autoray": dispatch with autoray, using the ``tensordot`` and
-            ``einsum`` implementation of the backend
-            - "cotengra": use the ``tensordot`` and ``einsum`` implementation of
-            cotengra, which is based on batch matrix multiplication. This is
-            faster for some backends like numpy, and also enables libraries
-            which don't yet provide ``tensordot`` and ``einsum`` to be used.
+              ``einsum`` implementation of the backend
+            - "cotengra": use the ``tensordot`` and ``einsum`` implementation
+              of cotengra, which is based on batch matrix multiplication. This
+              is faster for some backends like numpy, and also enables
+              libraries which don't yet provide ``tensordot`` and ``einsum`` to
+              be used.
             - "cuquantum": use the cuquantum library to perform the whole
-            contraction (not just individual contractions).
+              contraction (not just individual contractions).
             - tuple[callable, callable]: manually supply the ``tensordot`` and
-            ``einsum`` implementations to use.
+              ``einsum`` implementations to use.
 
         autojit : bool, optional
             If ``True``, use :func:`autoray.autojit` to compile the contraction
@@ -2936,6 +2938,14 @@ class ContractionTreeCompressed(ContractionTree):
 
     def get_default_order(self):
         return "surface_order"
+
+    def get_contractor(self, *_, **__):
+        raise NotImplementedError(
+            "`cotengra` doesn't implement compressed contraction itself. "
+            "If you want to use compressed contractions, you need to use "
+            "`quimb` and the `TensorNetwork.contract_compressed` method, "
+            "with e.g. `optimize=tree.get_path()`."
+        )
 
 
 class ContractionTreeMulti(ContractionTree):
