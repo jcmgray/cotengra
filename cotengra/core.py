@@ -678,16 +678,6 @@ class ContractionTree:
             peak = max(peak, tot_size)
         return peak
 
-    def total_size(self):
-        """Get the total sum of all intermediate tensor sizes, this is relevant
-        when, for example, using autodiff on a contraction without
-        checkpointing.
-        """
-        tot_size = sum(self.get_size(node) for node in self.gen_leaves())
-        for node, _, _ in self.traverse():
-            tot_size += self.get_size(node)
-        return tot_size
-
     def arithmetic_intensity(self):
         """The ratio of total flops to total write - the higher the better for
         extracting good computational performance.
@@ -706,7 +696,7 @@ class ContractionTree:
         self,
         chi,
         order="surface_order",
-        compress_late=True,
+        compress_late=False,
     ):
         hg = self.get_hypergraph(accel="auto")
 
@@ -742,8 +732,54 @@ class ContractionTree:
 
         return tracker
 
+    def total_flops_compressed(
+        self, chi, order="surface_order", compress_late=False, dtype=None,
+    ):
+        """Estimate the total flops for a compressed contraction of this tree
+        with maximum bond size ``chi``. This includes basic estimates of the
+        ops to perform contractions, QRs and SVDs.
+        """
+        if dtype is not None:
+            raise ValueError(
+                "Can only estimate cost in terms of "
+                "number of abstract scalar ops."
+            )
+
+        return self.compressed_contract_stats(
+            chi=chi,
+            order=order,
+            compress_late=compress_late,
+        ).flops
+
+    def total_write_compressed(
+        self, chi, order="surface_order", compress_late=False, accel="auto"
+    ):
+        """Compute the total size of all intermediate tensors when a
+        compressed contraction is performed with maximum bond size ``chi``,
+        ordered by ``order``. This is relevant maybe for time complexity and
+        e.g. autodiff space complexity (since every intermediate is kept).
+        """
+        return self.compressed_contract_stats(
+            chi=chi,
+            order=order,
+            compress_late=compress_late,
+        ).write
+
+    def total_cost_compressed(
+        self,
+        chi,
+        order="surface_order",
+        compress_late=False,
+        factor=DEFAULT_COMBO_FACTOR,
+    ):
+        return self.total_flops_compressed(
+            chi=chi, order=order, compress_late=compress_late
+        ) + factor * self.total_write_compressed(
+            chi=chi, order=order, compress_late=compress_late
+        )
+
     def max_size_compressed(
-        self, chi, order="surface_order", compress_late=True
+        self, chi, order="surface_order", compress_late=False
     ):
         """Compute the maximum sized tensor produced when a compressed
         contraction is performed with maximum bond size ``chi``, ordered by
@@ -757,7 +793,7 @@ class ContractionTree:
         ).max_size
 
     def peak_size_compressed(
-        self, chi, order="surface_order", compress_late=True, accel="auto"
+        self, chi, order="surface_order", compress_late=False, accel="auto"
     ):
         """Compute the peak size of combined intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
@@ -770,19 +806,16 @@ class ContractionTree:
             compress_late=compress_late,
         ).peak_size
 
-    def total_size_compressed(
-        self, chi, order="surface_order", compress_late=True, accel="auto"
+    contraction_cost_compressed = total_cost_compressed
+
+    def contraction_width_compressed(
+        self, chi, order="surface_order", compress_late=False
     ):
-        """Compute the total size of all intermediate tensors when a
-        compressed contraction is performed with maximum bond size ``chi``,
-        ordered by ``order``. This is relevant maybe for time complexity and
-        e.g. autodiff space complexity (since every intermediate is kept).
+        """Compute log2 of the maximum sized tensor produced when a compressed
+        contraction is performed with maximum bond size ``chi``, ordered by
+        ``order``.
         """
-        return self.compressed_contract_stats(
-            chi=chi,
-            order=order,
-            compress_late=compress_late,
-        ).write
+        return math.log2(self.max_size_compressed(chi, order, compress_late))
 
     def contract_nodes_pair(self, x, y, check=False):
         """Contract node ``x`` with node ``y`` in the tree to create a new
@@ -2938,6 +2971,20 @@ class ContractionTreeCompressed(ContractionTree):
 
     def get_default_order(self):
         return "surface_order"
+
+    total_flops = ContractionTree.total_flops_compressed
+    total_write = ContractionTree.total_write_compressed
+    total_cost = ContractionTree.total_cost_compressed
+    max_size = ContractionTree.max_size_compressed
+    peak_size = ContractionTree.peak_size_compressed
+    contraction_cost = ContractionTree.contraction_cost_compressed
+    contraction_width = ContractionTree.contraction_width_compressed
+
+    total_flops_exact = ContractionTree.total_flops
+    total_write_exact = ContractionTree.total_write
+    total_cost_exact = ContractionTree.total_cost
+    max_size_exact = ContractionTree.max_size
+    peak_size_exact = ContractionTree.peak_size
 
     def get_contractor(self, *_, **__):
         raise NotImplementedError(

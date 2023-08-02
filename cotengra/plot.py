@@ -265,6 +265,9 @@ def tree_to_networkx(tree):
             weight=len(r),
             contraction=c,
         )
+        G.nodes[p]["contraction"] = min(c, G.nodes[p].get("contraction", c))
+        G.nodes[l]["contraction"] = min(c, G.nodes[l].get("contraction", c))
+        G.nodes[r]["contraction"] = min(c, G.nodes[r].get("contraction", c))
 
     for node in tree.info:
         G.nodes[node]["flops"] = math.log10(tree.get_flops(node) + 1) + 1
@@ -603,12 +606,23 @@ def plot_tree(
         edge_colors = [emapper.to_rgba(x) for x in edge_weights]
 
     # tree node colors
-    nw_range = min(node_weights), max(node_weights)
-    nnorm = mpl.colors.Normalize(*nw_range, clip=True)
-    if not isinstance(node_colormap, mpl.colors.Colormap):
-        node_colormap = getattr(mpl.cm, node_colormap)
-    nmapper = mpl.cm.ScalarMappable(norm=nnorm, cmap=node_colormap)
-    node_colors = [nmapper.to_rgba(x) for x in node_weights]
+    if node_color == "order":
+        nw_range = 0, tree.N - 1
+        nnorm = mpl.colors.Normalize(*nw_range, clip=True)
+        if not isinstance(node_colormap, mpl.colors.Colormap):
+            node_colormap = getattr(mpl.cm, node_colormap)
+        nmapper = mpl.cm.ScalarMappable(norm=enorm, cmap=node_colormap)
+        node_colors = [
+            nmapper.to_rgba(d['contraction'])
+            for _, d in G_tree.nodes(data=True)
+        ]
+    else:
+        nw_range = min(node_weights), max(node_weights)
+        nnorm = mpl.colors.Normalize(*nw_range, clip=True)
+        if not isinstance(node_colormap, mpl.colors.Colormap):
+            node_colormap = getattr(mpl.cm, node_colormap)
+        nmapper = mpl.cm.ScalarMappable(norm=nnorm, cmap=node_colormap)
+        node_colors = [nmapper.to_rgba(x) for x in node_weights]
 
     # plot the raw connectivity of the underlying graph
     if plot_raw_graph:
