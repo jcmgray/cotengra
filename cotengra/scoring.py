@@ -38,7 +38,7 @@ def ensure_basic_quantities_are_computed(trial):
     if "flops" not in trial:
         trial["flops"] = trial["tree"].total_flops()
     if "write" not in trial:
-        trial["write"] = trial["tree"].total_size()
+        trial["write"] = trial["tree"].total_write()
     if "size" not in trial:
         trial["size"] = trial["tree"].max_size()
 
@@ -370,7 +370,7 @@ class CompressedStatsTracker:
 
     @property
     def combo_score(self):
-        return math.log2(self.flops + DEFAULT_COMBO_FACTOR * self.write)
+        return math.log2(self.flops + DEFAULT_COMBO_FACTOR * self.write + 1)
 
     @property
     def score(self):
