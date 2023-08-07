@@ -63,6 +63,20 @@ def kahypar_subgraph_find_membership(
 
     hg = get_hypergraph(inputs, output, size_dict, accel=False)
 
+    if fix_output_nodes:
+        # make sure all the output nodes (those with output indices) are in
+        # the same partition. Need to do this before removing danglers
+        onodes = tuple(hg.output_nodes())
+
+        if parts >= nv - len(onodes) + 1:
+            # too many partitions, simply group all outputs and return
+            groups = itertools.count(1)
+            return [0 if i in onodes else next(groups) for i in range(nv)]
+
+    for e, nodes in tuple(hg.edges.items()):
+        if len(nodes) == 1:
+            hg.remove_edge(e)
+
     if compress:
         hg.compress(compress)
 
@@ -90,15 +104,6 @@ def kahypar_subgraph_find_membership(
     hypergraph = kahypar.Hypergraph(**hypergraph_kwargs)
 
     if fix_output_nodes:
-        # make sure all the output nodes (those with output indices) are in
-        # the same partition
-        onodes = tuple(hg.output_nodes())
-
-        if parts >= nv - len(onodes) + 1:
-            # too many partitions, simply group all outputs and return
-            groups = itertools.count(1)
-            return [0 if i in onodes else next(groups) for i in range(nv)]
-
         for i in onodes:
             hypergraph.fixNodeToBlock(i, 0)
 
