@@ -9,7 +9,7 @@ Some of the key feautures of `cotengra` include:
 * **dynamic slicing** for massive memory savings and parallelism
 * support for **hyper** edge tensor networks and thus arbitrary einsum equations
 * **paths** that can be supplied to [`numpy.einsum`](https://numpy.org/doc/stable/reference/generated/numpy.einsum.html), [`opt_einsum`](https://dgasmith.github.io/opt_einsum/), [`quimb`](https://quimb.readthedocs.io/en/latest/) among others
-* **performing contractions** with tensors from many libraries via [`autoray`](https://github.com/jcmgray/autoray)
+* **performing contractions** with tensors from many libraries via [`autoray`](https://github.com/jcmgray/autoray), even if they don't provide einsum or tensordot but do have (batch) matrix multiplication
 
 ---
 

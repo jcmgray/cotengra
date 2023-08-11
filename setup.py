@@ -29,12 +29,12 @@ setup(
         "autoray",
         "cytoolz",
         "networkx",
-        "opt_einsum",
         "optuna",
         "tqdm",
     ],
     extras_require={
         "recommended": [
+            "opt_einsum",
             "kahypar",
             "ray",
         ],

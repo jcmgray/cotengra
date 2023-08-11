@@ -3083,6 +3083,8 @@ class PartitionTreeBuilder:
                 partition_opts["imbalance"] = imbalance_s
 
             if dynamic_fix:
+                # for the top level subtree (s==1.0) we partition the outputs
+                # nodes first into their own bi-partition
                 parts_s = 2
                 partition_opts["fix_output_nodes"] = s == 1.0
 
@@ -3114,6 +3116,7 @@ class PartitionTreeBuilder:
                 )
                 continue
 
+            # update tree structure with newly contracted subgraphs
             tree.contract_nodes(
                 new_subgs, optimize=super_optimize, check=check
             )
