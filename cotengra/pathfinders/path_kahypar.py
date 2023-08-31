@@ -12,11 +12,19 @@ def get_kahypar_profile_dir():
     # needed to supply kahypar profile files
     import kahypar
 
-    version = tuple(map(int, kahypar.__version__.split(".")))
-    if version <= (1, 1, 6):
-        return join(abspath(dirname(__file__)), "kahypar_profiles", "old")
-    else:
-        return join(abspath(dirname(__file__)), "kahypar_profiles")
+    # if kahypar is built from source, the version number may not match the
+    # <major>.<minor>.<patch> format; rather than assuming the format, add
+    # a fallback option for unrecognized versions
+    import re
+    m = re.compile(r'(\d+)\.(\d+)\.(\d+)').match(kahypar.__version__)
+    path_components = [abspath(dirname(__file__)), "kahypar_profiles"]
+
+    if m is not None:
+        version = tuple(map(int, m.groups()))
+        if version <= (1, 1, 6):
+            path_components.append("old")
+
+    return join(*path_components)
 
 
 def to_sparse(hg, weight_nodes="const", weight_edges="log"):
