@@ -646,7 +646,7 @@ class DiskDict:
                     with open(fname, 'rb') as f:
                         self._mem_cache[k] = v = pickle.load(f)
                         return v
-                except EOFError:
+                except (EOFError, pickle.UnpicklingError):
                     # file was not written completely yet
                     # e.g. by another process
                     import time
