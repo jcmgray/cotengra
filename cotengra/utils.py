@@ -746,6 +746,160 @@ def rand_equation(
     return inputs, output, shapes, size_dict
 
 
+def tree_equation(
+    n,
+    d_min=2,
+    d_max=3,
+    n_outer=0,
+    seed=None,
+):
+    """Create a random contraction equation that corresponds to a tree.
+
+    Parameters
+    ----------
+    n : int
+        The number of tensors.
+    d_min : int, optional
+        The minimum size of an index.
+    d_max : int, optional
+        The maximum size of an index.
+    n_outer : int, optional
+        The number of outer indices.
+    """
+    import numpy as np
+    from .oe import get_symbol
+
+    rng = np.random.default_rng(seed)
+
+    inputs = [[]]
+    size_dict = {}
+    for i in range(1, n):
+        ix = get_symbol(i - 1)
+        size_dict[ix] = rng.integers(d_min, d_max + 1)
+        ci = rng.integers(0, len(inputs))
+        inputs[ci].append(ix)
+        inputs.append([ix])
+
+    output = list(rng.choice(list(size_dict), size=n_outer, replace=False))
+    shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
+
+    return inputs, output, shapes, size_dict
+
+
+def randreg_equation(
+    n,
+    reg,
+    d_min=2,
+    d_max=3,
+    seed=None,
+):
+    """Create a random contraction equation that corresponds to a random
+    regular graph.
+
+    Parameters
+    ----------
+    n : int
+        The number of terms.
+    reg : int
+        The degree of the graph.
+    d_min : int, optional
+        The minimum size of an index.
+    d_max : int, optional
+        The maximum size of an index.
+    seed : None or int, optional
+        Seed for ``networkx`` and ``np.random.default_rng`` for repeatibility.
+
+    Returns
+    -------
+    inputs : list[list[str]]
+    output : list[str]
+    shapes : list[tuple[int]]
+    size_dict : dict[str, int]
+    """
+    import networkx as nx
+    import numpy as np
+    from .oe import get_symbol
+
+    G = nx.random_regular_graph(reg, n, seed=seed)
+    inputs = [[] for _ in range(n)]
+    for i, (na, nb) in enumerate(G.edges):
+        ix = get_symbol(i)
+        inputs[na].append(ix)
+        inputs[nb].append(ix)
+
+    rng = np.random.default_rng(seed)
+    size_dict = {
+        get_symbol(i): rng.integers(d_min, d_max + 1)
+        for i in range(len(G.edges))
+    }
+
+    output = []
+    shapes = [
+        tuple(size_dict[ix] for ix in term)
+        for term in inputs
+    ]
+
+    return inputs, output, shapes, size_dict
+
+
+def perverse_equation(
+    n,
+    num_indices=3,
+    min_rank=0,
+    max_rank=6,
+    d_min=2,
+    d_max=3,
+    n_outer=2,
+    seed=None,
+):
+    """Create a weird but valid einsum equation with lots of hyper-edges,
+    repeated indices, scalars and repeated terms.
+
+    Parameters
+    ----------
+    n : int
+        The number of tensors.
+    num_indices : int, optional
+        The number of indices to use.
+    min_rank : int, optional
+        The minimum rank of a tensor.
+    max_rank : int, optional
+        The maximum rank of a tensor.
+    d_min : int, optional
+        The minimum size of an index.
+    d_max : int, optional
+        The maximum size of an index.
+    n_outer : int, optional
+        The number of outer indices.
+    seed : None or int, optional
+        Seed for ``np.random.default_rng`` for repeatibility.
+    """
+    import numpy as np
+    from .oe import get_symbol
+
+    rng = np.random.default_rng(seed)
+    indices = [get_symbol(i) for i in range(num_indices)]
+
+    size_dict = {
+        ix: rng.integers(d_min, d_max + 1)
+        for ix in indices
+    }
+
+    inputs = []
+    shapes = []
+    for _ in range(n):
+        K = rng.integers(min_rank, max_rank + 1)
+        term = [rng.choice(indices) for _ in range(K)]
+        inputs.append(term)
+        shapes.append(tuple(size_dict[ix] for ix in term))
+
+    # can't have more outputs than indices
+    n_outer = min(n_outer, num_indices)
+    output = rng.choice(indices, replace=False, size=n_outer).tolist()
+
+    return inputs, output, shapes, size_dict
+
+
 def rand_tree(
     n, reg,
     n_out=0,
@@ -807,7 +961,7 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
         map(get_symbol, itertools.count()).__next__
     )
 
-    terms = []
+    inputs = []
     for coo_a in itertools.product(*(range(n) for n in dims)):
         term = []
         for s in range(ndim):
@@ -825,10 +979,9 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
                 ix = symbol_map[edge]
 
                 term.append(ix)
-        terms.append(term)
+        inputs.append(term)
 
-    inputs = tuple(map("".join, terms))
-    output = ()
+    output = []
 
     rng = np.random.default_rng(seed)
 
@@ -838,7 +991,7 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
         for ix in symbol_map.values()
     }
 
-    shapes = tuple(tuple(size_dict[ix] for ix in term) for term in terms)
+    shapes = tuple(tuple(size_dict[ix] for ix in term) for term in inputs)
 
     return inputs, output, shapes, size_dict
 
