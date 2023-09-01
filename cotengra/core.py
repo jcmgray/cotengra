@@ -2709,13 +2709,36 @@ class ContractionTree:
 
         return recursively_stack_chunks((), tuple(output_pos))
 
-    def gen_output_chunks(self, arrays, progbar=False, **contract_opts):
+    def gen_output_chunks(
+        self,
+        arrays,
+        with_key=False,
+        progbar=False,
+        **contract_opts
+    ):
         """Generate each output chunk of the contraction - i.e. take care of
         summing internally sliced indices only first. This assumes that the
         ``sliced_inds`` are sorted by whether they appear in the output or not
         (the default order). Useful for performing some kind of reduction over
         the final tensor object like  ``fn(x).sum()`` without constructing the
         entire thing.
+
+        Parameters
+        ----------
+        arrays : sequence of array
+            The arrays to contract.
+        with_key : bool, optional
+            Whether to yield the output index configuration key along with the
+            chunk.
+        progbar : bool, optional
+            Show progress through the contraction chunks.
+
+        Yields
+        ------
+        chunk : array
+            A chunk of the contracted result.
+        key : dict[str, int]
+            The value each sliced output index takes for this chunk.
         """
         # consecutive slices of size ``stepsize`` all belong to the same output
         # block because the sliced indices are sorted output first
@@ -2734,10 +2757,21 @@ class ContractionTree:
 
         for o in it:
             chunk = self.contract_slice(arrays, o * stepsize, **contract_opts)
+
+            if with_key:
+                output_key = {
+                    ix: x for ix, x in self.slice_key(o * stepsize).items()
+                    if ix in self.output
+                }
+
             for j in range(1, stepsize):
                 i = o * stepsize + j
                 chunk = chunk + self.contract_slice(arrays, i, **contract_opts)
-            yield chunk
+
+            if with_key:
+                yield chunk, output_key
+            else:
+                yield chunk
 
     def contract(
         self,
