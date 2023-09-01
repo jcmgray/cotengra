@@ -356,8 +356,31 @@ class ContractionTree:
             tuple(self.size_dict[ix] for ix in term) for term in self.inputs
         )
 
+    def get_inputs_sliced(self):
+        """Get the input indices corresponding to a single slice of this tree,
+        i.e. with sliced indices removed.
+
+        Returns
+        -------
+        inputs : tuple[tuple[str]]
+        """
+        return tuple(
+            tuple(ix for ix in term if ix not in self.sliced_inds)
+            for term in self.inputs
+        )
+
+    def get_output_sliced(self):
+        """Get the output indices corresponding to a single slice of this tree,
+        i.e. with sliced indices removed.
+
+        Returns
+        -------
+        output : tuple[str]
+        """
+        return tuple(ix for ix in self.output if ix not in self.sliced_inds)
+
     def get_eq_sliced(self):
-        """Get the einsum equation corresponding to a single sliced of this
+        """Get the einsum equation corresponding to a single slice of this
         tree, i.e. with sliced indices removed.
 
         Returns
@@ -365,18 +388,13 @@ class ContractionTree:
         eq : str
         """
         return (
-            ",".join(
-                (
-                    "".join(ix for ix in term if ix not in self.sliced_inds)
-                    for term in self.inputs
-                )
-            )
+            ",".join(("".join(term) for term in self.get_inputs_sliced()))
             + "->"
-            + "".join(ix for ix in self.output if ix not in self.sliced_inds)
+            + "".join(self.get_output_sliced())
         )
 
     def get_shapes_sliced(self):
-        """Get the shapes of the input tensors corresponding to a single sliced
+        """Get the shapes of the input tensors corresponding to a single slice
         of this tree, i.e. with sliced indices removed.
 
         Returns
