@@ -16,13 +16,28 @@ class Variadic:
         return self.fn(arrays, **self.kwargs, **kwargs)
 
 
+class Via:
+
+    def __init__(self, fn, convert_in, convert_out):
+        self.fn = fn
+        self.convert_in = convert_in
+        self.convert_out = convert_out
+
+    def __call__(self, *arrays, **kwargs):
+        arrays = map(self.convert_in, arrays)
+        out = self.fn(*arrays, **kwargs)
+        return self.convert_out(out)
+
+
 def contract_expression(
     eq,
     *shapes,
     optimize='auto',
     constants=None,
     implementation=None,
+    prefer_einsum=False,
     autojit=False,
+    via=None,
     sort_contraction_indices=False,
 ):
     """Get an callable 'expression' that will contract tensors with shapes
@@ -49,7 +64,7 @@ def contract_expression(
         Whether to use ``autoray.autojit`` to compile the expression.
     """
     if constants is not None:
-        return _contract_expression_with_constants(
+        fn = _contract_expression_with_constants(
             eq,
             *shapes,
             optimize=optimize,
@@ -57,6 +72,10 @@ def contract_expression(
             autojit=autojit,
             sort_contraction_indices=sort_contraction_indices,
         )
+        if via is not None:
+            fn = Via(fn, *via)
+
+        return fn
     else:
         constants = ()
 
@@ -138,6 +157,7 @@ def contract_expression(
         if not tree.sliced_inds:
             fn = tree.get_contractor(
                 autojit=autojit,
+                prefer_einsum=prefer_einsum,
                 implementation=implementation,
             )
         else:
@@ -145,8 +165,12 @@ def contract_expression(
             fn = Variadic(
                 tree.contract,
                 autojit=autojit,
+                prefer_einsum=prefer_einsum,
                 implementation=implementation,
             )
+
+    if via is not None:
+        fn = Via(fn, *via)
 
     return fn
 
@@ -158,6 +182,7 @@ def _contract_expression_with_constants(
     constants=None,
     implementation=None,
     autojit=False,
+    prefer_einsum=False,
     sort_contraction_indices=False,
 ):
     import autoray as ar
@@ -187,6 +212,7 @@ def _contract_expression_with_constants(
         implementation=implementation,
         # wait to jit until after constants are folded
         autojit=False,
+        prefer_einsum=prefer_einsum,
         sort_contraction_indices=sort_contraction_indices,
     )
 
