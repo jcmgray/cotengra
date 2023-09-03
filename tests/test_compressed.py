@@ -35,7 +35,7 @@ def test_compressed_span():
 
 def test_compressed_agglom():
     chi = 4
-    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([10, 10])
+    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([16, 16])
     opt = ctg.HyperCompressedOptimizer(
         chi=chi,
         methods=['kahypar-agglom',]
