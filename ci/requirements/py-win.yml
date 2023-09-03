@@ -1,0 +1,18 @@
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - autoray
+  - coverage
+  - cytoolz
+  - matplotlib
+  - networkx
+  - opt_einsum
+  - optuna
+  - pytest
+  - pytest-cov
+  - tqdm
+  - pip
+  - pip:
+    - nevergrad
+

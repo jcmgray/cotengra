@@ -23,7 +23,7 @@ jobs:
           env: base
         - os: windows-latest
           python-version: '3.10'
-          env: base
+          env: win
 
     steps:
     - uses: actions/checkout@v3
