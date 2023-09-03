@@ -10,7 +10,6 @@ from .oe import (
     compute_size_by_dict,
     DEFAULT_COMBO_FACTOR,
     DynamicProgramming,
-    flop_count,
     get_path_fn,
     linear_to_ssa,
     get_symbol,
@@ -18,7 +17,6 @@ from .oe import (
 from autoray import do
 
 from .utils import (
-    BitSet,
     deprecated,
     dynary,
     groupby,
@@ -29,7 +27,6 @@ from .utils import (
     node_from_single,
     node_get_single_el,
     node_supremum,
-    oset,
     prod,
     unique,
 )
@@ -76,6 +73,15 @@ def union_it(bs):
     """Non-variadic version of various set type unions."""
     b0, *bs = bs
     return b0.union(*bs)
+
+
+def legs_union(legs_seq):
+    new_legs, *rem_legs = legs_seq
+    new_legs = new_legs.copy()
+    for legs in rem_legs:
+        for ix, ix_count in legs.items():
+            new_legs[ix] = new_legs.get(ix, 0) + ix_count
+    return new_legs
 
 
 def get_with_default(k, obj, default):
@@ -136,9 +142,14 @@ class ContractionTree:
 
         self.N = len(self.inputs)
 
-        self.bitset_edges = BitSet(size_dict.keys())
-        self.inputs_legs = list(map(self.bitset_edges, self.inputs))
-        self.output_legs = self.bitset_edges(self.output)
+        self.inputs_legs = [dict.fromkeys(term, 1) for term in self.inputs]
+        self.output_legs = dict.fromkeys(self.output)
+        self.appearances = {}
+        for term in self.inputs_legs:
+            for ix in term:
+                self.appearances[ix] = self.appearances.get(ix, 0) + 1
+        for ix in self.output_legs:
+            self.appearances[ix] = self.appearances.get(ix, 0) + 1
 
         # mapping of parents to children - the core binary tree object
         self.children = {}
@@ -151,7 +162,6 @@ class ContractionTree:
         self.root = node_supremum(self.N)
         self.info[self.root] = {
             "legs": self.output_legs,
-            "keep": self.output_legs,
             "size": compute_size_by_dict(self.output, size_dict),
         }
 
@@ -198,7 +208,7 @@ class ContractionTree:
             "sliced_inds",
             "sliced_sizes",
             "sliced_inputs",
-            "bitset_edges",
+            "appearances",
         ):
             setattr(self, attr, getattr(other, attr))
 
@@ -470,15 +480,6 @@ class ContractionTree:
         del self.info[node]
         del self.children[node]
 
-    @cached_node_property("keep")
-    def get_keep(self, node):
-        """Get a set of at least the indices that should be explicitly kept if
-        they appear on ``node`` (or below).
-        """
-        nodes_above = self.root.difference(node)
-        terms_above = self.node_to_terms(nodes_above)
-        return union_it((self.output_legs, *terms_above))
-
     @cached_node_property("legs")
     def get_legs(self, node):
         """Get the effective 'outer' indices for the collection of tensors
@@ -489,36 +490,37 @@ class ContractionTree:
         try:
             involved = self.get_involved(node)
         except KeyError:
-            involved = union_it(self.node_to_terms(node))
-        keep = self.get_keep(node)
-        return involved.intersection(keep)
+            involved = legs_union(self.node_to_terms(node))
+
+        return {
+            ix: ix_count
+            for ix, ix_count in involved.items()
+            if ix_count < self.appearances[ix]
+        }
+
 
     @cached_node_property("involved")
     def get_involved(self, node):
         """Get all the indices involved in the formation of subgraph ``node``.
         """
         if len(node) == 1:
-            return self.bitset_edges.infimum
+            return {}
         sub_legs = map(self.get_legs, self.children[node])
-        return union_it(sub_legs)
+        return legs_union(sub_legs)
 
     @cached_node_property("removed")
     def get_removed(self, node):
         """Get the indices that will be removed by the creation of ``node``."""
-        return self.get_involved(node).difference(self.get_legs(node))
+        involved = self.get_involved(node)
+        legs = self.get_legs(node)
+        return {
+            ix: ix_count for ix, ix_count in involved.items() if ix not in legs
+        }
 
     @cached_node_property("size")
     def get_size(self, node):
         """Get the tensor size of ``node``."""
         return compute_size_by_dict(self.get_legs(node), self.size_dict)
-
-    @cached_node_property("ops")
-    def get_ops(self, node):
-        """Get the number of scalar ops for the pairwise contraction."""
-        if len(node) == 1:
-            return 0
-        involved = self.get_involved(node)
-        return compute_size_by_dict(involved, self.size_dict)
 
     @cached_node_property("flops")
     def get_flops(self, node):
@@ -528,8 +530,7 @@ class ContractionTree:
         if len(node) == 1:
             return 0
         involved = self.get_involved(node)
-        removed = self.get_removed(node)
-        return flop_count(involved, removed, 2, self.size_dict)
+        return compute_size_by_dict(involved, self.size_dict)
 
     @cached_node_property("can_dot")
     def get_can_dot(self, node):
@@ -539,7 +540,15 @@ class ContractionTree:
         """
         l, r = self.children[node]
         sp, sl, sr = map(self.get_legs, (node, l, r))
-        return sl.symmetric_difference(sr) == sp
+
+        srl_symmdiff = sl.copy()
+        for ix, ix_count in sr.items():
+            if ix in srl_symmdiff:
+                srl_symmdiff.pop(ix)
+            else:
+                srl_symmdiff[ix] = ix_count
+
+        return srl_symmdiff == sp
 
     @cached_node_property("inds")
     def get_inds(self, node):
@@ -631,7 +640,7 @@ class ContractionTree:
             Scale the answer depending on the assumed data type.
         """
         if self._track_flops:
-            real_flops = self.multiplicity * self._flops
+            C = self.multiplicity * self._flops
 
         else:
             self._flops = 0
@@ -639,16 +648,16 @@ class ContractionTree:
                 self._flops += self.get_flops(node)
 
             self._track_flops = True
-            real_flops = self.multiplicity * self._flops
+            C = self.multiplicity * self._flops
 
         if dtype is None:
-            return real_flops // 2
+            return C
 
         if "float" in dtype:
-            return real_flops
+            return 2 * C
 
         if "complex" in dtype:
-            return real_flops * 4
+            return 8 * C
 
     def total_write(self):
         """Sum the total amount of memory that will be created and operated on.
@@ -665,7 +674,7 @@ class ContractionTree:
     def total_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum):
         t = 0
         for p in self.children:
-            f = self.get_flops(p) // 2
+            f = self.get_flops(p)
             w = self.get_size(p)
             t += combine((f, factor * w))
         return self.multiplicity * t
@@ -904,8 +913,8 @@ class ContractionTree:
         #   /  \    /   / \
         #  N0  N1  N2  N3  N4    <- ``nodes``, or, subgraphs
         #  /    \  /   /    \
-        path_inputs = [oset(self.get_legs(x)) for x in nodes]
-        path_output = oset(self.get_legs(grandparent))
+        path_inputs = [tuple(self.get_legs(x)) for x in nodes]
+        path_output = tuple(self.get_legs(grandparent))
 
         if isinstance(optimize, str):
             path_fn = get_path_fn(optimize)
@@ -1142,7 +1151,6 @@ class ContractionTree:
         tree.max_size()
 
         d = tree.size_dict[ind]
-        s_ind = self.bitset_edges.frommembers((ind,))
 
         for node, node_info in tree.info.items():
             # if ind doesn't feature in this node (contraction) nothing to do
@@ -1151,17 +1159,17 @@ class ContractionTree:
             # inputs can have leg indices that are not involved so
             legs = tree.get_legs(node)
 
-            if not ((s_ind & involved) or (s_ind & legs)):
+            if (ind not in involved) and (ind not in legs):
                 continue
 
             # else update all the relevant information about this node
-            node_info["involved"] = involved.difference(s_ind)
+            involved.pop(ind, None)
             removed = tree.get_removed(node)
 
             # update information regarding node indices sets
-            if s_ind & legs:
+            if ind in legs:
                 # removing indices changes both flops and size of node
-                node_info["legs"] = legs.difference(s_ind)
+                legs.pop(ind)
 
                 old_size = tree.get_size(node)
                 tree._sizes.discard(old_size)
@@ -1172,20 +1180,12 @@ class ContractionTree:
                 if len(node) > 1:
                     # only non-leaf nodes contribute to write
                     tree._write += -old_size + new_size
-
-                # XXX: modifying 'keep' not stricly necessarily as its only
-                #     needed for ``legs = keep.intersection(involved)``?
-                keep = tree.get_keep(node)
-                node_info["keep"] = keep.difference(s_ind)
             else:
                 # removing indices only changes flops
-                node_info["removed"] = removed.difference(s_ind)
+                removed.pop(ind, None)
 
             old_flops = tree.get_flops(node)
             new_flops = old_flops // d
-            if len(removed) == 1:
-                # if ind was the last contracted index then have outer product
-                new_flops //= 2
             node_info["flops"] = new_flops
             tree._flops += -old_flops + new_flops
 
@@ -1193,10 +1193,10 @@ class ContractionTree:
                 # its a leaf - corresponding input will be sliced
                 i = node_get_single_el(node)
                 tree.sliced_inputs = tree.sliced_inputs | frozenset([i])
-                tree.inputs_legs[i] = tree.inputs_legs[i] - s_ind
+                tree.inputs_legs[i].pop(ind, None)
             elif len(node) == tree.N:
                 # root node
-                tree.output_legs = tree.output_legs - s_ind
+                tree.output_legs.pop(ind, None)
 
             # delete info we can't change
             for k in (
@@ -1324,7 +1324,7 @@ class ContractionTree:
         else:
             opt = optimize
 
-        cost = getattr(scorer, "cost_local_tree_node", lambda _: 1)
+        cost = getattr(scorer, "cost_local_tree_node", lambda _: 2)
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -2405,7 +2405,7 @@ class ContractionTree:
 
             pa = "".join(
                 PINK + f"({ix})"
-                if ix in l_legs & r_legs
+                if (ix in l_legs) and (ix in r_legs)
                 else GREEN + f"({ix})"
                 if ix in r_legs
                 else BLUE + ix
@@ -2413,7 +2413,7 @@ class ContractionTree:
             ).replace(f"){GREEN}(", "")
             la = "".join(
                 PINK + f"[{ix}]"
-                if ix in p_legs & r_legs
+                if (ix in p_legs) and (ix in r_legs)
                 else RED + f"[{ix}]"
                 if ix in r_legs
                 else BLUE + ix
@@ -2421,7 +2421,7 @@ class ContractionTree:
             ).replace(f"]{RED}[", "")
             ra = "".join(
                 PINK + f"[{ix}]"
-                if ix in p_legs & l_legs
+                if (ix in p_legs) and (ix in l_legs)
                 else RED + f"[{ix}]"
                 if ix in l_legs
                 else GREEN + ix
@@ -3142,8 +3142,8 @@ class PartitionTreeBuilder:
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
-            inputs = tuple(map(oset, tree.node_to_terms(subgraph)))
-            output = oset(tree.get_legs(tree_node))
+            inputs = tuple(map(tuple, tree.node_to_terms(subgraph)))
+            output = tuple(tree.get_legs(tree_node))
             membership = self.partition_fn(
                 inputs,
                 output,
@@ -3194,12 +3194,12 @@ class PartitionTreeBuilder:
         leaves = tuple(tree.gen_leaves())
         for node in leaves:
             tree._add_node(node)
-        output = oset(tree.output)
+        output = tuple(tree.output)
 
         while len(leaves) > groupsize:
             parts = max(2, len(leaves) // groupsize)
 
-            inputs = [oset(tree.get_legs(node)) for node in leaves]
+            inputs = [tuple(tree.get_legs(node)) for node in leaves]
             membership = self.partition_fn(
                 inputs,
                 output,

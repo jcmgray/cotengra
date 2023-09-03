@@ -15,7 +15,7 @@ def test_slicer():
 
     assert info.largest_intermediate > 1_000_000
     assert ccost.size <= 1_000_000
-    assert ccost.total_flops > info.opt_cost
+    assert ccost.total_flops > info.opt_cost // 2
     assert len(inds) > 1
 
     # expected = oe.contract(eq, *arrays, optimize=path)

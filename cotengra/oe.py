@@ -27,6 +27,7 @@ SOFTWARE.
 import re
 import math
 import heapq
+import bisect
 import random
 import functools
 import itertools
@@ -38,7 +39,6 @@ import collections
 # from opt_einsum import get_symbol
 # from opt_einsum.helpers import (
 #     compute_size_by_dict,
-#     flop_count,
 # )
 # from opt_einsum.parser import (
 #     find_output_str,
@@ -156,49 +156,6 @@ def find_output_str(subscripts) -> str:
     )
 
 
-def flop_count(
-    idx_contraction,
-    inner,
-    num_terms,
-    size_dictionary,
-) -> int:
-    """
-    Computes the number of FLOPS in the contraction, *assuming real dtype*.
-
-    Parameters
-    ----------
-    idx_contraction : iterable
-        The indices involved in the contraction
-    inner : bool
-        Does this contraction require an inner product?
-    num_terms : int
-        The number of terms in a contraction
-    size_dictionary : dict
-        The size of each of the indices in idx_contraction
-
-    Returns
-    -------
-    flop_count : int
-        The total number of FLOPS required for the contraction.
-
-    Examples
-    --------
-
-    >>> flop_count('abc', False, 1, {'a': 2, 'b':3, 'c':5})
-    30
-
-    >>> flop_count('abc', True, 2, {'a': 2, 'b':3, 'c':5})
-    60
-
-    """
-    overall_size = compute_size_by_dict(idx_contraction, size_dictionary)
-    op_factor = max(1, num_terms - 1)
-    if inner:
-        op_factor += 1
-
-    return overall_size * op_factor
-
-
 def linear_to_ssa(path):
     """
     Convert a path with recycled linear ids to a path with static single
@@ -221,7 +178,7 @@ def linear_to_ssa(path):
     return ssa_path
 
 
-def ssa_to_linear(ssa_path):
+def ssa_to_linear(ssa_path, N=None):
     """
     Convert a path with static single assignment ids to a path with recycled
     linear ids. For example:
@@ -231,14 +188,19 @@ def ssa_to_linear(ssa_path):
     #> [(0, 3), (1, 2), (0, 1)]
     ```
     """
-    import numpy as np
+    if N is None:
+        N = sum(map(len, ssa_path)) - len(ssa_path) + 1
 
-    ids = np.arange(1 + max(map(max, ssa_path)), dtype=np.int32)
+    ids = list(range(N))
     path = []
-    for ssa_ids in ssa_path:
-        path.append(tuple(int(ids[ssa_id]) for ssa_id in ssa_ids))
-        for ssa_id in ssa_ids:
-            ids[ssa_id:] -= 1
+    ssa = N
+    for scon in ssa_path:
+        con = sorted([bisect.bisect_left(ids, s) for s in scon])
+        for j in reversed(con):
+            ids.pop(j)
+        ids.append(ssa)
+        path.append(con)
+        ssa += 1
     return path
 
 
@@ -1161,7 +1123,6 @@ __all__ = (
     "DEFAULT_COMBO_FACTOR",
     "DynamicProgramming",
     "find_output_str",
-    "flop_count",
     "get_path_fn",
     "get_symbol",
     "linear_to_ssa",

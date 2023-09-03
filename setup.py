@@ -28,14 +28,14 @@ setup(
     install_requires=[
         "autoray",
         "cytoolz",
-        "networkx",
         "optuna",
         "tqdm",
     ],
     extras_require={
         "recommended": [
-            "opt_einsum",
             "kahypar",
+            "networkx",
+            "opt_einsum",
             "ray",
         ],
         "docs": [
@@ -58,6 +58,7 @@ setup(
             "networkx",
             "nevergrad",
             "numpy",
+            "opt_einsum",
             "pytest",
             "seaborn",
             "skopt",

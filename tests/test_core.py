@@ -1,7 +1,6 @@
-import math
 import pytest
 import opt_einsum as oe
-from cotengra.core import ContractionTree
+import cotengra as ctg
 
 
 def test_contraction_tree_equivalency():
@@ -17,8 +16,8 @@ def test_contraction_tree_equivalency():
     _, info2 = oe.contract_path(eq, *shapes, shapes=True,
                                 optimize=[(2, 3), (0, 1), (0, 1)])
     assert info1.contraction_list != info2.contraction_list
-    ct1 = ContractionTree.from_info(info1, check=True)
-    ct2 = ContractionTree.from_info(info2, check=True)
+    ct1 = ctg.ContractionTree.from_info(info1, check=True)
+    ct2 = ctg.ContractionTree.from_info(info2, check=True)
     assert ct1.total_flops() == ct2.total_flops() == 40
     assert ct1.children == ct2.children
     assert ct1.is_complete()
@@ -38,7 +37,7 @@ def test_reconfigure(forested, parallel, requires):
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
 
     info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
-    tree_gr = ContractionTree.from_info(info_gr)
+    tree_gr = ctg.ContractionTree.from_info(info_gr)
 
     assert tree_gr.total_flops() == info_gr.opt_cost
 
@@ -59,7 +58,7 @@ def test_reconfigure(forested, parallel, requires):
 def test_reconfigure_with_n_smaller_than_subtree_size():
     eq, shapes = oe.helpers.rand_equation(10, 3)
     path, info = oe.contract_path(eq, *shapes, shapes=True)
-    tree = ContractionTree.from_info(info)
+    tree = ctg.ContractionTree.from_info(info)
     tree.subtree_reconfigure(12)
 
 
@@ -74,7 +73,7 @@ def test_slice_and_reconfigure(forested, parallel, requires):
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
     info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
-    tree_gr = ContractionTree.from_info(info_gr)
+    tree_gr = ctg.ContractionTree.from_info(info_gr)
 
     target_size = tree_gr.max_size() // 32
 
@@ -95,7 +94,7 @@ def test_plot():
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
     info = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
-    tree = ContractionTree.from_info(info)
+    tree = ctg.ContractionTree.from_info(info)
 
     tree.plot_ring()
     tree.plot_tent()
@@ -107,7 +106,7 @@ def test_plot_alt():
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
     info = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
-    tree = ContractionTree.from_info(info)
+    tree = ctg.ContractionTree.from_info(info)
 
     tree.plot_contractions_alt()
 
@@ -116,5 +115,10 @@ def test_plot_alt():
 def test_compressed_rank(optimize):
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
     info = oe.contract_path(eq, *shapes, shapes=True, optimize=optimize)[1]
-    tree = ContractionTree.from_info(info)
+    tree = ctg.ContractionTree.from_info(info)
     assert tree.max_size_compressed(1) < tree.max_size()
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_print_contractions(seed):
+    ctg.utils.rand_tree(10, 3, 2, 2, 2).print_contractions()

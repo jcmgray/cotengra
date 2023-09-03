@@ -2,7 +2,7 @@ import random
 import collections
 from math import log
 
-from .oe import compute_size_by_dict, flop_count
+from .oe import compute_size_by_dict
 from .core import ContractionTree
 from .utils import MaxCounter, oset
 from .scoring import get_score_fn
@@ -129,7 +129,7 @@ class ContractionCosts:
                     "involved": involved,
                     "legs": legs,
                     "size": compute_size_by_dict(legs, size_dict),
-                    "flops": flop_count(involved, c[1], 2, size_dict),
+                    "flops": compute_size_by_dict(involved, size_dict),
                 }
             )
 

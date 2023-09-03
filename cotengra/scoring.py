@@ -82,7 +82,7 @@ class FlopsObjective(ExactObjective):
         super().__init__()
 
     def cost_local_tree_node(self, tree, node):
-        return tree.get_flops(node) // 2
+        return tree.get_flops(node)
 
     def score_slice_index(self, costs, ix):
         return math.log(
@@ -208,7 +208,7 @@ class ComboObjective(ExactObjective):
         super().__init__()
 
     def cost_local_tree_node(self, tree, node):
-        return tree.get_flops(node) // 2 + self.factor * tree.get_size(node)
+        return tree.get_flops(node) + self.factor * tree.get_size(node)
 
     def score_slice_index(self, costs, ix):
         return math.log(
@@ -224,7 +224,7 @@ class ComboObjective(ExactObjective):
         ensure_basic_quantities_are_computed(trial)
         return (
             # use ops
-            math.log2(trial["flops"] // 2 + self.factor * trial["write"])
+            math.log2(trial["flops"] + self.factor * trial["write"])
         )
 
 
@@ -254,7 +254,7 @@ class LimitObjective(ExactObjective):
 
     def cost_local_tree_node(self, tree, node):
         return max(
-            tree.get_flops(node) // 2, self.factor * tree.get_size(node)
+            tree.get_flops(node), self.factor * tree.get_size(node)
         )
 
     def score_slice_index(self, costs, ix):
