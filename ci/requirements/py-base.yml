@@ -11,10 +11,10 @@ dependencies:
   - optuna
   - pytest
   - pytest-cov
-  - ray
   - tqdm
   - pip
   - pip:
     - kahypar
     - nevergrad
+    - ray
 
