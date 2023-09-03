@@ -261,7 +261,7 @@ try:
         "greedy-span",
         path_greedy.greedy_span,
     )
-except (KeyError, NotImplementedError):
+except KeyError:
     # KeyError: if reloading cotengra e.g. library entries already registered
     # NotImplementedError: if opt_einsum not installed
     pass

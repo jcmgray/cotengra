@@ -69,7 +69,9 @@ except ImportError:
         raise NotImplementedError("opt_einsum not installed")
 
     def register_path_fn(*_, **__):
-        raise NotImplementedError("opt_einsum not installed")
+        import warnings
+
+        warnings.warn("opt_einsum not installed")
 
 
 DEFAULT_COMBO_FACTOR = 64
