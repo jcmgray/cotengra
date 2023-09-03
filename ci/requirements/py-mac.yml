@@ -17,5 +17,4 @@ dependencies:
   - pip:
     # - kahypar
     - nevergrad
-    # - ray
-
+    - ray
