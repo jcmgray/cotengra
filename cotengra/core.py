@@ -498,7 +498,6 @@ class ContractionTree:
             if ix_count < self.appearances[ix]
         }
 
-
     @cached_node_property("involved")
     def get_involved(self, node):
         """Get all the indices involved in the formation of subgraph ``node``.
@@ -760,7 +759,11 @@ class ContractionTree:
         return tracker
 
     def total_flops_compressed(
-        self, chi, order="surface_order", compress_late=False, dtype=None,
+        self,
+        chi,
+        order="surface_order",
+        compress_late=False,
+        dtype=None,
     ):
         """Estimate the total flops for a compressed contraction of this tree
         with maximum bond size ``chi``. This includes basic estimates of the
@@ -971,7 +974,7 @@ class ContractionTree:
 
     def _traverse_ordered(self, order):
         """Traverse the tree in the order that minimizes ``order(node)``, but
-        still contrained to produce children before parents.
+        still constrained to produce children before parents.
         """
         from bisect import bisect
 
@@ -2710,11 +2713,7 @@ class ContractionTree:
         return recursively_stack_chunks((), tuple(output_pos))
 
     def gen_output_chunks(
-        self,
-        arrays,
-        with_key=False,
-        progbar=False,
-        **contract_opts
+        self, arrays, with_key=False, progbar=False, **contract_opts
     ):
         """Generate each output chunk of the contraction - i.e. take care of
         summing internally sliced indices only first. This assumes that the
@@ -2760,7 +2759,8 @@ class ContractionTree:
 
             if with_key:
                 output_key = {
-                    ix: x for ix, x in self.slice_key(o * stepsize).items()
+                    ix: x
+                    for ix, x in self.slice_key(o * stepsize).items()
                     if ix in self.output
                 }
 

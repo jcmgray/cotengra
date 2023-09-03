@@ -87,12 +87,10 @@ def test_basic(contraction_20_5, opt, requires):
 def test_hyper(contraction_20_5, optlib, requires, parallel):
     pytest.importorskip('kahypar')
     pytest.importorskip(requires)
-    if parallel:
-        pytest.importorskip('distributed')
 
     eq, _, _, arrays = contraction_20_5
     optimizer = ctg.HyperOptimizer(
-        max_repeats=16, parallel=parallel, optlib=optlib,
+        max_repeats=32, parallel=parallel, optlib=optlib,
     )
     _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
     assert path_info.speedup > 1
