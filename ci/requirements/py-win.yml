@@ -11,6 +11,7 @@ dependencies:
   - optuna
   - pytest
   - pytest-cov
+  - seaborn
   - tqdm
   - pip
   - pip:
