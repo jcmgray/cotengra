@@ -134,7 +134,7 @@ def test_rand_equation(
         seed=seed,
     )
     arrays = [np.random.normal(size=s) for s in shapes]
-    eq = ",".join(map("".join, inputs)) + "->" + "".join(output)
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
 
     path, info = oe.contract_path(eq, *arrays, optimize="greedy")
     if info.largest_intermediate > 2**20:
@@ -253,8 +253,7 @@ def test_contract_expression(
     sort_contraction_indices,
 ):
     inputs, output, shapes, size_dict = ctg.utils.lattice_equation([4, 8])
-
-    eq = f"{','.join(map(''.join, inputs))}->{''.join(output)}"
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
     arrays = [np.random.rand(*s) for s in shapes]
     x0 = oe.contract(eq, *arrays)
 

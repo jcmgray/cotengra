@@ -121,7 +121,7 @@ def test_basic_rand(seed, which):
         d_max=3,
         seed=seed,
     )
-    eq = ",".join(map("".join, inputs)) + "->" + "".join(output)
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
 
     path = {
         "greedy": pb.optimize_greedy,
@@ -130,6 +130,27 @@ def test_basic_rand(seed, which):
         which
     ](inputs, output, size_dict)
 
+    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+    arrays = [np.random.randn(*s) for s in shapes]
+    assert_allclose(
+        tree.contract(arrays), np.einsum(eq, *arrays, optimize=True)
+    )
+
+
+@pytest.mark.parametrize("seed", range(10))
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+def test_basic_perverse(seed, which):
+    inputs, output, shapes, size_dict = ctg.utils.perverse_equation(
+        10, seed=seed
+    )
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    print(eq)
+    path = {
+        "greedy": pb.optimize_greedy,
+        "optimal": pb.optimize_optimal,
+    }[
+        which
+    ](inputs, output, size_dict)
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
     arrays = [np.random.randn(*s) for s in shapes]
     assert_allclose(

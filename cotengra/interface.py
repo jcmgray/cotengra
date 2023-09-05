@@ -2,8 +2,9 @@ import itertools
 
 import autoray as ar
 
-from .oe import get_path_fn, find_output_str
+from .oe import get_path_fn
 from .core import ContractionTree
+from .utils import find_output_str
 
 
 class Variadic:

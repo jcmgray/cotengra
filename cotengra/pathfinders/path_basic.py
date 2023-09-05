@@ -331,7 +331,7 @@ class ContractionProcessor:
             try:
                 ix_nodes = self.edges[ix]
                 ix_nodes.pop(i, None)
-                if len(ix_nodes) == 1:
+                if len(ix_nodes) == 0:
                     del self.edges[ix]
             except KeyError:
                 # repeated index already removed
@@ -345,9 +345,18 @@ class ContractionProcessor:
         i = self.ssa
         self.ssa += 1
         self.nodes[i] = legs
-        for j, _ in legs:
-            self.edges.setdefault(j, {})[i] = None
+        for ix, _ in legs:
+            self.edges.setdefault(ix, {})[i] = None
         return i
+
+    def check(self):
+        """Check that the current graph is valid, useful for debugging."""
+        for node, legs in self.nodes.items():
+            for ix, _ in legs:
+                assert node in self.edges[ix]
+        for ix, ix_nodes in self.edges.items():
+            for node in ix_nodes:
+                assert ix in {jx for jx, _ in self.nodes[node]}
 
     def contract_nodes(self, i, j):
         """Contract the nodes ``i`` and ``j``, adding a new node to the graph

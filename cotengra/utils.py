@@ -1082,6 +1082,24 @@ def eq_to_inputs_output(eq):
     return inputs, output
 
 
+def inputs_output_to_eq(inputs, output):
+    """Convert an explicit list of inputs and output to a str einsum equation.
+
+    Parameters
+    ----------
+    inputs : list[list[str]]
+        The input terms.
+    output : list[str]
+        The output term.
+
+    Returns
+    -------
+    eq : str
+        The einsum equation.
+    """
+    return f"{','.join(map(''.join, inputs))}->{''.join(output)}"
+
+
 def make_rand_size_dict_from_inputs(inputs, d_min=2, d_max=3, seed=None):
     """Get a random size dictionary for a given set of inputs.
 
