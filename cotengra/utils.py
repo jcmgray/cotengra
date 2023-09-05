@@ -656,6 +656,41 @@ class DiskDict:
             raise KeyError
 
 
+class GumbelBatchedGenerator:
+    """Get a gumbel random number generator, that pre-batches the numbers using
+    numpy for both speed and repeatibility.
+
+    Parameters
+    ----------
+    rng : np.random.Generator
+        The random number generator to use.
+    batch : int, optional
+        The number of random numbers to generate at once.
+    """
+
+    def __init__(self, rng, batch=1000):
+        self.rng = rng
+        self.batch = batch
+        self.i = 0
+        self.gs = iter(())
+
+    def __call__(self):
+        try:
+            return next(self.gs)
+        except StopIteration:
+            self.gs = iter(self.rng.gumbel(size=self.batch))
+            return next(self.gs)
+
+
+class BadTrial(Exception):
+    """Use this to indicate that a trial contraction tree was bad.
+    """
+    pass
+
+
+
+# ---------------------- test equations and utilities ----------------------- #
+
 def rand_equation(
     n, reg,
     n_out=0,
@@ -996,68 +1031,151 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
     return inputs, output, shapes, size_dict
 
 
-def equation_to_shapes(eq, d_min=2, d_max=3, seed=None):
-    """Generate some shapes from an equation string.
+def find_output_str(lhs):
+    """Compute the output string from the left-hand side only of an equation.
+    This is any indices that appear only once in the left-hand side, in sorted
+    order.
+
+    Parameters
+    ----------
+    lhs : str
+        The comma separated list of indices on the left-hand side of an
+        einsum equation.
+
+    Returns
+    -------
+    rhs : str
+        The output string of the einsum equation.
+
+    Examples
+    --------
+
+        >>> find_output_str('cb,ba')
+        'ac'
+    """
+    tmp_lhs = lhs.replace(",", "")
+    return "".join(s for s in sorted(set(tmp_lhs)) if tmp_lhs.count(s) == 1)
+
+
+def eq_to_inputs_output(eq):
+    """Convert a einsum equation into an explicit list of list of characters
+    and an output list of characters.
 
     Parameters
     ----------
     eq : str
-        The equation string.
+        The einsum equation, with or without output.
+
+    Returns
+    -------
+    inputs : list[list[str]]
+        The input terms.
+    output : list[str]
+        The output term.
+    """
+    if "->" not in eq:
+        eq += "->" + find_output_str(eq)
+    inputs, output = eq.split("->")
+    inputs = inputs.split(",")
+    inputs = [list(s) for s in inputs]
+    output = list(output)
+    return inputs, output
+
+
+def make_rand_size_dict_from_inputs(inputs, d_min=2, d_max=3, seed=None):
+    """Get a random size dictionary for a given set of inputs.
+
+    Parameters
+    ----------
+    inputs : list[list[str]]
+        The input terms.
     d_min : int, optional
-        The minimum size of an index.
+        The minimum dimension, by default 2.
     d_max : int, optional
-        The maximum size of an index.
-    seed : None or int, optional
-        Seed for ``np.random.default_rng`` for repeatibility. If
-        ``d_min == d_max`` then this doesn't matter.
+        The maximum dimension, by default 3.
+    seed : int, optional
+        The random seed, by default None.
+
+    Returns
+    -------
+    size_dict : dict[str, int]
+        The index size dictionary.
     """
     import numpy as np
 
     rng = np.random.default_rng(seed)
-    lhs = eq.split('->')[0]
 
-    shapes = []
     size_dict = {}
-    for term in lhs.split(','):
-        shape = []
+    for term in inputs:
         for ix in term:
-            try:
-                d = size_dict[ix]
-            except KeyError:
-                d = size_dict[ix] = rng.integers(d_min, d_max + 1)
-            shape.append(d)
-        shapes.append(tuple(shape))
-
-    return shapes, size_dict
+            if ix not in size_dict:
+                size_dict[ix] = rng.integers(d_min, d_max + 1)
+    return size_dict
 
 
-class GumbelBatchedGenerator:
-    """Get a gumbel random number generator, that pre-batches the numbers using
-    numpy for both speed and repeatibility.
+def make_shapes_from_inputs(inputs, size_dict):
+    """Make example shapes to match inputs and index sizes.
 
     Parameters
     ----------
-    rng : np.random.Generator
-        The random number generator to use.
-    batch : int, optional
-        The number of random numbers to generate at once.
+    inputs : list[list[str]]
+        The input terms.
+    size_dict : dict[str, int]
+        The index size dictionary.
+
+    Returns
+    -------
+    shapes : list[tuple[int]]
+        The example shapes.
     """
-
-    def __init__(self, rng, batch=1000):
-        self.rng = rng
-        self.batch = batch
-        self.i = 0
-        self.gs = iter(())
-
-    def __call__(self):
-        try:
-            return next(self.gs)
-        except StopIteration:
-            self.gs = iter(self.rng.gumbel(size=self.batch))
-            return next(self.gs)
+    return [tuple(size_dict[ix] for ix in term) for term in inputs]
 
 
-class BadTrial(Exception):
-    """Use this to indicate that a trial contraction tree was bad.
+def make_arrays_from_inputs(inputs, size_dict, seed=None):
+    """Make example arrays to match inputs and index sizes.
+
+    Parameters
+    ----------
+    inputs : list[list[str]]
+        The input terms.
+    size_dict : dict[str, int]
+        The index size dictionary.
+    seed : int, optional
+        The random seed, by default None.
+
+    Returns
+    -------
+    arrays : list[numpy.ndarray]
+        The example arrays.
     """
-    pass
+    import numpy as np
+
+    shapes = make_shapes_from_inputs(inputs, size_dict)
+    rng = np.random.default_rng(seed)
+    return [rng.normal(size=shape) for shape in shapes]
+
+
+def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None):
+    """Create a set of example arrays to match an einsum equation directly.
+
+    Parameters
+    ----------
+    eq : str
+        The einsum equation.
+    d_min : int, optional
+        The minimum dimension, by default 2.
+    d_max : int, optional
+        The maximum dimension, by default 3.
+    seed : int, optional
+        The random seed, by default None.
+
+    Returns
+    -------
+    arrays : list[numpy.ndarray]
+        The example arrays.
+    """
+    inputs, _ = eq_to_inputs_output(eq)
+    size_dict = make_rand_size_dict_from_inputs(
+        inputs, d_min=d_min, d_max=d_max, seed=seed
+    )
+    return make_arrays_from_inputs(inputs, size_dict, seed=seed)

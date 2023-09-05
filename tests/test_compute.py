@@ -93,12 +93,12 @@ test_case_eqs = [
 ]
 
 
-@pytest.mark.parametrize("case", test_case_eqs)
-def test_basic_equations(case):
-    shapes,_ = ctg.utils.equation_to_shapes(case)
-    arrays = [np.random.rand(*s) for s in shapes]
-    x = np.einsum(case, *arrays)
-    expr = ctg.contract_expression(case, *shapes)
+@pytest.mark.parametrize("eq", test_case_eqs)
+def test_basic_equations(eq):
+    arrays = ctg.utils.make_arrays_from_eq(eq)
+    shapes = [a.shape for a in arrays]
+    x = np.einsum(eq, *arrays)
+    expr = ctg.contract_expression(eq, *shapes)
     y = expr(*arrays)
     assert_allclose(x, y)
 

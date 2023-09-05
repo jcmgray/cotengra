@@ -1,4 +1,5 @@
 import heapq
+import bisect
 import functools
 import itertools
 
@@ -281,14 +282,14 @@ class ContractionProcessor:
                 if ix is None:
                     # index not processed yet
                     ix = self.indmap[ind] = c
-                    self.edges[ix] = {i}
+                    self.edges[ix] = {i: None}
                     self.appearances.append(1)
                     self.sizes.append(size_dict[ind])
                     c += 1
                 else:
                     # seen index already
                     self.appearances[ix] += 1
-                    self.edges[ix].add(i)
+                    self.edges[ix][i] = None
                 legs.append((ix, 1))
 
             legs.sort()
@@ -303,12 +304,10 @@ class ContractionProcessor:
     def neighbors(self, i):
         """Get all neighbors of node ``i``."""
         # only want to yield each neighbor once and not i itself
-        seen = {i}
         for ix, _ in self.nodes[i]:
             for j in self.edges[ix]:
-                if j not in seen:
+                if j != i:
                     yield j
-                    seen.add(j)
 
     def print_current_terms(self):
         return ",".join(
@@ -328,12 +327,15 @@ class ContractionProcessor:
         the legs of the node.
         """
         legs = self.nodes.pop(i)
-        for j, _ in legs:
-            es = self.edges[j]
-            if len(es) == 1:
-                del self.edges[j]
-            else:
-                self.edges[j].discard(i)
+        for ix, _ in legs:
+            try:
+                ix_nodes = self.edges[ix]
+                ix_nodes.pop(i, None)
+                if len(ix_nodes) == 1:
+                    del self.edges[ix]
+            except KeyError:
+                # repeated index already removed
+                pass
         return legs
 
     def add_node(self, legs):
@@ -344,7 +346,7 @@ class ContractionProcessor:
         self.ssa += 1
         self.nodes[i] = legs
         for j, _ in legs:
-            self.edges.setdefault(j, set()).add(i)
+            self.edges.setdefault(j, {})[i] = None
         return i
 
     def contract_nodes(self, i, j):
@@ -368,7 +370,6 @@ class ContractionProcessor:
             if len(ix_nodes) >= len(self.nodes):
                 ix_to_remove.append(ix)
         for ix in ix_to_remove:
-            # print("removing batch", ix)
             self.remove_ix(ix)
 
     def simplify_single_terms(self):
@@ -461,7 +462,12 @@ class ContractionProcessor:
         groups.sort()
         return groups
 
-    def optimize_greedy(self, costmod=1.0, temperature=0.0):
+    def optimize_greedy(
+        self,
+        costmod=1.0,
+        temperature=0.0,
+        seed=None,
+    ):
         """ """
 
         if temperature == 0.0:
@@ -472,16 +478,16 @@ class ContractionProcessor:
         else:
             from ..utils import GumbelBatchedGenerator
             import numpy as np
-            import math
 
-            gmblgen = GumbelBatchedGenerator(np.random.default_rng())
+            rng = np.random.default_rng(seed)
+            gmblgen = GumbelBatchedGenerator(rng)
 
             def local_score(sa, sb, sab):
                 score = sab - costmod * (sa + sb)
                 if score < 0:
-                    return -math.log(-score) - temperature * gmblgen()
+                    return -np.log(-score) - temperature * gmblgen()
                 else:
-                    return math.log(score) - temperature * gmblgen()
+                    return np.log(score) - temperature * gmblgen()
 
                 # return sab - costmod * (sa + sb) - temperature * gmblgen()
 
@@ -686,7 +692,33 @@ class ContractionProcessor:
             heapq.heappush(nodes_sizes, (ksize, k))
 
 
-def optimize_simplify(inputs, output, size_dict):
+def ssa_to_linear(ssa_path, N=None):
+    """
+    Convert a path with static single assignment ids to a path with recycled
+    linear ids. For example:
+
+    ```python
+    ssa_to_linear([(0, 3), (2, 4), (1, 5)])
+    #> [(0, 3), (1, 2), (0, 1)]
+    ```
+    """
+    if N is None:
+        N = sum(map(len, ssa_path)) - len(ssa_path) + 1
+
+    ids = list(range(N))
+    path = []
+    ssa = N
+    for scon in ssa_path:
+        con = sorted([bisect.bisect_left(ids, s) for s in scon])
+        for j in reversed(con):
+            ids.pop(j)
+        ids.append(ssa)
+        path.append(con)
+        ssa += 1
+    return path
+
+
+def optimize_simplify(inputs, output, size_dict, use_ssa=False):
     """Find the (likely only partial) contraction path corresponding to
     simplifications only. Those simplifiactions are:
 
@@ -704,17 +736,20 @@ def optimize_simplify(inputs, output, size_dict):
         The indices of the output tensor.
     size_dict : dict[str, int]
         A dictionary mapping indices to their dimension.
+    use_ssa : bool, optional
+        Whether to return the contraction path in 'SSA' format (i.e. as if each
+        intermediate is appended to the list of inputs, without removals).
 
     Returns
     -------
-    ssa_path : list[list[int]]
-        The contraction path, given as a sequence of pairs of node indices in
-        'SSA' format (i.e. as if each intermediate is appended to the list of
-        inputs, without removals).
+    path : list[list[int]]
+        The contraction path, given as a sequence of pairs of node indices.
     """
     cp = ContractionProcessor(inputs, output, size_dict)
     cp.simplify()
-    return cp.ssa_path
+    if use_ssa:
+        return cp.ssa_path
+    return ssa_to_linear(cp.ssa_path)
 
 
 def optimize_greedy(
@@ -724,6 +759,7 @@ def optimize_greedy(
     costmod=1.0,
     temperature=0.0,
     simplify=True,
+    use_ssa=False,
 ):
     """Find a contraction path using a greedy algorithm.
 
@@ -761,13 +797,14 @@ def optimize_greedy(
         Such simpifications may be required in the general case for the proper
         functioning of the core optimization, but may be skipped if the input
         indices are already in a simplified form.
+    use_ssa : bool, optional
+        Whether to return the contraction path in 'SSA' format (i.e. as if each
+        intermediate is appended to the list of inputs, without removals).
 
     Returns
     -------
-    ssa_path : list[list[int]]
-        The contraction path, given as a sequence of pairs of node indices in
-        'SSA' format (i.e. as if each intermediate is appended to the list of
-        inputs, without removals).
+    path : list[list[int]]
+        The contraction path, given as a sequence of pairs of node indices.
     """
     cp = ContractionProcessor(inputs, output, size_dict)
     if simplify:
@@ -775,7 +812,9 @@ def optimize_greedy(
     cp.optimize_greedy(costmod=costmod, temperature=temperature)
     # handle disconnected subgraphs
     cp.optimize_remaining_by_size()
-    return cp.ssa_path
+    if use_ssa:
+        return cp.ssa_path
+    return ssa_to_linear(cp.ssa_path)
 
 
 def optimize_optimal(
@@ -786,6 +825,7 @@ def optimize_optimal(
     cost_cap=2,
     search_outer=False,
     simplify=True,
+    use_ssa=False,
 ):
     """Find the optimal contraction path using a dynamic programming
     algorithm (by default excluding outer products).
@@ -838,13 +878,14 @@ def optimize_optimal(
         Such simpifications may be required in the general case for the proper
         functioning of the core optimization, but may be skipped if the input
         indices are already in a simplified form.
+    use_ssa : bool, optional
+        Whether to return the contraction path in 'SSA' format (i.e. as if each
+        intermediate is appended to the list of inputs, without removals).
 
     Returns
     -------
-    ssa_path : list[list[int]]
-        The contraction path, given as a sequence of pairs of node indices in
-        'SSA' format (i.e. as if each intermediate is appended to the list of
-        inputs, without removals).
+    path : list[list[int]]
+        The contraction path, given as a sequence of pairs of node indices.
     """
     cp = ContractionProcessor(inputs, output, size_dict)
     if simplify:
@@ -854,4 +895,6 @@ def optimize_optimal(
     )
     # handle disconnected subgraphs
     cp.optimize_remaining_by_size()
-    return cp.ssa_path
+    if use_ssa:
+        return cp.ssa_path
+    return ssa_to_linear(cp.ssa_path)
