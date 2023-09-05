@@ -93,20 +93,8 @@ test_case_eqs = [
 ]
 
 
-def has_repeated_index(equation):
-    terms = equation.split("->")[0].split(",")
-    for term in terms:
-        if len(set(term)) != len(term):
-            return True
-    return False
-
-
 @pytest.mark.parametrize("case", test_case_eqs)
 def test_basic_equations(case):
-
-    if has_repeated_index(case):
-        pytest.xfail("repeated indices not supported")
-
     shapes,_ = ctg.utils.equation_to_shapes(case)
     arrays = [np.random.rand(*s) for s in shapes]
     x = np.einsum(case, *arrays)

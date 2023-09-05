@@ -142,14 +142,52 @@ class ContractionTree:
 
         self.N = len(self.inputs)
 
-        self.inputs_legs = [dict.fromkeys(term, 1) for term in self.inputs]
-        self.output_legs = dict.fromkeys(self.output)
+        # create the index representation for each input: an ordered mapping of
+        # each index to the number of times it has appeared on children. By
+        # also tracking the total number of appearances one can efficiently
+        # and locally compute which indices should be kept or contracted
+        self.inputs_legs = []
         self.appearances = {}
-        for term in self.inputs_legs:
+        for term in self.inputs:
+            legs = {}
             for ix in term:
+                legs[ix] = legs.get(ix, 0) + 1
                 self.appearances[ix] = self.appearances.get(ix, 0) + 1
+            self.inputs_legs.append(legs)
+        self.output_legs = dict.fromkeys(self.output)
+        # adding output appearances ensures these are never contracted away,
+        # N.B. if after this step every appearance count is exactly 2,
+        # then there are no 'hyper' indices in the contraction
         for ix in self.output_legs:
             self.appearances[ix] = self.appearances.get(ix, 0) + 1
+
+        # check for single term simplifications, these are treated as a simple
+        # preprocessing step that only is taken into account during actual
+        # contraction, and are not represented in the binary tree
+        preprocessing = []
+        for i, (term, legs) in enumerate(zip(inputs, self.inputs_legs)):
+            is_simplifiable = (
+                # repeated indices (diag or traces)
+                (len(term) != len(legs)) or
+                # reduced indices (summed immediately)
+                any(
+                    ix_count == self.appearances[ix]
+                    for ix, ix_count in legs.items()
+                )
+            )
+            if is_simplifiable:
+                # compute the simplified legs
+                new_legs = {
+                    ix: ix_count
+                    for ix, ix_count in legs.items()
+                    if ix_count != self.appearances[ix]
+                }
+                # modify the input legs as if these were the inputs
+                self.inputs_legs[i] = new_legs
+                # add a preprocessing step to the list of contractions
+                eq = f"{''.join(term)}->{''.join(new_legs)}"
+                self.preprocesssing.append((i, eq))
+        self.preprocessing = tuple(preprocessing)
 
         # mapping of parents to children - the core binary tree object
         self.children = {}
@@ -209,6 +247,7 @@ class ContractionTree:
             "sliced_sizes",
             "sliced_inputs",
             "appearances",
+            "preprocessing",
         ):
             setattr(self, attr, getattr(other, attr))
 
@@ -305,14 +344,14 @@ class ContractionTree:
             path = ssa_path
 
         tree = cls(inputs, output, size_dict, **kwargs)
-        terms = list(tree.gen_leaves())
+        nodes = list(tree.gen_leaves())
 
         for p in path:
             if ssa_path is not None:
-                merge = [terms[i] for i in p]
+                merge = [nodes[i] for i in p]
             else:
-                merge = [terms.pop(i) for i in sorted(p, reverse=True)]
-            terms.append(tree.contract_nodes(merge, check=check))
+                merge = [nodes.pop(i) for i in sorted(p, reverse=True)]
+            nodes.append(tree.contract_nodes(merge, check=check))
 
         return tree
 
@@ -559,18 +598,10 @@ class ContractionTree:
         #     thus we filter even the input legs and output legs
 
         if len(node) == 1:
-            # leaf indices are fixed
-            i = node_get_single_el(node)
-            if not self.sliced_inds:
-                return "".join(self.inputs[i])
-            legs = self.get_legs(node)
-            return "".join(filter(legs.__contains__, self.inputs[i]))
+            return "".join(self.inputs_legs[node_get_single_el(node)])
 
         if len(node) == self.N:
-            # root (output) indices are fixed
-            if not self.sliced_inds:
-                return "".join(self.output)
-            return "".join(filter(self.output_legs.__contains__, self.output))
+            return "".join(self.output_legs)
 
         legs = self.get_legs(node)
         l_inds, r_inds = map(self.get_inds, self.children[node])
@@ -2453,51 +2484,6 @@ class ContractionTree:
         print(o)
 
     # --------------------- Performing the Contraction ---------------------- #
-
-    def extract_contractions(
-        self,
-        order=None,
-        prefer_einsum=False,
-    ):
-        """Extract just the information needed to perform the contraction.
-
-        Parameters
-        ----------
-        order : str or callable, optional
-            Supplied to :meth:`ContractionTree.traverse`.
-        prefer_einsum : bool, optional
-            Prefer to use ``einsum`` for pairwise contractions, even if
-            ``tensordot`` can perform the contraction.
-
-        Returns
-        -------
-        contractions : tuple
-            A tuple of tuples, each containing the information needed to
-            perform a pairwise contraction. Each tuple contains:
-
-                - ``p``: the parent node,
-                - ``l``: the left child node,
-                - ``r``: the right child node,
-                - ``tdot``: whether to use ``tensordot`` or ``einsum``,
-                - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
-                  i.e. ``axes`` or ``eq``,
-                - ``perm``: the permutation required after the contraction, if
-                  any (only applies to tensordot).
-
-        """
-        return tuple(
-            (p, l, r, False, self.get_einsum_eq(p), None)
-            if (prefer_einsum or not self.get_can_dot(p))
-            else (
-                p,
-                l,
-                r,
-                True,
-                self.get_tensordot_axes(p),
-                self.get_tensordot_perm(p),
-            )
-            for p, l, r in self.traverse(order=order)
-        )
 
     def get_contractor(
         self,

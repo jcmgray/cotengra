@@ -558,6 +558,66 @@ def tensordot(a, b, axes=2, *, backend=None):
     )
 
 
+def extract_contractions(
+    tree,
+    order=None,
+    prefer_einsum=False,
+):
+    """Extract just the information needed to perform the contraction.
+
+    Parameters
+    ----------
+    order : str or callable, optional
+        Supplied to :meth:`ContractionTree.traverse`.
+    prefer_einsum : bool, optional
+        Prefer to use ``einsum`` for pairwise contractions, even if
+        ``tensordot`` can perform the contraction.
+
+    Returns
+    -------
+    contractions : tuple
+        A tuple of tuples, each containing the information needed to
+        perform a pairwise contraction. Each tuple contains:
+
+            - ``p``: the parent node,
+            - ``l``: the left child node,
+            - ``r``: the right child node,
+            - ``tdot``: whether to use ``tensordot`` or ``einsum``,
+            - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
+                i.e. ``axes`` or ``eq``,
+            - ``perm``: the permutation required after the contraction, if
+                any (only applies to tensordot).
+
+        If both ``l`` and ``r`` are ``None``, the the operation is a single
+        term simplification performed with ``einsum``.
+    """
+    contractions = []
+
+    if tree.preprocessing:
+        # inplace single term simplifications
+        contractions.extend(
+            (node_from_single(i), None, None, False, eq, None)
+            for i, eq in tree.preprocessing
+        )
+
+    # pairwise contractions
+    contractions.extend(
+        (p, l, r, False, tree.get_einsum_eq(p), None)
+        if (prefer_einsum or not tree.get_can_dot(p))
+        else (
+            p,
+            l,
+            r,
+            True,
+            tree.get_tensordot_axes(p),
+            tree.get_tensordot_perm(p),
+        )
+        for p, l, r in tree.traverse(order=order)
+    )
+
+    return tuple(contractions)
+
+
 def do_contraction(
     *arrays,
     contractions,
@@ -586,7 +646,7 @@ def do_contraction(
             - ``perm``: the permutation required after the contraction, if
                 any (only applies to tensordot).
 
-        e.g. built by calling ``ContractionTree.extract_contractions()``.
+        e.g. built by calling ``extract_contractions(tree)``.
 
     strip_exponent : bool, optional
         If ``True``, eagerly strip the exponent (in log10) from
@@ -647,6 +707,11 @@ def do_contraction(
         contractions = tqdm(contractions, total=N - 1)
 
     for p, l, r, tdot, arg, perm in contractions:
+        if (l is None) and (r is None):
+            # single term simplification, perform inplace with einsum
+            temps[p] = _einsum(arg, temps[p])
+            continue
+
         # get input arrays for this contraction
         l_array = temps.pop(l)
         r_array = temps.pop(r)
@@ -804,14 +869,18 @@ def make_contractor(
             raise ValueError(
                 "strip_exponent=True not supported with cuQuantum"
             )
+
+        if tree.preprocessing:
+            raise ValueError(
+                "Preprocessing not supported with cuQuantum yet."
+            )
+
         fn = CuQuantumContractor(tree)
 
     else:
         fn = functools.partial(
             do_contraction,
-            contractions=tree.extract_contractions(
-                order, prefer_einsum
-            ),
+            contractions=extract_contractions(tree, order, prefer_einsum),
             strip_exponent=strip_exponent,
             implementation=implementation,
         )
