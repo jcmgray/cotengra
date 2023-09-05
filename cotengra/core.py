@@ -105,6 +105,10 @@ class ContractionTree:
     track_flops : bool, optional
         Whether to dynamically keep track of the total number of flops. If
         ``False`` You can still compute this once the tree is complete.
+    track_write : bool, optional
+        Whether to dynamically keep track of the total number of elements
+        written. If ``False`` You can still compute this once the tree is
+        complete.
     track_size : bool, optional
         Whether to dynamically keep track of the largest tensor so far. If
         ``False`` You can still compute this once the tree is complete.
@@ -1358,7 +1362,7 @@ class ContractionTree:
         else:
             opt = optimize
 
-        cost = getattr(scorer, "cost_local_tree_node", lambda _: 2)
+        node_cost = getattr(scorer, "cost_local_tree_node", lambda _: 2)
 
         # different caches as we might want to reconfigure one before other
         self.already_optimized.setdefault(minimize, set())
@@ -1404,12 +1408,12 @@ class ContractionTree:
                     continue
 
                 # else remove the branches, keeping track of current cost
-                current_cost = cost(tree, sub_root)
+                current_cost = node_cost(tree, sub_root)
                 for node in sub_branches:
                     if minimize == "size":
-                        current_cost = max(current_cost, cost(tree, node))
+                        current_cost = max(current_cost, node_cost(tree, node))
                     else:
-                        current_cost += cost(tree, node)
+                        current_cost += node_cost(tree, node)
                     tree._remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap

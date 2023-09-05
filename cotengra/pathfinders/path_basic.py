@@ -294,24 +294,6 @@ class ContractionProcessor:
             legs.sort()
             self.nodes[i] = tuple(legs)
 
-            # if len(legs) >= 2:
-            #     # if legs has any repeated indices,
-            #     # we combine and sum their counts
-            #     legs.sort()
-            #     ixl, cl = legs[0]
-            #     ulegs = [(ixl, cl)]
-            #     for ik in range(1, len(legs)):
-            #         ixr, cr = legs[ik]
-            #         if ixl == ixr:
-            #             cl += cr
-            #             ulegs[-1] = (ixr, cl)
-            #         else:
-            #             ixl, cl = ixr, cr
-            #             ulegs.append((ixl, cl))
-            #     self.nodes[i] = ulegs
-            # else:
-            #     self.nodes[i] = legs
-
         for ind in output:
             self.appearances[self.indmap[ind]] += 1
 
@@ -334,7 +316,8 @@ class ContractionProcessor:
         )
 
     def remove_ix(self, ix):
-        """Drop the index ``ix``, removing it from all nodes and the edgemap."""
+        """Drop the index ``ix``, removing it from all nodes and the edgemap.
+        """
         for node in self.edges.pop(ix):
             self.nodes[node] = tuple(
                 (jx, jx_count) for jx, jx_count in self.nodes[node] if jx != ix
@@ -551,7 +534,7 @@ class ContractionProcessor:
         where,
         minimize="flops",
         cost_cap=2,
-        allow_outer=False,
+        search_outer=False,
     ):
         compute_con_cost = parse_minimize_for_optimal(minimize)
 
@@ -601,8 +584,8 @@ class ContractionProcessor:
                         ni = len(ilegs)
                         nj = len(jlegs)
                         new_legs = []
-                        # if allow_outer -> we will never skip
-                        skip_because_outer = not allow_outer
+                        # if search_outer -> we will never skip
+                        skip_because_outer = not search_outer
                         while (ip < ni) and (jp < nj):
                             iix, ic = ilegs[ip]
                             jix, jc = jlegs[jp]
@@ -664,7 +647,7 @@ class ContractionProcessor:
             termmap[subgraph_i | subgraph_j] = k
 
     def optimize_optimal(
-        self, minimize="flops", cost_cap=2, allow_outer=False
+        self, minimize="flops", cost_cap=2, search_outer=False
     ):
         # we need to optimize each disconnected subgraph separately
         for where in self.subgraphs():
@@ -672,7 +655,7 @@ class ContractionProcessor:
                 where,
                 minimize=minimize,
                 cost_cap=cost_cap,
-                allow_outer=allow_outer,
+                search_outer=search_outer,
             )
 
     def optimize_remaining_by_size(self):
@@ -801,7 +784,7 @@ def optimize_optimal(
     size_dict,
     minimize="flops",
     cost_cap=2,
-    allow_outer=False,
+    search_outer=False,
     simplify=True,
 ):
     """Find the optimal contraction path using a dynamic programming
@@ -839,7 +822,7 @@ def optimize_optimal(
         The maximum cost of a contraction to initially consider. This acts like
         a sieve and is doubled at each iteration until the optimal path can
         be found, but supplying an accurate guess can speed up the algorithm.
-    allow_outer : bool, optional
+    search_outer : bool, optional
         Whether to allow outer products in the contraction path. The default is
         False, especially when considering write costs, the fastest path is
         very unlikely to include outer products.
@@ -867,7 +850,7 @@ def optimize_optimal(
     if simplify:
         cp.simplify()
     cp.optimize_optimal(
-        minimize=minimize, cost_cap=cost_cap, allow_outer=allow_outer
+        minimize=minimize, cost_cap=cost_cap, search_outer=search_outer
     )
     # handle disconnected subgraphs
     cp.optimize_remaining_by_size()
