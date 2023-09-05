@@ -186,7 +186,7 @@ class ContractionTree:
                 self.inputs_legs[i] = new_legs
                 # add a preprocessing step to the list of contractions
                 eq = f"{''.join(term)}->{''.join(new_legs)}"
-                self.preprocesssing.append((i, eq))
+                preprocessing.append((i, eq))
         self.preprocessing = tuple(preprocessing)
 
         # mapping of parents to children - the core binary tree object
