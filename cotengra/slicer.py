@@ -2,9 +2,8 @@ import random
 import collections
 from math import log
 
-from .oe import compute_size_by_dict
 from .core import ContractionTree
-from .utils import MaxCounter, oset
+from .utils import compute_size_by_dict, MaxCounter, oset
 from .scoring import get_score_fn
 from .plot import plot_slicings, plot_slicings_alt
 
@@ -217,9 +216,8 @@ class SliceFinder:
 
     Parameters
     ----------
-    tree_or_info : ContractionTree or PathInfo
-        Object describing the target full contraction to slice, generated for
-        example from a call to :func:`~opt_einsum.contract_path`.
+    tree_or_info : ContractionTree or opt_einsum.PathInfo
+        Object describing the target full contraction to slice.
     target_size : int, optional
         The target number of entries in the largest tensor of the sliced
         contraction. The search algorithm will terminate after this is reached.

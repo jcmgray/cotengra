@@ -59,7 +59,7 @@ class ExactObjective(Objective):
         raise NotImplementedError
 
     def get_dynamic_programming_minimize(self):
-        """Get the argument for `DynamicProgramming`, used in
+        """Get the argument for optimal optimization, used in
         subtree reconfiguration.
         """
         raise NotImplementedError

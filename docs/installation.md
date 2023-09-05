@@ -1,9 +1,6 @@
 # Installation
 
-Basic requirements are
-[`opt_einsum`](https://optimized-einsum.readthedocs.io/) and either
-[`cytoolz`](https://github.com/pytoolz/cytoolz) or
-[`toolz`](https://github.com/pytoolz/toolz).
+`cotengra` has no strict dependencies.
 To install this package from source, you can clone it
 locally, navigate into the source directory and then call:
 
@@ -24,7 +21,7 @@ Other than that, the optional dependencies are detailed below.
 ````{hint}
 The recommended selection of optional dependencies from below covering most use-cases is:
 ```
-kahypar tqdm optuna loky networkx autoray
+kahypar tqdm optuna loky networkx autoray opt_einsum cytoolz
 ```
 ````
 
@@ -32,6 +29,7 @@ kahypar tqdm optuna loky networkx autoray
 
 * [`kahypar`](https://github.com/SebastianSchlag/kahypar) - **Karlsruhe Hypergraph Partitioning** for high quality divisive tree building ([available via pip](https://pypi.org/project/kahypar/), unfortunately not yet via `conda` or for windows)
 * [`tqdm`](https://github.com/tqdm/tqdm) - for showing live progress (available via [pip](https://pypi.org/project/tqdm/) or `conda`)
+* [`cytoolz`](https://github.com/pytoolz/cytoolz/) - a couple of slightly faster utility functions
 
 To perform the hyper-optimization (and not just randomly sample) one of the following libraries is needed:
 

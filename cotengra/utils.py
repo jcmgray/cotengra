@@ -2,32 +2,75 @@ import pickle
 import pathlib
 import itertools
 import collections
-from functools import reduce
+import operator
+
+from functools import reduce, lru_cache, partial
 from operator import or_
 
 try:
     from cytoolz import groupby, interleave, unique
 except ImportError:
-    from toolz import groupby, interleave, unique
+
+    def getter(index):
+        """Adapted from `toolz`."""
+        if isinstance(index, list):
+            if len(index) == 1:
+                index = index[0]
+                return lambda x: (x[index],)
+            elif index:
+                return operator.itemgetter(*index)
+            else:
+                return lambda x: ()
+        else:
+            return operator.itemgetter(index)
+
+    def groupby(key, seq):
+        """Adapted from `toolz`."""
+        if not callable(key):
+            key = getter(key)
+        d = collections.defaultdict(lambda: [].append)
+        for item in seq:
+            d[key(item)](item)
+        rv = {}
+        for k, v in d.items():
+            rv[k] = v.__self__
+        return rv
 
 
-__all__ = ('groupby', 'interleave', 'unique')
+    def interleave(seqs):
+        """Adapted from `toolz`."""
+        iters = itertools.cycle(map(iter, seqs))
+        while True:
+            try:
+                for itr in iters:
+                    yield next(itr)
+                return
+            except StopIteration:
+                predicate = partial(operator.is_not, itr)
+                iters = itertools.cycle(itertools.takewhile(predicate, iters))
+
+    def unique(it):
+        yield from dict.fromkeys(it)
+
+
+__all__ = ("groupby", "interleave", "unique")
 
 
 def deprecated(fn, old_name, new_name):
-
     def new_fn(*args, **kwargs):
         import warnings
-        warnings.warn(f"The {old_name} function is deprecated in favor "
-                      f"of {new_name}", Warning)
+
+        warnings.warn(
+            f"The {old_name} function is deprecated in favor of {new_name}",
+            Warning,
+        )
         return fn(*args, **kwargs)
 
     return new_fn
 
 
 def prod(it):
-    """Compute the product of sequence of numbers ``it``.
-    """
+    """Compute the product of sequence of numbers ``it``."""
     x = 1
     for i in it:
         x *= i
@@ -64,7 +107,7 @@ def dynary(x, bases):
         [0, 3, 1, 1, 2, 5, 17, 3]
 
     """
-    bs_szs = [prod(bases[i + 1:]) for i in range(len(bases))]
+    bs_szs = [prod(bases[i + 1 :]) for i in range(len(bases))]
     dx = []
     for b in bs_szs:
         div = x // b
@@ -79,7 +122,7 @@ class oset:
     sizes, but makes everything deterministic.
     """
 
-    __slots__ = ('_d',)
+    __slots__ = ("_d",)
 
     def __init__(self, it=()):
         self._d = dict.fromkeys(it)
@@ -92,8 +135,7 @@ class oset:
 
     @classmethod
     def from_dict(cls, d):
-        """Public method makes sure to copy incoming dictionary.
-        """
+        """Public method makes sure to copy incoming dictionary."""
         return oset._from_dict(d.copy())
 
     def copy(self):
@@ -152,10 +194,13 @@ class oset:
         return oset._from_dict({k: None for k in self._d if k not in su})
 
     def symmetric_difference(self, other):
-        return oset._from_dict({
-            k: None for k in itertools.chain(self._d, other._d)
-            if (k not in self._d) or (k not in other)
-        })
+        return oset._from_dict(
+            {
+                k: None
+                for k in itertools.chain(self._d, other._d)
+                if (k not in self._d) or (k not in other)
+            }
+        )
 
     def __eq__(self, other):
         if isinstance(other, oset):
@@ -226,12 +271,12 @@ class MaxCounter:
 
     """
 
-    __slots__ = ('_c', '_max_element')
+    __slots__ = ("_c", "_max_element")
 
     def __init__(self, it=None):
         self._c = collections.Counter(it)
         if it is None:
-            self._max_element = -float('inf')
+            self._max_element = -float("inf")
         else:
             self._max_element = max(self._c)
 
@@ -242,8 +287,7 @@ class MaxCounter:
         return new
 
     def discard(self, x):
-        """Discard element ``x`` and possibly update the maximum.
-        """
+        """Discard element ``x`` and possibly update the maximum."""
         cnt = self._c[x]
         if cnt <= 1:
             del self._c[x]
@@ -253,25 +297,22 @@ class MaxCounter:
                 try:
                     self._max_element = max(self._c)
                 except ValueError:
-                    self._max_element = -float('inf')
+                    self._max_element = -float("inf")
         else:
             self._c[x] = cnt - 1
 
     def add(self, x):
-        """Add element ``x`` and possibly update the maximum.
-        """
+        """Add element ``x`` and possibly update the maximum."""
         self._c[x] += 1
         self._max_element = max(self._max_element, x)
 
     def max(self):
-        """The maximum element in this list.
-        """
+        """The maximum element in this list."""
         return self._max_element
 
 
 class BitSet:
-
-    __slots__ = ('members', 'map', 'size', 'infimum', 'supremum', 'hashkey')
+    __slots__ = ("members", "map", "size", "infimum", "supremum", "hashkey")
 
     def __init__(self, it):
         self.members = tuple(unique(it))
@@ -294,8 +335,7 @@ class BitSet:
 
 
 class BitMembers:
-
-    __slots__ = ('i', 'bitset')
+    __slots__ = ("i", "bitset")
 
     @classmethod
     def fromint(cls, bitset, n):
@@ -317,9 +357,8 @@ class BitMembers:
     __hash__ = __int__
 
     def __eq__(self, other):
-        return (
-            (self.i == other.i) and
-            (self.bitset.hashkey == other.bitset.hashkey)
+        return (self.i == other.i) and (
+            self.bitset.hashkey == other.bitset.hashkey
         )
 
     def __len__(self):
@@ -327,7 +366,8 @@ class BitMembers:
 
     def __iter__(self):
         return (
-            x for b, x in zip(bin(self.i)[:1:-1], self.bitset.members)
+            x
+            for b, x in zip(bin(self.i)[:1:-1], self.bitset.members)
             if b == "1"
         )
 
@@ -533,13 +573,11 @@ if NODE_TYPE == "frozenset[int]":
         return frozenset(range(size))
 
     def node_get_single_el(node):
-        """Assuming ``node`` has one element, return it.
-        """
+        """Assuming ``node`` has one element, return it."""
         return next(iter(node))
 
     def is_valid_node(node):
-        """Check ``node`` is of type ``frozenset[int]``.
-        """
+        """Check ``node`` is of type ``frozenset[int]``."""
         try:
             if not isinstance(node, frozenset):
                 return False
@@ -573,6 +611,7 @@ elif NODE_TYPE == "BitSetInt":
 
 elif NODE_TYPE == "intbitset":
     from intbitset import intbitset
+
     # intbitset could be great, but hash collisions make use in dicts v v slow
 
     def node_from_seq(it):
@@ -595,10 +634,9 @@ elif NODE_TYPE == "intbitset":
 
 
 class DiskDict:
-    """A simple persistent dict.
-    """
+    """A simple persistent dict."""
 
-    __slots__ = ('_directory', '_mem_cache', '_path')
+    __slots__ = ("_directory", "_mem_cache", "_path")
 
     def __init__(self, directory=None):
         self._mem_cache = {}
@@ -610,7 +648,7 @@ class DiskDict:
     def clear(self):
         self._mem_cache.clear()
         if self._directory is not None:
-            for p in self._path.glob('*'):
+            for p in self._path.glob("*"):
                 p.unlink()
 
     def cleanup(self, delete_dir=False):
@@ -620,15 +658,14 @@ class DiskDict:
 
     def __contains__(self, k):
         return (k in self._mem_cache) or (
-            self._directory is not None and
-            self._path.joinpath(k).exists()
+            self._directory is not None and self._path.joinpath(k).exists()
         )
 
     def __setitem__(self, k, v):
         self._mem_cache[k] = v
         if self._directory is not None:
             fname = self._path.joinpath(k)
-            with open(fname, 'wb+') as f:
+            with open(fname, "wb+") as f:
                 pickle.dump(v, f)
 
     def __getitem__(self, k):
@@ -643,7 +680,7 @@ class DiskDict:
 
             for _ in range(3):
                 try:
-                    with open(fname, 'rb') as f:
+                    with open(fname, "rb") as f:
                         self._mem_cache[k] = v = pickle.load(f)
                         return v
                 except (EOFError, pickle.UnpicklingError):
@@ -683,22 +720,76 @@ class GumbelBatchedGenerator:
 
 
 class BadTrial(Exception):
-    """Use this to indicate that a trial contraction tree was bad.
-    """
-    pass
+    """Use this to indicate that a trial contraction tree was bad."""
 
+    pass
 
 
 # ---------------------- test equations and utilities ----------------------- #
 
+
+def compute_size_by_dict(indices, size_dict):
+    """Computes the product of sizes of ``indices`` based on ``size_dict``.
+
+    Parameters
+    ----------
+    indices : iterable[str] or iterable[int]
+        The indices of the term.
+    size_dict : dict or list
+        Mapping (or list/tuple if the indices are indexing integers, which
+        can be slightly faster) of indices to sizes.
+
+    Returns
+    -------
+    d : int
+        The resulting product.
+
+    Examples
+    --------
+
+        >>> compute_size_by_dict('abbc', {'a': 2, 'b':3, 'c':5})
+        90
+
+    """
+    d = 1
+    for i in indices:
+        d *= size_dict[i]
+    return d
+
+
+_einsum_symbols_base = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+@lru_cache(2**14)
+def get_symbol(i):
+    """Get the symbol corresponding to int ``i`` - runs through the usual 52
+    letters before resorting to unicode characters, starting at ``chr(192)``
+    and skipping surrogates.
+
+    **Examples:**
+
+    ```python
+    get_symbol(2)
+    #> 'c'
+
+    get_symbol(200)
+    #> 'Ŕ'
+
+    get_symbol(20000)
+    #> '京'
+    ```
+    """
+    if i < 52:
+        return _einsum_symbols_base[i]
+    elif i >= 55296:
+        # Skip chr(57343) - chr(55296) as surrogates
+        return chr(i + 2048)
+    else:
+        return chr(i + 140)
+
+
 def rand_equation(
-    n, reg,
-    n_out=0,
-    n_hyper_in=0,
-    n_hyper_out=0,
-    d_min=2,
-    d_max=3,
-    seed=None
+    n, reg, n_out=0, n_hyper_in=0, n_hyper_out=0, d_min=2, d_max=3, seed=None
 ):
     """A more advanced version of ``opt_einsum.helpers.rand_equation`` that
     can also generate both inner and outer hyper-edges. Mostly useful for
@@ -732,7 +823,6 @@ def rand_equation(
     size_dict : dict[str, int]
     """
     import numpy as np
-    from .oe import get_symbol
 
     if seed is not None:
         np.random.seed(seed)
@@ -802,7 +892,6 @@ def tree_equation(
         The number of outer indices.
     """
     import numpy as np
-    from .oe import get_symbol
 
     rng = np.random.default_rng(seed)
 
@@ -853,7 +942,6 @@ def randreg_equation(
     """
     import networkx as nx
     import numpy as np
-    from .oe import get_symbol
 
     G = nx.random_regular_graph(reg, n, seed=seed)
     inputs = [[] for _ in range(n)]
@@ -869,10 +957,7 @@ def randreg_equation(
     }
 
     output = []
-    shapes = [
-        tuple(size_dict[ix] for ix in term)
-        for term in inputs
-    ]
+    shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
 
     return inputs, output, shapes, size_dict
 
@@ -910,15 +995,11 @@ def perverse_equation(
         Seed for ``np.random.default_rng`` for repeatibility.
     """
     import numpy as np
-    from .oe import get_symbol
 
     rng = np.random.default_rng(seed)
     indices = [get_symbol(i) for i in range(num_indices)]
 
-    size_dict = {
-        ix: rng.integers(d_min, d_max + 1)
-        for ix in indices
-    }
+    size_dict = {ix: rng.integers(d_min, d_max + 1) for ix in indices}
 
     inputs = []
     shapes = []
@@ -936,7 +1017,8 @@ def perverse_equation(
 
 
 def rand_tree(
-    n, reg,
+    n,
+    reg,
     n_out=0,
     n_hyper_in=0,
     n_hyper_out=0,
@@ -948,7 +1030,8 @@ def rand_tree(
     from .core import ContractionTree
 
     inputs, output, _, size_dict = rand_equation(
-        n, reg,
+        n,
+        reg,
         n_out=n_out,
         n_hyper_in=n_hyper_in,
         n_hyper_out=n_hyper_out,
@@ -981,7 +1064,6 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
         Seed for ``np.random.default_rng`` for repeatibility.
     """
     import numpy as np
-    from .oe import get_symbol
 
     if d_max is None:
         d_max = d_min

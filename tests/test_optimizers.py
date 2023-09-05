@@ -27,7 +27,7 @@ def rand_reg_contract(n, deg, seed=None):
     import networkx as nx
 
     rG = nx.random_regular_graph(deg, n, seed=seed)
-    edge2ind = {tuple(sorted(e)): oe.get_symbol(i)
+    edge2ind = {tuple(sorted(e)): ctg.utils.get_symbol(i)
                 for i, e in enumerate(rG.edges)}
 
     inputs = [

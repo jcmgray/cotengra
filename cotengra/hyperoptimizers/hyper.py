@@ -80,7 +80,8 @@ def register_hyper_function(name, ssa_func, space, constants=None):
     name : str
         The name to call the method.
     ssa_func : callable
-        The raw ``opt_einsum`` style function that returns a 'ContractionTree'.
+        The raw function that returns a 'ContractionTree', with signature
+        ``(inputs, output, size_dict, **kwargs)``.
     space : dict[str, dict]
         The space of hyper-parameters to search.
     """

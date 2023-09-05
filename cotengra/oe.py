@@ -40,9 +40,6 @@ import collections
 # from opt_einsum.helpers import (
 #     compute_size_by_dict,
 # )
-# from opt_einsum.parser import (
-#     find_output_str,
-# )
 # from opt_einsum.paths import (
 #     DynamicProgramming,
 #     get_path_fn,
@@ -76,35 +73,6 @@ except ImportError:
 
 DEFAULT_COMBO_FACTOR = 64
 
-_einsum_symbols_base = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-
-def get_symbol(i) -> str:
-    """Get the symbol corresponding to int ``i`` - runs through the usual 52
-    letters before resorting to unicode characters, starting at ``chr(192)``
-    and skipping surrogates.
-
-    **Examples:**
-
-    ```python
-    get_symbol(2)
-    #> 'c'
-
-    get_symbol(200)
-    #> 'Ŕ'
-
-    get_symbol(20000)
-    #> '京'
-    ```
-    """
-    if i < 52:
-        return _einsum_symbols_base[i]
-    elif i >= 55296:
-        # Skip chr(57343) - chr(55296) as surrogates
-        return chr(i + 2048)
-    else:
-        return chr(i + 140)
-
 
 def compute_size_by_dict(indices, idx_dict) -> int:
     """
@@ -133,29 +101,6 @@ def compute_size_by_dict(indices, idx_dict) -> int:
     for i in indices:
         ret *= idx_dict[i]
     return ret
-
-
-def find_output_str(subscripts) -> str:
-    """
-    Find the output string for the inputs ``subscripts`` under canonical
-    einstein summation rules. That is, repeated indices are summed over by
-    default, and the output is also sorted.
-
-    Examples
-    --------
-    >>> oe.parser.find_output_str("ab,bc")
-    'ac'
-
-    >>> oe.parser.find_output_str("a,b")
-    'ab'
-
-    >>> oe.parser.find_output_str("a,a,b,b")
-    ''
-    """
-    tmp_subscripts = subscripts.replace(",", "")
-    return "".join(
-        s for s in sorted(set(tmp_subscripts)) if tmp_subscripts.count(s) == 1
-    )
 
 
 def linear_to_ssa(path):
@@ -1124,9 +1069,7 @@ __all__ = (
     "compute_size_by_dict",
     "DEFAULT_COMBO_FACTOR",
     "DynamicProgramming",
-    "find_output_str",
     "get_path_fn",
-    "get_symbol",
     "linear_to_ssa",
     "PathOptimizer",
     "register_path_fn",

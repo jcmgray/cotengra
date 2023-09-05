@@ -74,6 +74,7 @@ from .plot import (
 )
 
 from . import utils
+from .utils import get_symbol
 
 UniformOptimizer = functools.partial(HyperOptimizer, optlib="random")
 """Does no gaussian process tuning by default, just randomly samples - requires
@@ -177,6 +178,7 @@ __all__ = (
     "SliceFinder",
     "UniformOptimizer",
     "utils",
+    "get_symbol",
 )
 
 

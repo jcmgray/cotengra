@@ -7,18 +7,18 @@ import functools
 import collections
 
 from .oe import (
-    compute_size_by_dict,
     DEFAULT_COMBO_FACTOR,
     DynamicProgramming,
     get_path_fn,
     linear_to_ssa,
-    get_symbol,
 )
 from autoray import do
 
 from .utils import (
+    compute_size_by_dict,
     deprecated,
     dynary,
+    get_symbol,
     groupby,
     interleave,
     is_valid_node,

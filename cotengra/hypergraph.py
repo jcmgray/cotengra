@@ -6,13 +6,12 @@ import math
 import itertools
 import collections
 
-from .oe import compute_size_by_dict
-
 from .plot import (
     plot_hypergraph,
 )
 
 from .utils import (
+    compute_size_by_dict,
     prod,
     unique,
 )

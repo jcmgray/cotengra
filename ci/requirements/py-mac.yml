@@ -4,7 +4,6 @@ channels:
 dependencies:
   - autoray
   - coverage
-  - cytoolz
   - matplotlib
   - networkx
   - opt_einsum
