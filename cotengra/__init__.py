@@ -73,6 +73,7 @@ from .plot import (
     plot_trials_alt,
 )
 
+from . import utils
 
 UniformOptimizer = functools.partial(HyperOptimizer, optlib="random")
 """Does no gaussian process tuning by default, just randomly samples - requires
@@ -175,6 +176,7 @@ __all__ = (
     "SlicedContractor",
     "SliceFinder",
     "UniformOptimizer",
+    "utils",
 )
 
 
