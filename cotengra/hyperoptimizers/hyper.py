@@ -152,15 +152,13 @@ class SlicedTrialFn:
         trial = self.trial_fn(*args, **kwargs)
         tree = trial["tree"]
 
-        trial.setdefault("original_flops", tree.total_flops())
-        trial.setdefault("original_write", tree.total_write())
-        trial.setdefault("original_size", tree.max_size())
+        stats = tree.contract_stats()
+        trial.setdefault("original_flops", stats["flops"])
+        trial.setdefault("original_write", stats["write"])
+        trial.setdefault("original_size", stats["size"])
 
         tree.slice_(**self.opts)
-
-        trial["flops"] = tree.total_flops()
-        trial["write"] = tree.total_write()
-        trial["size"] = tree.max_size()
+        trial.update(tree.contract_stats())
 
         return trial
 
@@ -176,9 +174,10 @@ class ReconfTrialFn:
         trial = self.trial_fn(*args, **kwargs)
         tree = trial["tree"]
 
-        trial.setdefault("original_flops", tree.total_flops())
-        trial.setdefault("original_write", tree.total_write())
-        trial.setdefault("original_size", tree.max_size())
+        stats = tree.contract_stats()
+        trial.setdefault("original_flops", stats["flops"])
+        trial.setdefault("original_write", stats["write"])
+        trial.setdefault("original_size", stats["size"])
 
         if self.forested:
             tree.subtree_reconfigure_forest_(
@@ -188,9 +187,7 @@ class ReconfTrialFn:
             tree.subtree_reconfigure_(**self.opts)
 
         tree.already_optimized.clear()
-        trial["flops"] = tree.total_flops()
-        trial["write"] = tree.total_write()
-        trial["size"] = tree.max_size()
+        trial.update(tree.contract_stats())
 
         return trial
 
@@ -206,9 +203,10 @@ class SlicedReconfTrialFn:
         trial = self.trial_fn(*args, **kwargs)
         tree = trial["tree"]
 
-        trial.setdefault("original_flops", tree.total_flops())
-        trial.setdefault("original_write", tree.total_write())
-        trial.setdefault("original_size", tree.max_size())
+        stats = tree.contract_stats()
+        trial.setdefault("original_flops", stats["flops"])
+        trial.setdefault("original_write", stats["write"])
+        trial.setdefault("original_size", stats["size"])
 
         if self.forested:
             tree.slice_and_reconfigure_forest_(
@@ -218,9 +216,7 @@ class SlicedReconfTrialFn:
             tree.slice_and_reconfigure_(**self.opts)
 
         tree.already_optimized.clear()
-        trial["flops"] = tree.total_flops()
-        trial["write"] = tree.total_write()
-        trial["size"] = tree.max_size()
+        trial.update(tree.contract_stats())
 
         return trial
 
@@ -849,9 +845,9 @@ class ReusableHyperOptimizer(PathOptimizer):
         If ``True``, when reloading a path to turn into a ``ContractionTree``,
         the 'surface order' of the path (used for compressed paths), will be
         set manually to the order the disk path is.
-    hash_method : {'a', ...}, optional
+    hash_method : {'a', 'b', ...}, optional
         The method used to hash the contraction tree. The default, ``'a'``, is
-        faster but doesn't recognize when indices are permuted.
+        faster hashwise but doesn't recognize when indices are permuted.
     cache_only : bool, optional
         If ``True``, the optimizer will only use the cache, and will raise
         ``KeyError`` if a contraction is not found.

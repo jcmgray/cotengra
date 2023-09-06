@@ -6,10 +6,7 @@ import collections
 
 import numpy as np
 from ..oe import (
-    ssa_greedy_optimize,
     register_path_fn,
-    ssa_to_linear,
-    thermal_chooser,
 )
 
 from ..core import (
@@ -20,51 +17,27 @@ from ..core import (
 )
 from ..utils import oset, GumbelBatchedGenerator, BadTrial
 from ..hyperoptimizers.hyper import register_hyper_function
+from .path_basic import ssa_to_linear, get_optimize_greedy
+
+ssa_greedy_optimize = functools.partial(get_optimize_greedy(), use_ssa=True)
 
 # ------------------------------ GREEDY HYPER ------------------------------- #
-
-
-def cost_memory_removed_mod(
-    size12,
-    size1,
-    size2,
-    k12,
-    k1,
-    k2,
-    costmod=1,
-    usesizes=True,
-):
-    """The default heuristic cost, corresponding to the total reduction in
-    memory of performing a contraction.
-    """
-    if usesizes:
-        return size12 - costmod * (size1 + size2)
-    return len(k12) - costmod * max(len(k1), len(k2))
 
 
 def trial_greedy(
     inputs,
     output,
     size_dict,
-    random_strength=0.1,
-    temperature=1.0,
-    rel_temperature=True,
-    costmod=1,
-    usesizes=True,
+    random_strength=0.0,
+    temperature=0.0,
+    costmod=1.0,
 ):
     rand_size_dict = jitter_dict(size_dict, random_strength)
 
-    cost_fn = functools.partial(
-        cost_memory_removed_mod, costmod=costmod, usesizes=usesizes
-    )
-    choose_fn = functools.partial(
-        thermal_chooser,
-        temperature=temperature,
-        rel_temperature=rel_temperature,
-    )
-
     ssa_path = ssa_greedy_optimize(
-        inputs, output, rand_size_dict, choose_fn=choose_fn, cost_fn=cost_fn
+        inputs, output, rand_size_dict,
+        temperature=temperature,
+        costmod=costmod,
     )
 
     return ContractionTree.from_path(
@@ -76,11 +49,9 @@ register_hyper_function(
     name="greedy",
     ssa_func=trial_greedy,
     space={
-        "random_strength": {"type": "FLOAT_EXP", "min": 0.01, "max": 10.0},
-        "temperature": {"type": "FLOAT_EXP", "min": 0.01, "max": 10.0},
-        "rel_temperature": {"type": "BOOL"},
-        "costmod": {"type": "FLOAT", "min": 0.0, "max": 2.0},
-        "usesizes": {"type": "BOOL"},
+        "random_strength": {"type": "FLOAT_EXP", "min": 0.001, "max": 1.0},
+        "temperature": {"type": "FLOAT_EXP", "min": 0.001, "max": 1.0},
+        "costmod": {"type": "FLOAT", "min": 0.0, "max": 50.0},
     },
 )
 
@@ -319,7 +290,9 @@ class GreedyCompressed:
         return self.ssapath
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        return ssa_to_linear(self.get_ssa_path(inputs, output, size_dict))
+        return ssa_to_linear(
+            self.get_ssa_path(inputs, output, size_dict), len(inputs)
+        )
 
 
 def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
@@ -541,7 +514,9 @@ class GreedySpan:
         )
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
-        return ssa_to_linear(self.get_ssa_path(inputs, output, size_dict))
+        return ssa_to_linear(
+            self.get_ssa_path(inputs, output, size_dict), len(inputs)
+        )
 
 
 def greedy_span(inputs, output, size_dict, memory_limit=None, **kwargs):

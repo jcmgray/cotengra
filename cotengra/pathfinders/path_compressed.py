@@ -6,7 +6,7 @@ from time import sleep
 
 import tqdm
 
-from ..oe import ssa_to_linear
+from .path_basic import ssa_to_linear
 from ..scoring import get_score_fn
 from ..core import (
     get_hypergraph,

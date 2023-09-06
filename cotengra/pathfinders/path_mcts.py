@@ -1,7 +1,7 @@
 import math
 import random
 
-from ..oe import ssa_to_linear
+from .path_basic import ssa_to_linear
 from ..core import ContractionTreeCompressed, get_hypergraph
 
 

@@ -6,12 +6,6 @@ import itertools
 import functools
 import collections
 
-from .oe import (
-    DEFAULT_COMBO_FACTOR,
-    DynamicProgramming,
-    get_path_fn,
-    linear_to_ssa,
-)
 from autoray import do
 
 from .utils import (
@@ -39,7 +33,11 @@ from .parallel import (
     submit,
 )
 from .hypergraph import get_hypergraph
-from .scoring import get_score_fn, CompressedStatsTracker
+from .scoring import (
+    DEFAULT_COMBO_FACTOR,
+    get_score_fn,
+    CompressedStatsTracker,
+)
 from .contract import make_contractor
 from .plot import (
     plot_contractions_alt,
@@ -665,7 +663,7 @@ class ContractionTree:
             self.compute_centralities()
             return self.info[node]["centrality"]
 
-    def total_flops(self, dtype="float"):
+    def total_flops(self, dtype=None):
         """Sum the flops contribution from every node in the tree.
 
         Parameters
@@ -738,6 +736,36 @@ class ContractionTree:
             tot_size += self.get_size(p)
             peak = max(peak, tot_size)
         return peak
+
+    def contract_stats(self):
+        """Simulteneously compute the total flops, write and size of the
+        contraction tree. This is more efficient than calling each of the
+        individual methods separately. Once computed, each quantity is then
+        automatically tracked.
+
+        Returns
+        -------
+        stats : dict[str, int]
+            The total flops, write and size.
+        """
+        if not (self._track_flops and self._track_write and self._track_size):
+
+            self._flops = self._write = 0
+            self._sizes = MaxCounter()
+
+            for node, _, _ in self.traverse():
+                self._flops += self.get_flops(node)
+                node_size = self.get_size(node)
+                self._write += node_size
+                self._sizes.add(node_size)
+
+            self._track_flops = self._track_write = self._track_size = True
+
+        return {
+            "flops": self.multiplicity * self._flops,
+            "write": self.multiplicity * self._write,
+            "size": self._sizes.max(),
+        }
 
     def arithmetic_intensity(self):
         """The ratio of total flops to total write - the higher the better for
@@ -936,6 +964,8 @@ class ContractionTree:
         if len(nodes) == 2:
             return self.contract_nodes_pair(*nodes, check=check)
 
+        from .interface import find_path
+
         # create the bottom and top nodes
         grandparent = union_it(nodes)
         self._add_node(grandparent, check=check)
@@ -954,26 +984,17 @@ class ContractionTree:
         path_inputs = [tuple(self.get_legs(x)) for x in nodes]
         path_output = tuple(self.get_legs(grandparent))
 
-        if isinstance(optimize, str):
-            path_fn = get_path_fn(optimize)
-        else:
-            path_fn = optimize
-
-        if extra_opts is None:
-            path = path_fn(path_inputs, path_output, self.size_dict)
-        else:
-            path = path_fn(
-                path_inputs, path_output, self.size_dict, **extra_opts
-            )
+        path = find_path(
+            path_inputs, path_output, self.size_dict,
+            optimize=optimize, **(extra_opts or {})
+        )
 
         # now we have path create the nodes in between
         temp_nodes = list(nodes)
         for p in path:
             to_contract = [temp_nodes.pop(i) for i in sorted(p, reverse=True)]
             temp_nodes.append(
-                self.contract_nodes(
-                    to_contract, optimize=optimize, check=check
-                )
+                self.contract_nodes(to_contract, check=check)
             )
 
         (parent,) = temp_nodes
@@ -1184,9 +1205,7 @@ class ContractionTree:
         tree = self if inplace else self.copy()
 
         # make sure all flops and size information has been populated
-        tree.total_flops()
-        tree.total_write()
-        tree.max_size()
+        tree.contract_stats()
 
         d = tree.size_dict[ind]
 
@@ -1350,13 +1369,14 @@ class ContractionTree:
         tree = self if inplace else self.copy()
 
         # ensure these have been computed and thus are being tracked
-        tree.total_flops()
-        tree.max_size()
+        tree.contract_stats()
 
         scorer = get_score_fn(minimize)
 
         if optimize is None:
-            opt = DynamicProgramming(
+            from .pathfinders.path_basic import OptimalOptimizer
+
+            opt = OptimalOptimizer(
                 minimize=scorer.get_dynamic_programming_minimize()
             )
         else:
@@ -1417,7 +1437,7 @@ class ContractionTree:
                     tree._remove_node(node)
 
                 # make the optimizer more efficient by supplying accurate cap
-                opt.cost_cap = max(1, current_cost)
+                opt.cost_cap = max(2, current_cost)
 
                 # and reoptimize the leaves
                 tree.contract_nodes(sub_leaves, optimize=opt)
@@ -2955,18 +2975,16 @@ def _slice_and_reconfigure_tree(tree, *args, **kwargs):
 
 
 def _get_tree_info(tree):
-    return {
-        "flops": tree.total_flops(),
-        "write": tree.total_write(),
-        "size": tree.max_size(),
-        "sliced_inds": frozenset(tree.sliced_inds),
-    }
+    stats = tree.contract_stats()
+    stats["sliced_inds"] = frozenset(tree.sliced_inds)
+    return stats
 
 
 def _describe_tree(tree):
+    stats = tree.contract_stats()
     return (
-        f"log2[SIZE]: {math.log2(tree.max_size()):.2f} "
-        f"log10[FLOPs]: {math.log10(tree.total_flops()):.2f}"
+        f"log2[SIZE]: {math.log2(stats['size']):.2f} "
+        f"log10[FLOPs]: {math.log10(stats['flops']):.2f}"
     )
 
 
@@ -2998,6 +3016,8 @@ class ContractionTreeCompressed(ContractionTree):
             )
 
         if path is not None:
+            from .pathfinders.path_basic import linear_to_ssa
+
             ssa_path = linear_to_ssa(path)
 
         tree = cls(inputs, output, size_dict, **kwargs)
@@ -3183,7 +3203,7 @@ class PartitionTreeBuilder:
         rand_size_dict = jitter_dict(size_dict, random_strength)
         leaves = tuple(tree.gen_leaves())
         for node in leaves:
-            tree._add_node(node)
+            tree._add_node(node, check=check)
         output = tuple(tree.output)
 
         while len(leaves) > groupsize:

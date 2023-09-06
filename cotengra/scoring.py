@@ -5,7 +5,7 @@ import math
 import functools
 
 # the default weighting for comparing flops vs mops
-from .oe import DEFAULT_COMBO_FACTOR
+DEFAULT_COMBO_FACTOR = 64
 
 
 class Objective:
@@ -35,12 +35,15 @@ class Objective:
 # ------------------------ exact contraction scoring ------------------------ #
 
 def ensure_basic_quantities_are_computed(trial):
-    if "flops" not in trial:
-        trial["flops"] = trial["tree"].total_flops()
-    if "write" not in trial:
-        trial["write"] = trial["tree"].total_write()
-    if "size" not in trial:
-        trial["size"] = trial["tree"].max_size()
+    if not all(q in trial for q in ("flops", "write", "size")):
+        stats = trial["tree"].contract_stats()
+
+        if "flops" not in trial:
+            trial["flops"] = stats["flops"]
+        if "write" not in trial:
+            trial["write"] = stats["write"]
+        if "size" not in trial:
+            trial["size"] = stats["size"]
 
 
 class ExactObjective(Objective):

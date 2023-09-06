@@ -1155,12 +1155,12 @@ def eq_to_inputs_output(eq):
     output : list[str]
         The output term.
     """
-    if "->" not in eq:
-        eq += "->" + find_output_str(eq)
-    inputs, output = eq.split("->")
-    inputs = inputs.split(",")
-    inputs = [list(s) for s in inputs]
-    output = list(output)
+    lhs, *rhs = eq.split("->")
+    inputs = tuple(map(tuple, lhs.split(",")))
+    if rhs:
+        output = tuple(rhs[0])
+    else:
+        output = tuple(find_output_str(lhs))
     return inputs, output
 
 

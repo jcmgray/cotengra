@@ -3,6 +3,8 @@ import bisect
 import functools
 import itertools
 
+from ..oe import PathOptimizer
+
 
 def is_simplifiable(legs, appearances):
     """Check if ``legs`` contains any diag (repeated) or reduced (appears
@@ -315,7 +317,8 @@ class ContractionProcessor:
         )
 
     def remove_ix(self, ix):
-        """Drop the index ``ix``, removing it from all nodes and the edgemap.
+        """Drop the index ``ix``, simply removing it from all nodes and the
+        edgemap.
         """
         for node in self.edges.pop(ix):
             self.nodes[node] = tuple(
@@ -485,10 +488,13 @@ class ContractionProcessor:
                 return sab - costmod * (sa + sb)
 
         else:
-            from ..utils import GumbelBatchedGenerator
             import numpy as np
+            from ..utils import GumbelBatchedGenerator
 
-            rng = np.random.default_rng(seed)
+            if isinstance(seed, np.random.Generator):
+                rng = seed
+            else:
+                rng = np.random.default_rng(seed)
             gmblgen = GumbelBatchedGenerator(rng)
 
             def local_score(sa, sb, sab):
@@ -701,15 +707,35 @@ class ContractionProcessor:
             heapq.heappush(nodes_sizes, (ksize, k))
 
 
-def ssa_to_linear(ssa_path, N=None):
-    """
-    Convert a path with static single assignment ids to a path with recycled
-    linear ids. For example:
+def linear_to_ssa(path, N=None):
+    """Convert a path with recycled linear ids to a path with static single
+    assignment ids. For example::
 
-    ```python
-    ssa_to_linear([(0, 3), (2, 4), (1, 5)])
-    #> [(0, 3), (1, 2), (0, 1)]
-    ```
+        >>> linear_to_ssa([(0, 3), (1, 2), (0, 1)])
+        [(0, 3), (2, 4), (1, 5)]
+
+    """
+    if N is None:
+        N = sum(map(len, path)) - len(path) + 1
+
+    ids = list(range(N))
+    ssa = N
+    ssa_path = []
+    for con in path:
+        scon = tuple(ids.pop(c) for c in sorted(con, reverse=True))
+        ssa_path.append(scon)
+        ids.append(ssa)
+        ssa += 1
+    return ssa_path
+
+
+def ssa_to_linear(ssa_path, N=None):
+    """Convert a path with static single assignment ids to a path with recycled
+    linear ids. For example::
+
+        >>> ssa_to_linear([(0, 3), (2, 4), (1, 5)])
+        [(0, 3), (1, 2), (0, 1)]
+
     """
     if N is None:
         N = sum(map(len, ssa_path)) - len(ssa_path) + 1
@@ -758,7 +784,7 @@ def optimize_simplify(inputs, output, size_dict, use_ssa=False):
     cp.simplify()
     if use_ssa:
         return cp.ssa_path
-    return ssa_to_linear(cp.ssa_path)
+    return ssa_to_linear(cp.ssa_path, len(inputs))
 
 
 def optimize_greedy(
@@ -823,7 +849,7 @@ def optimize_greedy(
     cp.optimize_remaining_by_size()
     if use_ssa:
         return cp.ssa_path
-    return ssa_to_linear(cp.ssa_path)
+    return ssa_to_linear(cp.ssa_path, len(inputs))
 
 
 def optimize_optimal(
@@ -906,4 +932,166 @@ def optimize_optimal(
     cp.optimize_remaining_by_size()
     if use_ssa:
         return cp.ssa_path
-    return ssa_to_linear(cp.ssa_path)
+    return ssa_to_linear(cp.ssa_path, len(inputs))
+
+
+@functools.lru_cache()
+def get_optimize_greedy(accel="auto"):
+    if accel == "auto":
+        import importlib.util
+
+        accel = importlib.util.find_spec("cotengrust") is not None
+
+    if accel is True:
+        from cotengrust import optimize_greedy as f
+
+        return f
+
+    if accel is False:
+        return optimize_greedy
+
+    raise ValueError(f"Unrecognized value for `accel`: {accel}.")
+
+
+class GreedyOptimizer(PathOptimizer):
+    """Class interface to the greedy optimizer which can be instantiated with
+    default options.
+    """
+
+    __slots__ = (
+        "costmod",
+        "temperature",
+        "simplify",
+        "_optimize_fn",
+    )
+
+    def __init__(
+        self,
+        costmod=1.0,
+        temperature=0.0,
+        simplify=True,
+        accel="auto",
+    ):
+        self.costmod = costmod
+        self.temperature = temperature
+        self.simplify = simplify
+        self._optimize_fn = get_optimize_greedy(accel)
+
+    def maybe_update_defaults(self, **kwargs):
+        # allow overriding of defaults
+        opts = {
+            "costmod": self.costmod,
+            "temperature": self.temperature,
+            "simplify": self.simplify,
+        }
+        opts.update(kwargs)
+        return opts
+
+    def ssa_path(self, inputs, output, size_dict, **kwargs):
+        return self._optimize_fn(
+            inputs,
+            output,
+            size_dict,
+            use_ssa=True,
+            **self.maybe_update_defaults(**kwargs),
+        )
+
+    def search(self, inputs, output, size_dict, **kwargs):
+        from ..core import ContractionTree
+
+        ssa_path = self.ssa_path(inputs, output, size_dict, **kwargs)
+        return ContractionTree.from_path(
+            inputs, output, size_dict, ssa_path=ssa_path
+        )
+
+    def __call__(self, inputs, output, size_dict, **kwargs):
+        return self._optimize_fn(
+            inputs,
+            output,
+            size_dict,
+            use_ssa=False,
+            **self.maybe_update_defaults(**kwargs),
+        )
+
+
+@functools.lru_cache()
+def get_optimize_optimal(accel="auto"):
+    if accel == "auto":
+        import importlib.util
+
+        accel = importlib.util.find_spec("cotengrust") is not None
+
+    if accel is True:
+        from cotengrust import optimize_optimal as f
+
+        return f
+
+    if accel is False:
+        return optimize_optimal
+
+    raise ValueError(f"Unrecognized value for `accel`: {accel}.")
+
+
+class OptimalOptimizer(PathOptimizer):
+    """Class interface to the optimal optimizer which can be instantiated with
+    default options.
+    """
+
+    __slots__ = (
+        "minimize",
+        "cost_cap",
+        "search_outer",
+        "simplify",
+        "_optimize_fn",
+    )
+
+    def __init__(
+        self,
+        minimize="flops",
+        cost_cap=2,
+        search_outer=False,
+        simplify=True,
+        accel="auto",
+    ):
+        self.minimize = minimize
+        self.cost_cap = cost_cap
+        self.search_outer = search_outer
+        self.simplify = simplify
+        self._optimize_fn = get_optimize_optimal(accel)
+
+    def maybe_update_defaults(self, **kwargs):
+        # allow overriding of defaults
+        opts = {
+            "minimize": self.minimize,
+            "cost_cap": self.cost_cap,
+            "search_outer": self.search_outer,
+            "simplify": self.simplify,
+        }
+        opts.update(kwargs)
+        return opts
+
+    def ssa_path(self, inputs, output, size_dict, **kwargs):
+        return self._optimize_fn(
+            inputs,
+            output,
+            size_dict,
+            use_ssa=True,
+            **self.maybe_update_defaults(**kwargs),
+        )
+
+    def search(self, inputs, output, size_dict, **kwargs):
+        from ..core import ContractionTree
+
+        ssa_path = self.ssa_path(inputs, output, size_dict, **kwargs)
+        return ContractionTree.from_path(
+            inputs, output, size_dict, ssa_path=ssa_path
+        )
+
+    def __call__(self, inputs, output, size_dict, **kwargs):
+        return self._optimize_fn(
+            inputs,
+            output,
+            size_dict,
+            use_ssa=False,
+            **self.maybe_update_defaults(**kwargs),
+        )
