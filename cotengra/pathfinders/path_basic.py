@@ -935,6 +935,20 @@ def optimize_optimal(
     return ssa_to_linear(cp.ssa_path, len(inputs))
 
 
+
+def ensure_inputs_output_are_sequence(f):
+
+    def wrapped(inputs, output, *args, **kwargs):
+        if not isinstance(inputs[0], (tuple, list)):
+            inputs = tuple(map(tuple, inputs))
+        if not isinstance(output, (tuple, list)):
+            output = tuple(output)
+        return f(inputs, output, *args, **kwargs)
+
+    return wrapped
+
+
+
 @functools.lru_cache()
 def get_optimize_greedy(accel="auto"):
     if accel == "auto":
@@ -945,7 +959,7 @@ def get_optimize_greedy(accel="auto"):
     if accel is True:
         from cotengrust import optimize_greedy as f
 
-        return f
+        return ensure_inputs_output_are_sequence(f)
 
     if accel is False:
         return optimize_greedy
@@ -1024,7 +1038,7 @@ def get_optimize_optimal(accel="auto"):
     if accel is True:
         from cotengrust import optimize_optimal as f
 
-        return f
+        return ensure_inputs_output_are_sequence(f)
 
     if accel is False:
         return optimize_optimal

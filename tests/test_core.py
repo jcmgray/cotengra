@@ -18,7 +18,7 @@ def test_contraction_tree_equivalency():
     assert info1.contraction_list != info2.contraction_list
     ct1 = ctg.ContractionTree.from_info(info1, check=True)
     ct2 = ctg.ContractionTree.from_info(info2, check=True)
-    assert ct1.total_flops() == ct2.total_flops() == 40
+    assert ct1.total_flops() == ct2.total_flops() == 20
     assert ct1.children == ct2.children
     assert ct1.is_complete()
     assert ct2.is_complete()
@@ -39,7 +39,7 @@ def test_reconfigure(forested, parallel, requires):
     info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
     tree_gr = ctg.ContractionTree.from_info(info_gr)
 
-    assert tree_gr.total_flops() == info_gr.opt_cost
+    assert tree_gr.total_flops() == info_gr.opt_cost // 2
 
     if forested:
         tree_gr.subtree_reconfigure_forest_(
@@ -47,12 +47,12 @@ def test_reconfigure(forested, parallel, requires):
     else:
         tree_gr.subtree_reconfigure_(progbar=True)
 
-    assert tree_gr.total_flops() < info_gr.opt_cost
+    assert tree_gr.total_flops() < info_gr.opt_cost // 2
 
     info_tsr = oe.contract_path(
         eq, *shapes, shapes=True, optimize=tree_gr.get_path())[1]
 
-    assert tree_gr.total_flops() == info_tsr.opt_cost
+    assert tree_gr.total_flops() == info_tsr.opt_cost // 2
 
 
 def test_reconfigure_with_n_smaller_than_subtree_size():
