@@ -1960,9 +1960,7 @@ class ContractionTree:
 
     def compressed_reconfigure(
         self,
-        chi,
-        minimize="peak",
-        compress_late=True,
+        minimize,
         order_only=False,
         max_nodes="auto",
         max_time=None,
@@ -2015,8 +2013,6 @@ class ContractionTree:
         """
         from .pathfinders.path_compressed import CompressedExhaustive
 
-        minimize = minimize.replace("-compressed", "")
-
         if max_nodes == "auto":
             if max_time is None:
                 max_nodes = max(10_000, self.N**2)
@@ -2024,9 +2020,7 @@ class ContractionTree:
                 max_nodes = float("inf")
 
         opt = CompressedExhaustive(
-            chi=chi,
             minimize=minimize,
-            compress_late=compress_late,
             local_score=local_score,
             max_nodes=max_nodes,
             max_time=max_time,

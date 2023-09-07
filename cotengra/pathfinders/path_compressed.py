@@ -52,9 +52,7 @@ class CompressedExhaustive:
 
     def __init__(
         self,
-        chi,
-        minimize="peak",
-        compress_late=True,
+        minimize,
         max_nodes=float("inf"),
         max_time=None,
         local_score=None,
@@ -62,13 +60,12 @@ class CompressedExhaustive:
         best_score=None,
         progbar=False,
     ):
-        self.chi = chi
-
         if isinstance(minimize, str) and "compressed" not in minimize:
             minimize = minimize + "-compressed"
-
         self.minimize = get_score_fn(minimize)
-        self.compress_late = compress_late
+        self.chi = self.minimize.chi
+        self.compress_late = self.minimize.compress_late
+
         if best_score is None:
             self.best_score = float("inf")
         else:
