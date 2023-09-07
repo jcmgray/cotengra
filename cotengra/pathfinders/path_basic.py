@@ -494,10 +494,12 @@ class ContractionProcessor:
 
             def local_score(sa, sb, sab):
                 score = sab - costmod * (sa + sb)
-                if score < 0:
+                if score > 0:
+                    return np.log(score) - temperature * gmblgen()
+                elif score < 0:
                     return -np.log(-score) - temperature * gmblgen()
                 else:
-                    return np.log(score) - temperature * gmblgen()
+                    return - temperature * gmblgen()
 
                 # return sab - costmod * (sa + sb) - temperature * gmblgen()
 

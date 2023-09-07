@@ -2531,9 +2531,9 @@ class ContractionTree:
             What library to use to actually perform the contractions. Options
             are:
 
-            - "auto": let cotengra choose
+            - None: let cotengra choose.
             - "autoray": dispatch with autoray, using the ``tensordot`` and
-              ``einsum`` implementation of the backend
+              ``einsum`` implementation of the backend.
             - "cotengra": use the ``tensordot`` and ``einsum`` implementation
               of cotengra, which is based on batch matrix multiplication. This
               is faster for some backends like numpy, and also enables

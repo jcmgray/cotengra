@@ -116,7 +116,7 @@ auto_hq_optimize = AutoOptimizer(
     optimal_cutoff=650,
     methods=("greedy", "kahypar"),
     reconf_opts={"subtree_size": 8, "maxiter": 500},
-    parallel=True,
+    parallel=False,
 )
 greedy_optimize = GreedyOptimizer()
 optimal_optimize = OptimalOptimizer()

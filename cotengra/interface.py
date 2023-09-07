@@ -17,8 +17,7 @@ _PRESETS = {}
 
 
 def register_preset(preset, optimizer, register_opt_einsum="auto"):
-    """Register a preset optimizer.
-    """
+    """Register a preset optimizer."""
     _PRESETS[preset] = optimizer
 
     if register_opt_einsum == "auto":
@@ -31,13 +30,11 @@ def register_preset(preset, optimizer, register_opt_einsum="auto"):
             pass
 
 
-
 @functools.lru_cache(None)
 def preset_to_optimizer(preset):
     try:
         return _PRESETS[preset]
     except KeyError:
-
         if not opt_einsum_installed:
             raise KeyError(
                 f"preset {preset!r} not found and can't "
@@ -233,8 +230,11 @@ def contract_expression(
     ----------
     eq : str
         The equation to use for contraction, for example ``'ab,bc->ac'``.
-    shapes : tuple of int
-        The shapes of the tensors to contract.
+        The output will be automatically computed if not supplied, but Ellipses
+        (`'...'`) are not supported.
+    shapes : sequence[tuple[int]]
+        The shapes of the tensors to contract, or the constant tensor itself
+        if marked as constant in ``constants``.
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. If a ``HyperOptimizer`` or
         ``ContractionTree`` instance is passed then te expression will make use
@@ -242,8 +242,39 @@ def contract_expression(
     constants : sequence of int, optional
         The indices of tensors to treat as constant, the final expression will
         take the remaining non-constant tensors as inputs.
+    implementation : str or tuple[callable, callable], optional
+        What library to use to actually perform the contractions. Options
+        are:
+
+        - None: let cotengra choose.
+        - "autoray": dispatch with autoray, using the ``tensordot`` and
+            ``einsum`` implementation of the backend.
+        - "cotengra": use the ``tensordot`` and ``einsum`` implementation
+            of cotengra, which is based on batch matrix multiplication. This
+            is faster for some backends like numpy, and also enables
+            libraries which don't yet provide ``tensordot`` and ``einsum`` to
+            be used.
+        - "cuquantum": use the cuquantum library to perform the whole
+            contraction (not just individual contractions).
+        - tuple[callable, callable]: manually supply the ``tensordot`` and
+            ``einsum`` implementations to use.
+
     autojit : bool, optional
-        Whether to use ``autoray.autojit`` to compile the expression.
+        If ``True``, use :func:`autoray.autojit` to compile the contraction
+        function.
+    via : tuple[callable, callable], optional
+        If given, the first function will be applied to the input arrays and
+        the second to the output array. For example, moving the tensors from
+        CPU to GPU and back.
+    sort_contraction_indices : bool, optional
+        If ``True``, call ``tree.sort_contraction_indices()`` before
+        constructing the contraction function.
+
+    Returns
+    -------
+    expr : callable
+        A callable, signature ``expr(*arrays)`` that will contract ``arrays``
+        with shapes ``shapes``.
     """
     if constants is not None:
         fn = _contract_expression_with_constants(
