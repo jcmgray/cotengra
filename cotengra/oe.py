@@ -3,6 +3,9 @@
 
 try:
     from opt_einsum.paths import PathOptimizer, get_path_fn, register_path_fn
+
+    opt_einsum_installed = True
+
 except ImportError:
     PathOptimizer = object
 
@@ -14,11 +17,11 @@ except ImportError:
 
         warnings.warn("opt_einsum not installed")
 
-
-DEFAULT_COMBO_FACTOR = 64
+    opt_einsum_installed = False
 
 __all__ = (
-    "PathOptimizer",
     "get_path_fn",
+    "opt_einsum_installed",
+    "PathOptimizer",
     "register_path_fn",
 )

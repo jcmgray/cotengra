@@ -103,7 +103,7 @@ def list_hyper_functions():
     return sorted(_PATH_FNS)
 
 
-def find_tree(*args, **kwargs):
+def base_trial_fn(*args, **kwargs):
     method = kwargs.pop("method")
     tree = _PATH_FNS[method](*args, **kwargs)
     return {"tree": tree}
@@ -437,7 +437,7 @@ class HyperOptimizer(PathOptimizer):
         return self.tree.get_path()
 
     def setup(self, inputs, output, size_dict):
-        trial_fn = find_tree
+        trial_fn = base_trial_fn
 
         if self.compressed:
             assert not self.multicontraction
@@ -718,8 +718,7 @@ class HyperOptimizer(PathOptimizer):
             )
 
     def to_df(self):
-        """Create a single ``pandas.DataFrame`` with all trials and scores.
-        """
+        """Create a single ``pandas.DataFrame`` with all trials and scores."""
         import pandas
 
         return pandas.DataFrame(
@@ -746,19 +745,19 @@ class HyperOptimizer(PathOptimizer):
         rows = {}
         for i in range(len(self.scores)):
             row = {
-                'run': i,
-                'time': self.times[i],
+                "run": i,
+                "time": self.times[i],
                 **self.param_choices[i],
-                'flops': log10(self.costs_flops[i]),
-                'write': log2(self.costs_write[i]),
-                'size': log2(self.costs_size[i]),
-                'score': self.scores[i],
+                "flops": log10(self.costs_flops[i]),
+                "write": log2(self.costs_write[i]),
+                "size": log2(self.costs_size[i]),
+                "score": self.scores[i],
             }
             method = self.method_choices[i]
             rows.setdefault(method, []).append(row)
 
         return {
-            method: pd.DataFrame(rows[method]).sort_values(by='score')
+            method: pd.DataFrame(rows[method]).sort_values(by="score")
             for method in rows
         }
 

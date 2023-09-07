@@ -5,9 +5,6 @@ import itertools
 import collections
 
 import numpy as np
-from ..oe import (
-    register_path_fn,
-)
 
 from ..core import (
     ContractionTreeCompressed,
@@ -32,10 +29,13 @@ def trial_greedy(
     temperature=0.0,
     costmod=1.0,
 ):
-    rand_size_dict = jitter_dict(size_dict, random_strength)
+    if random_strength != 0.0:
+        size_dict = jitter_dict(size_dict, random_strength)
 
     ssa_path = ssa_greedy_optimize(
-        inputs, output, rand_size_dict,
+        inputs,
+        output,
+        size_dict,
         temperature=temperature,
         costmod=costmod,
     )
@@ -55,53 +55,19 @@ register_hyper_function(
     },
 )
 
-
-# --------------------------------------------------------------------------- #
-
-
-def greconf_rf(inputs, output, size_dict, memory_limit=None):
-    """Greedy-reconf path -- find a single greedy path then perform a round of
-    cheap subtree reconfigurations to optimize it.
-    """
-    ssa_path = ssa_greedy_optimize(inputs, output, size_dict)
-    tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
-    )
-    tree.subtree_reconfigure_(subtree_size=6, minimize="flops")
-    return tree.get_path()
-
-
-register_path_fn("greedy-rf", greconf_rf)
-
-
-def greconf_rw(inputs, output, size_dict, memory_limit=None):
-    """Greedy-reconf path -- find a single greedy path then perform a round of
-    cheap subtree reconfigurations to optimize it.
-    """
-    ssa_path = ssa_greedy_optimize(inputs, output, size_dict)
-    tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
-    )
-    tree.subtree_reconfigure_(subtree_size=6, minimize="write")
-    return tree.get_path()
-
-
-register_path_fn("greedy-rw", greconf_rw)
-
-
-def greconf_rc(inputs, output, size_dict, memory_limit=None):
-    """Greedy-reconf path -- find a single greedy path then perform a round of
-    cheap subtree reconfigurations to optimize it.
-    """
-    ssa_path = ssa_greedy_optimize(inputs, output, size_dict)
-    tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
-    )
-    tree.subtree_reconfigure_(subtree_size=6, minimize="combo")
-    return tree.get_path()
-
-
-register_path_fn("greedy-rc", greconf_rc)
+# greedy but don't explore costmod or add index size noise
+# -> better for a small number of runs
+register_hyper_function(
+    name="rgreedy",
+    ssa_func=trial_greedy,
+    space={
+        "temperature": {"type": "FLOAT_EXP", "min": 0.001, "max": 0.01},
+    },
+    constants={
+        "costmod": 1.0,
+        "random_strength": 0.0,
+    },
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -340,7 +306,7 @@ register_hyper_function(
     },
     constants={
         "early_terminate_size": 2**100,
-    }
+    },
 )
 
 

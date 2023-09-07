@@ -16,8 +16,6 @@ except ImportError:
 
 import functools
 
-from .oe import register_path_fn
-
 from .core import (
     ContractionTree,
     ContractionTreeCompressed,
@@ -27,15 +25,18 @@ from .hypergraph import (
     HyperGraph,
     get_hypergraph,
 )
-from .interface import contract_expression
+from .interface import (
+    contract_expression,
+    register_preset,
+)
 
 from .slicer import SliceFinder
 
+from .pathfinders import path_basic
 from .pathfinders import path_greedy
 from .pathfinders import path_igraph
 from .pathfinders import path_kahypar
 from .pathfinders import path_labels
-
 from .pathfinders.path_quickbb import QuickBBOptimizer, optimize_quickbb
 from .pathfinders.path_flowcutter import (
     FlowCutterOptimizer,
@@ -57,6 +58,13 @@ from .hyperoptimizers.hyper import (
     hash_contraction,
 )
 
+from .presets import (
+    auto_optimize,
+    auto_hq_optimize,
+    greedy_optimize,
+    optimal_optimize,
+    optimal_outer_optimize,
+)
 
 from .plot import (
     plot_contractions,
@@ -92,7 +100,7 @@ more 'even' way than purely random - requires ``chocolate``.
 def HyperCompressedOptimizer(
     chi=None,
     methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
-    minimize="max-compressed",
+    minimize="peak-compressed",
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
@@ -110,7 +118,7 @@ def ReusableHyperCompressedOptimizer(
     chi=None,
     methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
     set_surface_order=True,
-    minimize="max-compressed",
+    minimize="peak-compressed",
     **kwargs,
 ):
     """Instantiates a HyperOptimizer but with default arguments applicable to
@@ -132,53 +140,60 @@ def HyperMultiOptimizer(*args, **kwargs):
 
 
 __all__ = (
+    "auto_hq_optimize",
+    "auto_optimize",
+    "contract_expression",
     "ContractionTree",
     "ContractionTreeCompressed",
     "ContractionTreeMulti",
-    "HyperGraph",
-    "get_hypergraph",
-    "contract_expression",
     "FlowCutterOptimizer",
     "get_hyper_space",
+    "get_hypergraph",
+    "get_symbol",
+    "greedy_optimize",
+    "hash_contraction",
     "hyper_baytune",
     "hyper_choco",
     "hyper_nevergrad",
     "hyper_optimize",
+    "hyper_optuna",
     "hyper_random",
     "hyper_skopt",
-    "hyper_optuna",
-    "HyperOptimizer",
     "HyperCompressedOptimizer",
+    "HyperGraph",
     "HyperMultiOptimizer",
-    "ReusableHyperOptimizer",
-    "ReusableHyperCompressedOptimizer",
-    "hash_contraction",
+    "HyperOptimizer",
     "list_hyper_functions",
+    "optimal_optimize",
+    "optimal_outer_optimize",
     "optimize_flowcutter",
     "optimize_quickbb",
+    "path_basic",
     "path_greedy",
     "path_igraph",
     "path_kahypar",
     "path_labels",
-    "plot_contractions",
     "plot_contractions_alt",
-    "plot_scatter",
+    "plot_contractions",
     "plot_scatter_alt",
-    "plot_slicings",
+    "plot_scatter",
     "plot_slicings_alt",
-    "plot_tree",
+    "plot_slicings",
     "plot_tree_ring",
-    "plot_tree_tent",
     "plot_tree_span",
-    "plot_trials",
+    "plot_tree_tent",
+    "plot_tree",
     "plot_trials_alt",
+    "plot_trials",
     "QuasiRandOptimizer",
     "QuickBBOptimizer",
+    "register_preset",
+    "ReusableHyperCompressedOptimizer",
+    "ReusableHyperOptimizer",
     "SlicedContractor",
     "SliceFinder",
     "UniformOptimizer",
     "utils",
-    "get_symbol",
 )
 
 
@@ -191,33 +206,33 @@ def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
 
 
 try:
-    register_path_fn(
+    register_preset(
         "hyper",
         hyper_optimize,
     )
-    register_path_fn(
+    register_preset(
         "hyper-256",
         functools.partial(hyper_optimize, max_repeats=256),
     )
-    register_path_fn(
+    register_preset(
         "hyper-greedy",
         functools.partial(hyper_optimize, methods=["greedy"]),
     )
-    register_path_fn(
+    register_preset(
         "hyper-labels",
         functools.partial(hyper_optimize, methods=["labels"]),
     )
-    register_path_fn(
+    register_preset(
         "hyper-kahypar",
         functools.partial(hyper_optimize, methods=["kahypar"]),
     )
-    register_path_fn(
+    register_preset(
         "hyper-balanced",
         functools.partial(
             hyper_optimize, methods=["kahypar-balanced"], max_repeats=16
         ),
     )
-    register_path_fn(
+    register_preset(
         "hyper-compressed",
         functools.partial(
             hyper_optimize,
@@ -225,43 +240,43 @@ try:
             methods=("greedy-span", "greedy-compressed", "kahypar-agglom"),
         ),
     )
-    register_path_fn(
+    register_preset(
         "hyper-spinglass",
         functools.partial(hyper_optimize, methods=["spinglass"]),
     )
-    register_path_fn(
+    register_preset(
         "hyper-betweenness",
         functools.partial(hyper_optimize, methods=["betweenness"]),
     )
-    register_path_fn(
+    register_preset(
         "flowcutter-2",
         functools.partial(optimize_flowcutter, max_time=2),
     )
-    register_path_fn(
+    register_preset(
         "flowcutter-10",
         functools.partial(optimize_flowcutter, max_time=10),
     )
-    register_path_fn(
+    register_preset(
         "flowcutter-60",
         functools.partial(optimize_flowcutter, max_time=60),
     )
-    register_path_fn(
+    register_preset(
         "quickbb-2",
         functools.partial(optimize_quickbb, max_time=2),
     )
-    register_path_fn(
+    register_preset(
         "quickbb-10",
         functools.partial(optimize_quickbb, max_time=10),
     )
-    register_path_fn(
+    register_preset(
         "quickbb-60",
         functools.partial(optimize_quickbb, max_time=60),
     )
-    register_path_fn(
+    register_preset(
         "greedy-compressed",
         path_greedy.greedy_compressed,
     )
-    register_path_fn(
+    register_preset(
         "greedy-span",
         path_greedy.greedy_span,
     )

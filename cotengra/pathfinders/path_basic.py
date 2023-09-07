@@ -399,30 +399,26 @@ class ContractionProcessor:
         node, if there is one.
         """
         scalars = []
+        j = None
+        jndim = None
         for i, legs in self.nodes.items():
-            if len(legs) == 0:
+            ndim = len(legs)
+            if ndim == 0:
                 # scalar
                 scalars.append(i)
+            elif (j is None) or (ndim < jndim):
+                # also find the smallest other node, to multiply into
+                j = i
+                jndim = ndim
 
         if scalars:
-            for i in scalars:
-                self.pop_node(i)
+            if j is not None:
+                scalars.append(j)
 
-            try:
-                j, res = min(
-                    ((i, legs) for i, legs in self.nodes.items()),
-                    key=lambda x: len(x[1]),
-                )
-                con = (*scalars, j)
-                self.pop_node(j)
-            except ValueError:
-                # all scalars!
-                con = tuple(scalars)
-                res = ()
-
-            # print("contracting scalars", con, "->", res)
-            self.add_node(res)
-            self.ssa_path.append(con)
+            # binary contract from left to right ((((0, 1), 2), 3), ...)
+            for p in range(len(scalars) - 1):
+                k = self.contract_nodes(scalars[p], scalars[p + 1])
+                scalars[p + 1] = k
 
     def simplify_hadamard(self):
         groups = {}
@@ -437,7 +433,6 @@ class ContractionProcessor:
 
         for key in hadamards:
             group = groups[key]
-            # print("contracting hadamard", key, group)
             while len(group) > 1:
                 i = group.pop()
                 j = group.pop()
@@ -751,6 +746,22 @@ def ssa_to_linear(ssa_path, N=None):
         path.append(con)
         ssa += 1
     return path
+
+
+def is_ssa_path(path, nterms):
+    """Check if an explicitly given path is in 'static single assignment' form.
+    """
+    seen = set()
+    # we reverse as more likely to see high id and shortcut
+    for con in reversed(path):
+        for i in con:
+            if (nterms is not None) and (i >= nterms):
+                # indices beyond nterms -> ssa
+                return True
+            seen.add(i)
+            if i in seen:
+                # id reused -> not ssa
+                return False
 
 
 def optimize_simplify(inputs, output, size_dict, use_ssa=False):
