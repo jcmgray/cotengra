@@ -208,6 +208,22 @@ class Via:
         return self.convert_out(out)
 
 
+class WithBackend:
+    """Wrapper to make any autoray written function take a ``backend`` kwarg.
+    """
+
+    __slots__ = ("fn",)
+
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __call__(self, *args, backend=None, **kwargs):
+        if backend is None:
+            return self.fn(*args, **kwargs)
+        with ar.backend_like(backend):
+            return self.fn(*args, **kwargs)
+
+
 def contract_expression(
     eq,
     *shapes,
@@ -296,9 +312,11 @@ def contract_expression(
     inputs, output = eq_to_inputs_output(eq)
 
     if len(inputs) == 1:
-        (term,) = inputs
+        term = tuple(inputs[0])
+        output = tuple(output)
+
         if term == output:
-            # no-op contraction
+            # 'contraction' is a no-op
 
             def fn(*arrays, backend=None):
                 if backend is None:
@@ -306,14 +324,14 @@ def contract_expression(
                 return ar.do("array", arrays[0], like=backend)
 
         elif len(term) == len(output):
-            # transpose contraction
-            perm = tuple(map(inputs[0].find, output))
+            # 'contraction' is just a transposition
+            perm = tuple(map(term.index, output))
 
             def fn(*arrays, backend=None):
                 return ar.do("transpose", arrays[0], perm, like=backend)
 
         else:
-            # involves traces / reductions
+            # contraction involves traces / reductions
 
             def fn(*arrays, backend=None):
                 return ar.do("einsum", eq, arrays[0], like=backend)
@@ -411,5 +429,8 @@ def _contract_expression_with_constants(
         from autoray import autojit as _autojit
 
         fn = _autojit(fn)
+    else:
+        # allow for backend kwarg (which will set what autoray.numpy uses)
+        fn = WithBackend(fn)
 
     return fn

@@ -846,8 +846,10 @@ def optimize_greedy(
         functioning of the core optimization, but may be skipped if the input
         indices are already in a simplified form.
     use_ssa : bool, optional
-        Whether to return the contraction path in 'SSA' format (i.e. as if each
-        intermediate is appended to the list of inputs, without removals).
+        Whether to return the contraction path in 'single static assignment'
+        (SSA) format (i.e. as if each intermediate is appended to the list of
+        inputs, without removals). This can be quicker and easier to work with
+        than the 'linear recycled' format that `numpy` and `opt_einsum` use.
 
     Returns
     -------
@@ -899,20 +901,22 @@ def optimize_optimal(
             - "size": minimize with respect to maximum intermediate size only
               (also known as contraction width)
             - "write": minimize with respect to total write cost only
-            - "combo" or "combo(-{factor}": minimize with respect sum of flops
+            - "combo" or "combo-{factor}": minimize with respect sum of flops
               and write weighted by specified factor. If the factor is not
               given a default value is used.
             - "limit" or "limit-{factor}": minimize with respect to max (at
               each contraction) of flops or write weighted by specified
               factor. If the factor is not given a default value is used.
 
+        'combo' is generally a good default in term of practical hardware
+        performance, where both memory bandwidth and compute are limited.
     cost_cap : float, optional
         The maximum cost of a contraction to initially consider. This acts like
         a sieve and is doubled at each iteration until the optimal path can
         be found, but supplying an accurate guess can speed up the algorithm.
     search_outer : bool, optional
         Whether to allow outer products in the contraction path. The default is
-        False, especially when considering write costs, the fastest path is
+        False. Especially when considering write costs, the fastest path is
         very unlikely to include outer products.
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
@@ -927,8 +931,10 @@ def optimize_optimal(
         functioning of the core optimization, but may be skipped if the input
         indices are already in a simplified form.
     use_ssa : bool, optional
-        Whether to return the contraction path in 'SSA' format (i.e. as if each
-        intermediate is appended to the list of inputs, without removals).
+        Whether to return the contraction path in 'single static assignment'
+        (SSA) format (i.e. as if each intermediate is appended to the list of
+        inputs, without removals). This can be quicker and easier to work with
+        than the 'linear recycled' format that `numpy` and `opt_einsum` use.
 
     Returns
     -------
