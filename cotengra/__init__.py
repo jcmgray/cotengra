@@ -26,7 +26,8 @@ from .hypergraph import (
     get_hypergraph,
 )
 from .interface import (
-    contract_expression,
+    einsum_expression,
+    einsum,
     register_preset,
 )
 
@@ -139,13 +140,23 @@ def HyperMultiOptimizer(*args, **kwargs):
     return HyperOptimizer(*args, multicontraction=True, **kwargs)
 
 
+contract_expression = einsum_expression
+"""Alias for :func:`cotengra.einsum_expression`."""
+
+contract = einsum
+"""Alias for :func:`cotengra.einsum`."""
+
+
 __all__ = (
     "auto_hq_optimize",
     "auto_optimize",
     "contract_expression",
+    "contract",
     "ContractionTree",
     "ContractionTreeCompressed",
     "ContractionTreeMulti",
+    "einsum_expression",
+    "einsum",
     "FlowCutterOptimizer",
     "get_hyper_space",
     "get_hypergraph",

@@ -96,10 +96,8 @@ test_case_eqs = [
 @pytest.mark.parametrize("eq", test_case_eqs)
 def test_basic_equations(eq):
     arrays = ctg.utils.make_arrays_from_eq(eq)
-    shapes = [a.shape for a in arrays]
     x = np.einsum(eq, *arrays)
-    expr = ctg.contract_expression(eq, *shapes)
-    y = expr(*arrays)
+    y = ctg.einsum(eq, *arrays)
     assert_allclose(x, y)
 
 
@@ -246,7 +244,7 @@ def test_exponent_stripping(autojit):
 @pytest.mark.parametrize("constants", [None, True])
 @pytest.mark.parametrize("optimize_type", ["path", "tree", "optimizer", "str"])
 @pytest.mark.parametrize("sort_contraction_indices", [False, True])
-def test_contract_expression(
+def test_einsum_expression(
     autojit,
     constants,
     optimize_type,
@@ -275,7 +273,7 @@ def test_contract_expression(
         for c in sorted(constants, reverse=True):
             shapes[c] = arrays.pop(c)
 
-    expr = ctg.contract_expression(
+    expr = ctg.einsum_expression(
         eq,
         *shapes,
         optimize=optimize,

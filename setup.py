@@ -33,6 +33,7 @@ setup(
     ],
     extras_require={
         "recommended": [
+            "cotengrust",
             "kahypar",
             "networkx",
             "opt_einsum",
