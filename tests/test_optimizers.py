@@ -3,7 +3,6 @@ import functools
 from collections import defaultdict
 
 import pytest
-import opt_einsum as oe
 from opt_einsum.contract import Shaped
 import numpy as np
 
@@ -66,6 +65,9 @@ def contraction_20_5():
     (functools.partial(ctg.UniformOptimizer, methods='walktrap'), 'igraph'),
 ])
 def test_basic(contraction_20_5, opt, requires):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     if requires:
         pytest.importorskip(requires)
@@ -87,6 +89,9 @@ def test_basic(contraction_20_5, opt, requires):
 def test_hyper(contraction_20_5, optlib, requires, parallel):
     pytest.importorskip('kahypar')
     pytest.importorskip(requires)
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, _, _, arrays = contraction_20_5
     optimizer = ctg.HyperOptimizer(
@@ -105,6 +110,10 @@ def test_hyper(contraction_20_5, optlib, requires, parallel):
         not FOUND_FLOWCUTTER, reason='flow_cutter_pace17 not found on path')),
 ])
 def test_binaries(contraction_20_5, optimize):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     eq, _, _, arrays = contraction_20_5
     optimizer = optimize(max_time=1)
     _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
@@ -115,6 +124,9 @@ def test_binaries(contraction_20_5, optimize):
 def test_hyper_slicer(parallel):
     if parallel:
         pytest.importorskip('distributed')
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     optimizer = ctg.HyperOptimizer(
@@ -130,6 +142,9 @@ def test_hyper_slicer(parallel):
 def test_hyper_reconf(parallel):
     if parallel:
         pytest.importorskip('distributed')
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     optimizer = ctg.HyperOptimizer(
@@ -144,6 +159,9 @@ def test_hyper_reconf(parallel):
 def test_hyper_slicer_reconf(parallel):
     if parallel:
         pytest.importorskip('distributed')
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     optimizer = ctg.HyperOptimizer(
@@ -165,6 +183,9 @@ def test_insane_nested(parallel_backend):
         pytest.importorskip('distributed')
     else:
         pytest.importorskip(parallel_backend)
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     optimizer = ctg.HyperOptimizer(

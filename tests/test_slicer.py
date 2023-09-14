@@ -1,10 +1,11 @@
 import pytest
-import numpy as np
-import opt_einsum as oe
 import cotengra as ctg
 
 
 def test_slicer():
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     # arrays = [np.random.uniform(size=s) for s in shapes]
@@ -26,6 +27,9 @@ def test_slicer():
 
 def test_plot():
     pytest.importorskip('matplotlib')
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     import matplotlib
     matplotlib.use('Template')
@@ -39,6 +43,9 @@ def test_plot():
 
 def test_plot_alt():
     pytest.importorskip('altair')
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     path, info = oe.contract_path(eq, *shapes, shapes=True)

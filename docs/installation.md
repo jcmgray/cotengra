@@ -1,19 +1,39 @@
 # Installation
 
-`cotengra` has no strict dependencies.
-To install this package from source, you can clone it
-locally, navigate into the source directory and then call:
+`cotengra` is available on both [pypi](https://pypi.org/project/cotengra/) and [conda-forge](https://anaconda.org/conda-forge/cotengra). While `cotengra` is itself pure python, the recommended distribution would be [mambaforge](https://github.com/conda-forge/miniforge#mambaforge) for installing the various optional dependencies.
 
+**Installing with `pip`:**
+```bash
+pip install cotengra
 ```
-pip install -U .
+
+**Installing with `conda`:**
+```bash
+conda install -c conda-forge cotengra
 ```
-or should you want to edit the source:
+
+**Installing with `mambaforge`:**
+```bash
+mamba install cotengra
 ```
-pip install --no-deps -U -e .
+
+```{hint}
+Mamba is a faster version of `conda`, and the -forge distritbution comes pre-configured with only the `conda-forge` channel, which further simplifies and speeds up installing dependencies.
 ```
-To install it directly from github (e.g. in a [colab notebook](https://colab.research.google.com/)):
-```
+
+**Installing the latest version directly from github:**
+
+If you want to checkout the latest version of features and fixes, you can install directly from the github repository:
+```bash
 pip install -U git+https://github.com/jcmgray/cotengra.git
+```
+
+**Installing a local, editable development version:**
+
+If you want to make changes to the source code and test them out, you can install a local editable version of the package:
+```bash
+git clone https://github.com/jcmgray/cotengra.git
+pip install --no-deps -U -e cotengra/
 ```
 
 Other than that, the optional dependencies are detailed below.
@@ -21,7 +41,7 @@ Other than that, the optional dependencies are detailed below.
 ````{hint}
 The recommended selection of optional dependencies from below covering most use-cases is:
 ```
-kahypar tqdm optuna loky networkx autoray opt_einsum cytoolz
+autoray cytoolz kahypar loky networkx opt_einsum optuna tqdm
 ```
 ````
 

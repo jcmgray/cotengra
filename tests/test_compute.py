@@ -4,7 +4,6 @@ import cotengra as ctg
 
 import numpy as np
 from numpy.testing import assert_allclose
-import opt_einsum as oe
 
 
 # these are taken from opt_einsum
@@ -121,6 +120,10 @@ def test_rand_equation(
     seed,
     indices_sort,
 ):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     inputs, output, shapes, size_dict = ctg.utils.rand_equation(
         n=n,
         reg=reg,
@@ -208,6 +211,10 @@ def test_lazy_sliced_output_reduce():
 
 @pytest.mark.parametrize("autojit", [False, True])
 def test_exponent_stripping(autojit):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     inputs, output, shapes, size_dict = ctg.utils.lattice_equation([8, 8])
     rng = np.random.default_rng(42)
     arrays = [rng.uniform(size=s) for s in shapes]
@@ -250,6 +257,10 @@ def test_einsum_expression(
     optimize_type,
     sort_contraction_indices,
 ):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     inputs, output, shapes, size_dict = ctg.utils.lattice_equation([4, 8])
     eq = ctg.utils.inputs_output_to_eq(inputs, output)
     arrays = [np.random.rand(*s) for s in shapes]

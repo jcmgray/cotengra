@@ -1,9 +1,12 @@
 import pytest
-import opt_einsum as oe
 import cotengra as ctg
 
 
 def test_contraction_tree_equivalency():
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     eq = "a,ab,bc,c->"
     shapes = [(4,), (4, 2), (2, 5), (5,)]
     # optimal contraction is like:
@@ -11,10 +14,12 @@ def test_contraction_tree_equivalency():
     #   / \
     #  o   o
     # / \ / \
-    _, info1 = oe.contract_path(eq, *shapes, shapes=True,
-                                optimize=[(0, 1), (0, 1), (0, 1)])
-    _, info2 = oe.contract_path(eq, *shapes, shapes=True,
-                                optimize=[(2, 3), (0, 1), (0, 1)])
+    _, info1 = oe.contract_path(
+        eq, *shapes, shapes=True, optimize=[(0, 1), (0, 1), (0, 1)]
+    )
+    _, info2 = oe.contract_path(
+        eq, *shapes, shapes=True, optimize=[(2, 3), (0, 1), (0, 1)]
+    )
     assert info1.contraction_list != info2.contraction_list
     ct1 = ctg.ContractionTree.from_info(info1, check=True)
     ct2 = ctg.ContractionTree.from_info(info2, check=True)
@@ -24,62 +29,83 @@ def test_contraction_tree_equivalency():
     assert ct2.is_complete()
 
 
-@pytest.mark.parametrize(('forested', 'parallel', 'requires'), [
-    (False, False, ''),
-    (True, False, ''),
-    (True, 'dask', 'distributed'),
-    (True, 'ray', 'ray'),
-])
+@pytest.mark.parametrize(
+    ("forested", "parallel", "requires"),
+    [
+        (False, False, ""),
+        (True, False, ""),
+        (True, "dask", "distributed"),
+        (True, "ray", "ray"),
+    ],
+)
 def test_reconfigure(forested, parallel, requires):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     if requires:
         pytest.importorskip(requires)
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
 
-    info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
+    info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
     tree_gr = ctg.ContractionTree.from_info(info_gr)
 
     assert tree_gr.total_flops() == info_gr.opt_cost // 2
 
     if forested:
         tree_gr.subtree_reconfigure_forest_(
-            num_trees=2, subtree_size=6, progbar=True, parallel=parallel)
+            num_trees=2, subtree_size=6, progbar=True, parallel=parallel
+        )
     else:
         tree_gr.subtree_reconfigure_(progbar=True)
 
     assert tree_gr.total_flops() < info_gr.opt_cost // 2
 
     info_tsr = oe.contract_path(
-        eq, *shapes, shapes=True, optimize=tree_gr.get_path())[1]
+        eq, *shapes, shapes=True, optimize=tree_gr.get_path()
+    )[1]
 
     assert tree_gr.total_flops() == info_tsr.opt_cost // 2
 
 
 def test_reconfigure_with_n_smaller_than_subtree_size():
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     eq, shapes = oe.helpers.rand_equation(10, 3)
     path, info = oe.contract_path(eq, *shapes, shapes=True)
     tree = ctg.ContractionTree.from_info(info)
     tree.subtree_reconfigure(12)
 
 
-@pytest.mark.parametrize(('forested', 'parallel', 'requires'), [
-    (False, False, ''),
-    (True, False, ''),
-    (True, True, 'distributed'),
-])
+@pytest.mark.parametrize(
+    ("forested", "parallel", "requires"),
+    [
+        (False, False, ""),
+        (True, False, ""),
+        (True, True, "distributed"),
+    ],
+)
 def test_slice_and_reconfigure(forested, parallel, requires):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     if requires:
         pytest.importorskip(requires)
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
+    info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
     tree_gr = ctg.ContractionTree.from_info(info_gr)
 
     target_size = tree_gr.max_size() // 32
 
     if forested:
         tree_gr.slice_and_reconfigure_forest_(
-            target_size, num_trees=2, progbar=True, parallel=parallel)
+            target_size, num_trees=2, progbar=True, parallel=parallel
+        )
     else:
         tree_gr.slice_and_reconfigure_(target_size, progbar=True)
 
@@ -87,13 +113,16 @@ def test_slice_and_reconfigure(forested, parallel, requires):
 
 
 def test_plot():
-    pytest.importorskip('matplotlib')
+    pytest.importorskip("opt_einsum")
+    pytest.importorskip("matplotlib")
 
+    import opt_einsum as oe
     import matplotlib
-    matplotlib.use('Template')
+
+    matplotlib.use("Template")
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
+    info = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
     tree = ctg.ContractionTree.from_info(info)
 
     tree.plot_ring()
@@ -102,10 +131,13 @@ def test_plot():
 
 
 def test_plot_alt():
-    pytest.importorskip('altair')
+    pytest.importorskip("opt_einsum")
+    pytest.importorskip("altair")
+
+    import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info = oe.contract_path(eq, *shapes, shapes=True, optimize='greedy')[1]
+    info = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
     tree = ctg.ContractionTree.from_info(info)
 
     tree.plot_contractions_alt()
@@ -113,6 +145,10 @@ def test_plot_alt():
 
 @pytest.mark.parametrize("optimize", ["greedy-compressed", "greedy-span"])
 def test_compressed_rank(optimize):
+    pytest.importorskip("opt_einsum")
+
+    import opt_einsum as oe
+
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
     info = oe.contract_path(eq, *shapes, shapes=True, optimize=optimize)[1]
     tree = ctg.ContractionTree.from_info(info)

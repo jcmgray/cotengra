@@ -27,13 +27,13 @@ setup(
     include_package_data=True,
     install_requires=[
         "autoray",
-        "cytoolz",
         "optuna",
         "tqdm",
     ],
     extras_require={
         "recommended": [
             "cotengrust",
+            "cytoolz",
             "kahypar",
             "networkx",
             "opt_einsum",
