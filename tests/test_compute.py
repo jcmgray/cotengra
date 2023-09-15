@@ -109,7 +109,7 @@ def test_basic_equations(eq):
 @pytest.mark.parametrize("n_hyper_out", [0, 1, 2])
 @pytest.mark.parametrize("seed", [42, 666])
 @pytest.mark.parametrize("indices_sort", [None, "root", "flops"])
-def test_rand_equation(
+def test_contraction_tree_rand_equation(
     n,
     reg,
     n_out,
@@ -120,10 +120,6 @@ def test_rand_equation(
     seed,
     indices_sort,
 ):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
     inputs, output, shapes, size_dict = ctg.utils.rand_equation(
         n=n,
         reg=reg,
@@ -136,17 +132,11 @@ def test_rand_equation(
     )
     arrays = [np.random.normal(size=s) for s in shapes]
     eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    x = np.einsum(eq, *arrays, optimize='greedy')
 
-    path, info = oe.contract_path(eq, *arrays, optimize="greedy")
-    if info.largest_intermediate > 2**20:
-        raise RuntimeError("Contraction too big.")
-
-    x = oe.contract(eq, *arrays, optimize=path)
-
-    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-
-    if indices_sort:
-        tree.sort_contraction_indices(indices_sort)
+    tree = ctg.einsum_tree(
+        eq, *shapes, optimize="greedy", sort_contraction_indices=indices_sort
+    )
 
     # base contract
     y1 = tree.contract(arrays)
@@ -219,15 +209,10 @@ def test_exponent_stripping(autojit):
     rng = np.random.default_rng(42)
     arrays = [rng.uniform(size=s) for s in shapes]
 
-    operands = []
-    for term, array in zip(inputs, arrays):
-        operands.append(array)
-        operands.append(term)
-    operands.append(output)
-    ex = oe.contract(*operands)
-    path, _ = oe.contract_path(*operands)
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    ex = oe.contract(eq, *arrays, optimize='greedy')
 
-    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+    tree = ctg.array_contract_tree(inputs, output, size_dict)
 
     x1 = tree.contract(arrays, autojit=autojit)
     assert x1 == pytest.approx(ex)

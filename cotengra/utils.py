@@ -36,7 +36,6 @@ except ImportError:
             rv[k] = v.__self__
         return rv
 
-
     def interleave(seqs):
         """Adapted from `toolz`."""
         iters = itertools.cycle(map(iter, seqs))
@@ -1182,6 +1181,30 @@ def inputs_output_to_eq(inputs, output):
     return f"{','.join(map(''.join, inputs))}->{''.join(output)}"
 
 
+def shapes_inputs_to_size_dict(shapes, inputs):
+    """Convert a list of shapes and inputs to a size dictionary.
+
+    Parameters
+    ----------
+    shapes : list[tuple[int]]
+        The shapes of each input.
+    inputs : list[list[str]]
+        The input terms.
+
+    Returns
+    -------
+    size_dict : dict[str, int]
+        The index size dictionary.
+    """
+    return {
+        ix: d
+        for ix, d in zip(
+            itertools.chain.from_iterable(inputs),
+            itertools.chain.from_iterable(shapes),
+        )
+    }
+
+
 def make_rand_size_dict_from_inputs(inputs, d_min=2, d_max=3, seed=None):
     """Get a random size dictionary for a given set of inputs.
 
@@ -1279,3 +1302,47 @@ def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None):
         inputs, d_min=d_min, d_max=d_max, seed=seed
     )
     return make_arrays_from_inputs(inputs, size_dict, seed=seed)
+
+
+def canonicalize_inputs(inputs, output, shapes=None, size_dict=None):
+    """Return a canonicalized version of the inputs and output, with the
+    indices labelled 'a', 'b', 'c', in the order they appear in the equation.
+    Either ``shapes`` or ``size_dict`` must be provided.
+
+    Parameters
+    ----------
+    inputs : Sequence[Sequence[hashable]]
+        The input terms.
+    output : Sequence[hashable]
+        The output term.
+    shapes : None or Sequence[tuple[int]], optional
+        The shapes of each input.
+    size_dict : None or dict[hashable, int], optional
+        The index size dictionary.
+
+    Returns
+    -------
+    inputs : tuple[tuple[str]]
+        The canonicalized input terms.
+    output : tuple[str]
+        The canonicalized output term.
+    csize_dict : dict[str, int]
+        The canonicalized index size dictionary.
+    """
+    ind_map = collections.defaultdict(
+        map(get_symbol, itertools.count()).__next__
+    )
+
+    cinputs = tuple(tuple(ind_map[ind] for ind in term) for term in inputs)
+    coutput = tuple(ind_map[ind] for ind in output)
+
+    if size_dict is not None:
+        csize_dict = {ind_map[ind]: d for ind, d in size_dict.items()}
+    else:
+        csize_dict = {
+            ix: d
+            for term, shape in zip(cinputs, shapes)
+            for ix, d in zip(term, shape)
+        }
+
+    return cinputs, coutput, csize_dict

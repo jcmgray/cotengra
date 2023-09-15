@@ -26,7 +26,11 @@ from .hypergraph import (
     get_hypergraph,
 )
 from .interface import (
+    array_contract_expression,
+    array_contract_tree,
+    array_contract,
     einsum_expression,
+    einsum_tree,
     einsum,
     register_preset,
 )
@@ -148,6 +152,9 @@ contract = einsum
 
 
 __all__ = (
+    "array_contract_expression",
+    "array_contract_tree",
+    "array_contract",
     "auto_hq_optimize",
     "auto_optimize",
     "contract_expression",
@@ -156,6 +163,7 @@ __all__ = (
     "ContractionTreeCompressed",
     "ContractionTreeMulti",
     "einsum_expression",
+    "einsum_tree",
     "einsum",
     "FlowCutterOptimizer",
     "get_hyper_space",

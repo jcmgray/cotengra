@@ -1,12 +1,16 @@
 """High-level interface functions to cotengra.
 """
 import functools
-import itertools
 
 import autoray as ar
 
 from .core import ContractionTree
-from .utils import eq_to_inputs_output
+from .utils import (
+    canonicalize_inputs,
+    eq_to_inputs_output,
+    inputs_output_to_eq,
+    shapes_inputs_to_size_dict,
+)
 from .oe import (
     get_path_fn,
     opt_einsum_installed,
@@ -71,9 +75,9 @@ def find_path(inputs, output, size_dict, optimize="auto", **kwargs):
 
     Parameters
     ----------
-    inputs : sequence[sequence[str]]
+    inputs : Sequence[Sequence[str]]
         The inputs terms.
-    output : sequence[str]
+    output : Sequence[str]
         The output term.
     size_dict : dict[str, int]
         The size of each index.
@@ -106,25 +110,25 @@ def find_path(inputs, output, size_dict, optimize="auto", **kwargs):
     return fn(inputs, output, size_dict, optimize, **kwargs)
 
 
-def find_tree_explicit(inputs, output, size_dict, optimize):
+def _find_tree_explicit(inputs, output, size_dict, optimize):
     return ContractionTree.from_path(inputs, output, size_dict, path=optimize)
 
 
-def find_tree_optimizer_search(inputs, output, size_dict, optimize, **kwargs):
+def _find_tree_optimizer_search(inputs, output, size_dict, optimize, **kwargs):
     return optimize.search(inputs, output, size_dict, **kwargs)
 
 
-def find_tree_optimizer_basic(inputs, output, size_dict, optimize, **kwargs):
+def _find_tree_optimizer_basic(inputs, output, size_dict, optimize, **kwargs):
     path = optimize(inputs, output, size_dict, **kwargs)
     return ContractionTree.from_path(inputs, output, size_dict, path=path)
 
 
-def find_tree_preset(inputs, output, size_dict, optimize, **kwargs):
+def _find_tree_preset(inputs, output, size_dict, optimize, **kwargs):
     optimize = preset_to_optimizer(optimize)
     return find_tree(inputs, output, size_dict, optimize, **kwargs)
 
 
-def find_tree_tree(inputs, output, size_dict, optimize, **kwargs):
+def _find_tree_tree(inputs, output, size_dict, optimize, **kwargs):
     # already a tree
     return optimize
 
@@ -139,19 +143,19 @@ def find_tree(inputs, output, size_dict, optimize="auto", **kwargs):
 
     Parameters
     ----------
-    inputs : sequence[sequence[str]]
+    inputs : Sequence[Sequence[str]]
         The inputs terms.
-    output : sequence[str]
+    output : Sequence[str]
         The output term.
     size_dict : dict[str, int]
         The size of each index.
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-        * A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-        * A ``PathOptimizer`` instance.
-        * An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-        * An explicit ``ContractionTree`` instance.
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
 
     Returns
     -------
@@ -162,17 +166,86 @@ def find_tree(inputs, output, size_dict, optimize="auto", **kwargs):
         fn = _find_tree_handlers[cls]
     except KeyError:
         if isinstance(optimize, str):
-            fn = _find_tree_handlers[cls] = find_tree_preset
+            fn = _find_tree_handlers[cls] = _find_tree_preset
         elif isinstance(optimize, ContractionTree):
-            fn = _find_tree_handlers[cls] = find_tree_tree
+            fn = _find_tree_handlers[cls] = _find_tree_tree
         elif isinstance(optimize, (tuple, list)):
-            fn = _find_tree_handlers[cls] = find_tree_explicit
+            fn = _find_tree_handlers[cls] = _find_tree_explicit
         elif hasattr(optimize, "search"):
-            fn = _find_tree_handlers[cls] = find_tree_optimizer_search
+            fn = _find_tree_handlers[cls] = _find_tree_optimizer_search
         else:
-            fn = _find_tree_handlers[cls] = find_tree_optimizer_basic
+            fn = _find_tree_handlers[cls] = _find_tree_optimizer_basic
 
     return fn(inputs, output, size_dict, optimize, **kwargs)
+
+
+def array_contract_tree(
+    inputs,
+    output,
+    size_dict,
+    optimize="auto",
+    canonicalize=False,
+    sort_contraction_indices=False,
+):
+    """Get the `ContractionTree` for the tensor contraction specified by
+    ``inputs``, ``output`` and ``size_dict``, with optimization strategy given
+    by ``optimize``. The tree can be used to inspect and also perform the
+    contraction.
+
+    Parameters
+    ----------
+    inputs : Sequence[Sequence[str]]
+        The inputs terms.
+    output : Sequence[str]
+        The output term.
+    size_dict : dict[str, int]
+        The size of each index.
+    optimize : str, path_like, PathOptimizer, or ContractionTree
+        The optimization strategy to use. This can be:
+
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
+
+    canonicalize : bool, optional
+        If ``True``, canonicalize the inputs and output so that the indices
+        are relabelled ``'a', 'b', 'c', ...``, etc. in the order they appear.
+    sort_contraction_indices : bool, optional
+        If ``True``, call ``tree.sort_contraction_indices()``.
+
+    Returns
+    -------
+    ContractionTree
+
+    See Also
+    --------
+    array_contract, array_contract_expression, einsum_tree
+    """
+    if canonicalize:
+        inputs, output, size_dict = canonicalize_inputs(
+            inputs,
+            output,
+            shapes=None,
+            size_dict=size_dict,
+        )
+
+    nterms = len(inputs)
+
+    if nterms == 1:
+        # there is no path
+        optimize = ()
+
+    elif nterms <= 2:
+        # only a single possible path
+        optimize = ((0, 1),)
+
+    tree = find_tree(inputs, output, size_dict, optimize)
+
+    if sort_contraction_indices:
+        tree.sort_contraction_indices()
+
+    return tree
 
 
 class Variadic:
@@ -225,38 +298,40 @@ class WithBackend:
             return self.fn(*args, **kwargs)
 
 
-def _einsum_expression_with_constants(
-    eq,
-    *shapes,
+def _array_contract_expression_with_constants(
+    inputs,
+    output,
+    size_dict,
+    constants,
     optimize="auto",
-    constants=None,
     implementation=None,
-    autojit=False,
     prefer_einsum=False,
+    autojit=False,
+    via=None,
     sort_contraction_indices=False,
 ):
-    import autoray as ar
+    # make a lazy variable for each non-constant input
+    lazy_variables = []
+    # and another list of all inputs, including constant arrays
+    lazy_variables_and_constants = []
 
-    constants = set(constants)
-
-    variables = []
-    variables_with_constants = []
-    shapes_only = []
-    for i, s in enumerate(shapes):
+    for i in range(len(inputs)):
         if i in constants:
-            variables_with_constants.append(s)
-            shapes_only.append(ar.shape(s))
+            constant = constants[i]
+            lazy_variables_and_constants.append(constant)
         else:
+            term = tuple(inputs[i])
+            shape = tuple(size_dict[ix] for ix in term)
             # want to generate function as if it were written with autoray
-            v = ar.lazy.Variable(s, backend="autoray.numpy")
-            variables.append(v)
-            variables_with_constants.append(v)
-            shapes_only.append(s)
+            v = ar.lazy.Variable(shape, backend="autoray.numpy")
+            lazy_variables.append(v)
+            lazy_variables_and_constants.append(v)
 
     # get the full expression, without constants
-    full_expr = einsum_expression(
-        eq,
-        *shapes_only,
+    full_expr = array_contract_expression(
+        inputs,
+        output,
+        size_dict,
         optimize=optimize,
         constants=None,
         implementation=implementation,
@@ -267,8 +342,8 @@ def _einsum_expression_with_constants(
     )
 
     # trace through, and then get function with constants folded
-    lz_output = full_expr(*variables_with_constants)
-    fn = lz_output.get_function(variables, fold_constants=True)
+    lz_output = full_expr(*lazy_variables_and_constants)
+    fn = lz_output.get_function(lazy_variables, fold_constants=True)
 
     # now we can jit
     if autojit:
@@ -279,7 +354,308 @@ def _einsum_expression_with_constants(
         # allow for backend kwarg (which will set what autoray.numpy uses)
         fn = WithBackend(fn)
 
+    if via is not None:
+        fn = Via(fn, *via)
+
     return fn
+
+
+def array_contract_expression(
+    inputs,
+    output,
+    size_dict,
+    optimize="auto",
+    constants=None,
+    implementation=None,
+    prefer_einsum=False,
+    autojit=False,
+    via=None,
+    sort_contraction_indices=False,
+):
+    """Get an callable 'expression' that will contract tensors with indices and
+    shapes described by ``inputs`` and ``size_dict`` to ``output``. The
+    ``optimize`` kwarg can be a path, optimizer or also a contraction tree. In
+    the latter case sliced indices for example will be used if present. The
+    same is true if ``optimize`` is an optimizer that can directly produce
+    ``ContractionTree`` instances (i.e. has a ``.search()`` method).
+
+    Parameters
+    ----------
+    inputs : Sequence[Sequence[str]]
+        The inputs terms.
+    output : Sequence[str]
+        The output term.
+    size_dict : dict[str, int]
+        The size of each index.
+    optimize : str, path_like, PathOptimizer, or ContractionTree
+        The optimization strategy to use. This can be:
+
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
+
+        If the optimizer provides sliced indices they will be used.
+    constants : dict[int, array_like], optional
+        A mapping of constant input positions to constant arrays. If given, the
+        final expression will take only the remaining non-constant tensors as
+        inputs.
+    implementation : str or tuple[callable, callable], optional
+        What library to use to actually perform the contractions. Options
+        are:
+
+        - None: let cotengra choose.
+        - "autoray": dispatch with autoray, using the ``tensordot`` and
+            ``einsum`` implementation of the backend.
+        - "cotengra": use the ``tensordot`` and ``einsum`` implementation
+            of cotengra, which is based on batch matrix multiplication. This
+            is faster for some backends like numpy, and also enables
+            libraries which don't yet provide ``tensordot`` and ``einsum`` to
+            be used.
+        - "cuquantum": use the cuquantum library to perform the whole
+            contraction (not just individual contractions).
+        - tuple[callable, callable]: manually supply the ``tensordot`` and
+            ``einsum`` implementations to use.
+
+    autojit : bool, optional
+        If ``True``, use :func:`autoray.autojit` to compile the contraction
+        function.
+    via : tuple[callable, callable], optional
+        If given, the first function will be applied to the input arrays and
+        the second to the output array. For example, moving the tensors from
+        CPU to GPU and back.
+    sort_contraction_indices : bool, optional
+        If ``True``, call ``tree.sort_contraction_indices()`` before
+        constructing the contraction function.
+
+    Returns
+    -------
+    expr : callable
+        A callable, signature ``expr(*arrays)`` that will contract ``arrays``
+        with shapes ``shapes``.
+
+    See Also
+    --------
+    einsum_expression, array_contract, array_contract_tree
+    """
+    if constants is not None:
+        # handle constants specially with autoray
+        return _array_contract_expression_with_constants(
+            inputs,
+            output,
+            size_dict,
+            constants,
+            optimize=optimize,
+            implementation=implementation,
+            prefer_einsum=prefer_einsum,
+            autojit=autojit,
+            sort_contraction_indices=sort_contraction_indices,
+        )
+
+    if len(inputs) == 1:
+        # no need to construct a tree
+        term = tuple(inputs[0])
+        output = tuple(output)
+
+        if term == output:
+            # 'contraction' is a no-op
+
+            def fn(*arrays, backend=None):
+                if backend is None:
+                    return arrays[0]
+                return ar.do("array", arrays[0], like=backend)
+
+        elif len(term) == len(output):
+            # 'contraction' is just a transposition
+            perm = tuple(map(term.index, output))
+
+            def fn(*arrays, backend=None):
+                return ar.do("transpose", arrays[0], perm, like=backend)
+
+        else:
+            # contraction involves traces / reductions
+            eq = inputs_output_to_eq(inputs, output)
+
+            def fn(*arrays, backend=None):
+                return ar.do("einsum", eq, arrays[0], like=backend)
+
+    else:
+        # get the contraction tree
+        tree = array_contract_tree(
+            inputs,
+            output,
+            size_dict,
+            optimize=optimize,
+            sort_contraction_indices=sort_contraction_indices,
+        )
+
+        if not tree.sliced_inds:
+            # can extract pure sliced contraction function, forget tree
+            fn = tree.get_contractor(
+                autojit=autojit,
+                prefer_einsum=prefer_einsum,
+                implementation=implementation,
+            )
+        else:
+            # can't extract pure sliced contraction function yet...
+            fn = Variadic(
+                tree.contract,
+                autojit=autojit,
+                prefer_einsum=prefer_einsum,
+                implementation=implementation,
+            )
+
+    if via is not None:
+        fn = Via(fn, *via)
+
+    return fn
+
+
+_CONTRACT_EXPR_CACHE = {}
+
+
+def array_contract(
+    arrays,
+    inputs,
+    output,
+    optimize="auto",
+    cache_expression=True,
+    backend=None,
+    **kwargs,
+):
+    """Perform the tensor contraction specified by ``inputs``, ``output`` and
+    ``size_dict``, using strategy given by ``optimize``. By default the path
+    finding and expression building is cached, so that if the a matching
+    contraction is performed multiple times the overhead is negated.
+
+    Parameters
+    ----------
+    arrays : Sequence[array_like]
+        The arrays to contract.
+    inputs : Sequence[Sequence[str]]
+        The inputs terms.
+    output : Sequence[str]
+        The output term.
+    optimize : str, path_like, PathOptimizer, or ContractionTree
+        The optimization strategy to use. This can be:
+
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
+
+        If the optimizer provides sliced indices they will be used.
+    cache_expression : bool, optional
+        If ``True``, cache the expression used to contract the arrays. This
+        negates the overhead of pathfinding and building the expression when
+        a contraction is performed multiple times.
+    backend : str, optional
+        If given, the explicit backend to use for the contraction, by default
+        the backend is dispatched automatically.
+    kwargs
+        Passed to :func:`~cotengra.interface.array_contract_expression`.
+
+    Returns
+    -------
+    array_like
+
+    See Also
+    --------
+    array_contract_expression, array_contract_tree, einsum
+    """
+    # canonicalize
+    inputs, output, size_dict = canonicalize_inputs(
+        inputs,
+        output,
+        shapes=tuple(map(ar.shape, arrays)),
+    )
+
+    if cache_expression and isinstance(optimize, str):
+        key = hash((inputs, output, tuple(size_dict.items()), optimize))
+        try:
+            try:
+                expr = _CONTRACT_EXPR_CACHE[key]
+            except KeyError:
+                # missing from cache
+                expr = _CONTRACT_EXPR_CACHE[key] = array_contract_expression(
+                    inputs, output, size_dict, optimize=optimize, **kwargs
+                )
+        except TypeError:
+            # unhashable kwargs
+            import warnings
+
+            warnings.warn(
+                "Contraction cache disabled as one of the "
+                f"arguments is not hashable: {kwargs}."
+            )
+
+            expr = array_contract_expression(
+                inputs, output, size_dict, optimize=optimize, **kwargs
+            )
+    else:
+        expr = array_contract_expression(
+            inputs, output, size_dict, optimize=optimize, **kwargs
+        )
+
+    return expr(*arrays, backend=backend)
+
+
+def einsum_tree(
+    eq,
+    *shapes,
+    optimize="auto",
+    canonicalize=False,
+    sort_contraction_indices=False,
+):
+    """Get the `ContractionTree` for the einsum equation ``eq`` and
+    optimization strategy ``optimize``. The tree can be used to inspect and
+    also perform the contraction.
+
+    Parameters
+    ----------
+    eq : str
+        The equation to use for contraction, for example ``'ab,bc->ac'``.
+    shapes : Sequence[tuple[int]]
+        The shape of each input array.
+    optimize : str, path_like, PathOptimizer, or ContractionTree
+        The optimization strategy to use. This can be:
+
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
+
+    canonicalize : bool, optional
+        If ``True``, canonicalize the inputs and output so that the indices
+        are relabelled ``'a', 'b', 'c', ...``, etc. in the order they appear.
+    sort_contraction_indices : bool, optional
+        If ``True``, call ``tree.sort_contraction_indices()``.
+
+    Returns
+    -------
+    ContractionTree
+
+    See Also
+    --------
+    einsum, einsum_expression, array_contract_tree
+    """
+    # construct the individual terms and find explicit output
+    inputs, output = eq_to_inputs_output(eq)
+
+    if canonicalize:
+        inputs, output, size_dict = canonicalize_inputs(
+            inputs, output, shapes=shapes
+        )
+    else:
+        size_dict = shapes_inputs_to_size_dict(shapes, inputs)
+
+    return array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize=optimize,
+        sort_contraction_indices=sort_contraction_indices,
+    )
 
 
 def einsum_expression(
@@ -306,14 +682,19 @@ def einsum_expression(
         The equation to use for contraction, for example ``'ab,bc->ac'``.
         The output will be automatically computed if not supplied, but Ellipses
         (`'...'`) are not supported.
-    shapes : sequence[tuple[int]]
+    shapes : Sequence[tuple[int]]
         The shapes of the tensors to contract, or the constant tensor itself
         if marked as constant in ``constants``.
     optimize : str, path_like, PathOptimizer, or ContractionTree
-        The optimization strategy to use. If a ``HyperOptimizer`` or
-        ``ContractionTree`` instance is passed then the expression will make
-        use of any sliced indices.
-    constants : sequence of int, optional
+        The optimization strategy to use. This can be:
+
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
+
+        If the optimizer provides sliced indices they will be used.
+    constants : Sequence of int, optional
         The indices of tensors to treat as constant, the final expression will
         take the remaining non-constant tensors as inputs.
     implementation : str or tuple[callable, callable], optional
@@ -348,96 +729,46 @@ def einsum_expression(
     -------
     expr : callable
         A callable, signature ``expr(*arrays)`` that will contract ``arrays``
-        with shapes ``shapes``.
+        with shapes matching ``shapes``.
+
+    See Also
+    --------
+    einsum, einsum_tree, array_contract_expression
     """
-    if constants is not None:
-        fn = _einsum_expression_with_constants(
-            eq,
-            *shapes,
-            optimize=optimize,
-            constants=constants,
-            autojit=autojit,
-            sort_contraction_indices=sort_contraction_indices,
-        )
-        if via is not None:
-            fn = Via(fn, *via)
-
-        return fn
-    else:
-        constants = ()
-
     # construct the individual terms and find explicit output
     inputs, output = eq_to_inputs_output(eq)
 
-    if len(inputs) == 1:
-        term = tuple(inputs[0])
-        output = tuple(output)
-
-        if term == output:
-            # 'contraction' is a no-op
-
-            def fn(*arrays, backend=None):
-                if backend is None:
-                    return arrays[0]
-                return ar.do("array", arrays[0], like=backend)
-
-        elif len(term) == len(output):
-            # 'contraction' is just a transposition
-            perm = tuple(map(term.index, output))
-
-            def fn(*arrays, backend=None):
-                return ar.do("transpose", arrays[0], perm, like=backend)
-
-        else:
-            # contraction involves traces / reductions
-
-            def fn(*arrays, backend=None):
-                return ar.do("einsum", eq, arrays[0], like=backend)
-
+    if constants is not None:
+        # shapes includes the constant arrays
+        size_dict = {}
+        parsed_constants = {}
+        for i, s in enumerate(shapes):
+            if i in constants:
+                # extract the array and turn into a shape
+                parsed_constants[i] = s
+                s = ar.shape(s)
+            size_dict.update(zip(inputs[i], s))
     else:
-        size_dict = {
-            ix: int(d)
-            for ix, d in zip(
-                itertools.chain.from_iterable(inputs),
-                itertools.chain.from_iterable(
-                    s.shape if i in constants else s
-                    for i, s in enumerate(shapes)
-                ),
-            )
-        }
+        parsed_constants = None
+        size_dict = shapes_inputs_to_size_dict(shapes, inputs)
 
-        nterms = len(inputs)
-        if nterms <= 2:
-            # nothing to optimize
-            optimize = (tuple(range(nterms)),)
-
-        tree = find_tree(inputs, output, size_dict, optimize)
-
-        if sort_contraction_indices:
-            tree.sort_contraction_indices()
-
-        if not tree.sliced_inds:
-            fn = tree.get_contractor(
-                autojit=autojit,
-                prefer_einsum=prefer_einsum,
-                implementation=implementation,
-            )
-        else:
-            # can't extract pure sliced contraction function yet...
-            fn = Variadic(
-                tree.contract,
-                autojit=autojit,
-                prefer_einsum=prefer_einsum,
-                implementation=implementation,
-            )
-
-    if via is not None:
-        fn = Via(fn, *via)
-
-    return fn
+    return array_contract_expression(
+        inputs,
+        output,
+        size_dict,
+        optimize=optimize,
+        constants=parsed_constants,
+        implementation=implementation,
+        prefer_einsum=prefer_einsum,
+        autojit=autojit,
+        via=via,
+        sort_contraction_indices=sort_contraction_indices,
+    )
 
 
-_EINSUM_EXPR_CACHE = {}
+@functools.lru_cache(None)
+def _cached_eq_to_inputs_output(eq):
+    return eq_to_inputs_output(eq)
 
 
 def einsum(
@@ -448,20 +779,26 @@ def einsum(
     backend=None,
     **kwargs,
 ):
-    """Perform an einsum contraction, using `cotengra`. By default the path
-    finding and expression building is cached, so that if the same contraction
-    is performed multiple times the overhead is negated.
+    """Perform an einsum contraction, using `cotengra`, using strategy given by
+    ``optimize``. By default the path finding and expression building is
+    cached, so that if a matching contraction is performed multiple times the
+    overhead is negated.
 
     Parameters
     ----------
     eq : str
         The equation to use for contraction, for example ``'ab,bc->ac'``.
-    arrays : sequence[array]
+    arrays : Sequence[array_like]
         The arrays to contract.
     optimize : str, path_like, PathOptimizer, or ContractionTree
-        The optimization strategy to use. If a ``HyperOptimizer`` or
-        ``ContractionTree`` instance is passed then the contraction will make
-        use of any sliced indices.
+        The optimization strategy to use. This can be:
+
+            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+            - A ``PathOptimizer`` instance.
+            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+            - An explicit ``ContractionTree`` instance.
+
+        If the optimizer provides sliced indices they will be used.
     cache_expression : bool, optional
         If ``True``, cache the expression used to contract the arrays. This
         negates the overhead of pathfinding and building the expression when
@@ -470,36 +807,23 @@ def einsum(
         If given, the explicit backend to use for the contraction, by default
         the backend is dispatched automatically.
     kwargs
-        Passed to :func:`einsum_expression`.
+        Passed to :func:`~cotengra.interface.array_contract_expression`.
 
     Returns
     -------
-    array
+    array_like
+
+    See Also
+    --------
+    einsum_expression, einsum_tree, array_contract
     """
-    shapes = tuple(map(ar.shape, arrays))
-
-    if cache_expression and isinstance(optimize, str):
-        try:
-            key = (eq, shapes, optimize, frozenset(kwargs.items()))
-            try:
-                expr = _EINSUM_EXPR_CACHE[key]
-            except KeyError:
-                # missing from cache
-                expr = _EINSUM_EXPR_CACHE[key] = einsum_expression(
-                    eq, *shapes, optimize=optimize, **kwargs
-                )
-        except TypeError:
-            # unhashale kwargs
-            import warnings
-
-            warnings.warn(
-                "einsum cache disabled as one of the "
-                f"arguments is not hashable: {kwargs}"
-            )
-
-            expr = einsum_expression(eq, *shapes, optimize=optimize, **kwargs)
-
-    else:
-        expr = einsum_expression(eq, *shapes, optimize=optimize, **kwargs)
-
-    return expr(*arrays, backend=backend)
+    inputs, output = _cached_eq_to_inputs_output(eq)
+    return array_contract(
+        arrays,
+        inputs,
+        output,
+        optimize=optimize,
+        cache_expression=cache_expression,
+        backend=backend,
+        **kwargs,
+    )
