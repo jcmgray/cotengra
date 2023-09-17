@@ -28,6 +28,7 @@ setup(
     install_requires=[
         "autoray",
         "optuna",
+        "numpy",
         "tqdm",
     ],
     extras_require={
