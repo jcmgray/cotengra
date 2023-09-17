@@ -64,8 +64,10 @@ from .hyperoptimizers.hyper import (
 )
 
 from .presets import (
-    auto_optimize,
     auto_hq_optimize,
+    auto_optimize,
+    AutoHQOptimizer,
+    AutoOptimizer,
     greedy_optimize,
     optimal_optimize,
     optimal_outer_optimize,
@@ -157,6 +159,8 @@ __all__ = (
     "array_contract",
     "auto_hq_optimize",
     "auto_optimize",
+    "AutoHQOptimizer",
+    "AutoOptimizer",
     "contract_expression",
     "contract",
     "ContractionTree",

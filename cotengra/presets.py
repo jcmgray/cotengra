@@ -49,7 +49,7 @@ class AutoOptimizer(PathOptimizer):
 
         hyperoptimizer_kwargs.setdefault("methods", ("rgreedy",))
         hyperoptimizer_kwargs.setdefault("max_repeats", 128)
-        hyperoptimizer_kwargs.setdefault("max_time", "rate:1e8")
+        hyperoptimizer_kwargs.setdefault("max_time", "rate:1e9")
         hyperoptimizer_kwargs.setdefault("parallel", False)
         hyperoptimizer_kwargs.setdefault("reconf_opts", {})
         hyperoptimizer_kwargs["reconf_opts"].setdefault("subtree_size", 4)
@@ -106,18 +106,27 @@ class AutoOptimizer(PathOptimizer):
             return self._optimizer_hyper(inputs, output, size_dict, **kwargs)
 
 
-auto_optimize = AutoOptimizer(
-    optimal_cutoff=250,
-    methods=("rgreedy",),
-    reconf_opts={"subtree_size": 4, "maxiter": 100},
-    parallel=False,
-)
-auto_hq_optimize = AutoOptimizer(
-    optimal_cutoff=650,
-    methods=("greedy", "kahypar"),
-    reconf_opts={"subtree_size": 8, "maxiter": 500},
-    parallel=False,
-)
+class AutoHQOptimizer(AutoOptimizer):
+    """An optimizer that automatically chooses between optimal and
+    hyper-optimization, designed for everyday use on harder contractions or
+    those that will be repeated many times, and thus warrant a more extensive
+    search.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("optimal_cutoff", 650)
+        kwargs.setdefault("methods", ("greedy", "kahypar"))
+        kwargs.setdefault("max_repeats", 128)
+        kwargs.setdefault("max_time", "rate:1e8")
+        kwargs.setdefault("parallel", False)
+        kwargs.setdefault("reconf_opts", {})
+        kwargs['reconf_opts'].setdefault("subtree_size", 8)
+        kwargs['reconf_opts'].setdefault("maxiter", 500)
+        super().__init__(**kwargs)
+
+
+auto_optimize = AutoOptimizer()
+auto_hq_optimize = AutoHQOptimizer()
 greedy_optimize = GreedyOptimizer()
 optimal_optimize = OptimalOptimizer()
 optimal_outer_optimize = OptimalOptimizer(search_outer=True)
