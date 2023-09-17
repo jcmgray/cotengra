@@ -75,7 +75,7 @@ def test_reconfigure_with_n_smaller_than_subtree_size():
     import opt_einsum as oe
 
     eq, shapes = oe.helpers.rand_equation(10, 3)
-    path, info = oe.contract_path(eq, *shapes, shapes=True)
+    _, info = oe.contract_path(eq, *shapes, shapes=True)
     tree = ctg.ContractionTree.from_info(info)
     tree.subtree_reconfigure(12)
 

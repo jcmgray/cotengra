@@ -25,9 +25,9 @@ from ..plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 def get_default_hq_methods():
     methods = ["greedy"]
     if importlib.util.find_spec("kahypar"):
-        methods .append("kahypar")
+        methods.append("kahypar")
     else:
-        methods .append("labels")
+        methods.append("labels")
         warnings.warn(
             "Couldn't import `kahypar` - skipping from default "
             "hyper optimizer and using basic `labels` method instead."
@@ -64,17 +64,14 @@ _HYPER_CONSTANTS = {}
 
 
 def get_hyper_space():
-    global _HYPER_SEARCH_SPACE
     return _HYPER_SEARCH_SPACE
 
 
 def get_hyper_constants():
-    global _HYPER_CONSTANTS
     return _HYPER_CONSTANTS
 
 
 def register_hyper_optlib(name, init_optimizers, get_setting, report_result):
-    global _OPTLIB_FNS
     _OPTLIB_FNS[name] = (init_optimizers, get_setting, report_result)
 
 
@@ -91,10 +88,6 @@ def register_hyper_function(name, ssa_func, space, constants=None):
     space : dict[str, dict]
         The space of hyper-parameters to search.
     """
-    global _PATH_FNS
-    global _HYPER_SEARCH_SPACE
-    global _HYPER_CONSTANTS
-
     if constants is None:
         constants = {}
 
@@ -105,7 +98,6 @@ def register_hyper_function(name, ssa_func, space, constants=None):
 
 def list_hyper_functions():
     """Return a list of currently registered hyper contraction finders."""
-    global _PATH_FNS
     return sorted(_PATH_FNS)
 
 
@@ -253,7 +245,6 @@ class ComputeScore:
         score_smudge=1e-6,
         seed=0,
     ):
-
         self.fn = fn
         self.score_fn = score_fn
         self.score_compression = score_compression

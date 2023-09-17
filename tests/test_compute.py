@@ -141,7 +141,7 @@ def test_contraction_tree_rand_equation(
     )
     arrays = [np.random.normal(size=s) for s in shapes]
     eq = ctg.utils.inputs_output_to_eq(inputs, output)
-    x = np.einsum(eq, *arrays, optimize='greedy')
+    x = np.einsum(eq, *arrays, optimize="greedy")
 
     tree = ctg.einsum_tree(
         eq, *shapes, optimize="greedy", sort_contraction_indices=indices_sort
@@ -219,7 +219,7 @@ def test_exponent_stripping(autojit):
     arrays = [rng.uniform(size=s) for s in shapes]
 
     eq = ctg.utils.inputs_output_to_eq(inputs, output)
-    ex = oe.contract(eq, *arrays, optimize='greedy')
+    ex = oe.contract(eq, *arrays, optimize="greedy")
 
     tree = ctg.array_contract_tree(inputs, output, size_dict)
 

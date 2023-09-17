@@ -226,7 +226,7 @@ class CompressedExhaustive:
                 f"[{c}] "
                 f"cands:{len(self.cands)} "
                 f"best:{self.best_score:.2f}",
-                refresh=False
+                refresh=False,
             )
 
     def run(self, inputs, output, size_dict):
@@ -255,7 +255,7 @@ class CompressedExhaustive:
                 return self.best_ssa_path and c and (c > self.max_nodes)
 
         def edge_sort(edge_nodes):
-            edge, nodes = edge_nodes
+            edge, _ = edge_nodes
             return edge
             # return sum(hg.node_size(n) for n in nodes), edge
 
@@ -490,7 +490,7 @@ class MiniTree:
     within a window only.
     """
 
-    __slots__ = ('children', 'parents', 'leaves', 'candidates')
+    __slots__ = ("children", "parents", "leaves", "candidates")
 
     def __init__(self):
         self.children = {}
@@ -551,7 +551,6 @@ class MiniTree:
 
 
 class EmptyMiniTree:
-
     __slots__ = ("candidates",)
 
     def __init__(self, hgi, hgf):
@@ -598,7 +597,7 @@ class EmptyMiniTree:
         return new
 
     def contract(self, p):
-        l, r  = self.candidates.pop(p)
+        l, r = self.candidates.pop(p)
 
         # check other contractions to see if they contained l or r
         for po, (lo, ro) in tuple(self.candidates.items()):
@@ -615,8 +614,7 @@ class EmptyMiniTree:
 
 
 class Node:
-    """A possible intermediate contraction state.
-    """
+    """A possible intermediate contraction state."""
 
     __slots__ = ("hg", "plr", "chi", "tracker", "compress_late")
 
@@ -631,10 +629,7 @@ class Node:
     def first(cls, inputs, output, size_dict, minimize):
         hg = get_hypergraph(
             # use bit encoding
-            inputs={
-                1 << i: term
-                for i, term in enumerate(inputs)
-            },
+            inputs={1 << i: term for i, term in enumerate(inputs)},
             output=output,
             size_dict=size_dict,
             # can't use bit encoding in rust
@@ -645,7 +640,7 @@ class Node:
         minimize = get_score_fn(minimize)
 
         if minimize.chi == "auto":
-            chi = max(size_dict.values())**2
+            chi = max(size_dict.values()) ** 2
         else:
             chi = minimize.chi
 
@@ -707,7 +702,7 @@ def ssa_path_to_bit_path(path):
     N = len(path) + 1
     bitpath = []
     ssa_to_bit = {i: 1 << i for i in range(N)}
-    for c, (si, sj) in enumerate(path):
+    for si, sj in path:
         ni = ssa_to_bit[si]
         nj = ssa_to_bit[sj]
         nij = ni | nj
@@ -727,9 +722,7 @@ def bit_path_to_ssa_path(bitpath):
     return tuple(path)
 
 
-
 class WindowedOptimizer:
-
     def __init__(
         self,
         inputs,
@@ -740,9 +733,7 @@ class WindowedOptimizer:
         seed=None,
     ):
         bitpath = ssa_path_to_bit_path(ssa_path)
-        self.nodes = {
-            0: Node.first(inputs, output, size_dict, minimize)
-        }
+        self.nodes = {0: Node.first(inputs, output, size_dict, minimize)}
         for c, (nij, ni, nj) in enumerate(bitpath):
             self.nodes[c + 1] = self.nodes[c].next(nij, ni, nj)
         self.gumbel = GumbelBatchedGenerator(seed)
@@ -755,6 +746,7 @@ class WindowedOptimizer:
     @use_neutral_style
     def plot_size_footprint(self, figsize=(8, 3)):
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots(figsize=figsize)
         cs = range(len(self.nodes))
         xs0 = [self.nodes[c].tracker.total_size_post_contract for c in cs]
@@ -764,7 +756,7 @@ class WindowedOptimizer:
         ax.plot(cs, xs1, label="total size compressed", zorder=3)
         ax.plot(cs, xs2, label="single size", zorder=2)
         ax.legend()
-        ax.set_yscale('log')
+        ax.set_yscale("log")
         return fig, ax
 
     def optimize_window(
@@ -799,7 +791,7 @@ class WindowedOptimizer:
                 return (
                     # prioritize more complete pats
                     -len(nodes),
-                    nodes[-1].tracker.score - T * self.gumbel()
+                    nodes[-1].tracker.score - T * self.gumbel(),
                 )
 
         if order_only:
@@ -819,18 +811,16 @@ class WindowedOptimizer:
         tries = 0
 
         while queue and tries < max_window_tries:
-
             # get the next candidate contraction path
             _, q = heapq.heappop(queue)
             this_subtree, this_subnodes = cands.pop(q)
 
             # check the next possible contractions
             for p in this_subtree.candidates:
-
                 next_subtree = this_subtree.copy()
                 l, r = next_subtree.contract(p)
-                next_subnodes = (
-                    this_subnodes + (this_subnodes[-1].next(p, l, r),)
+                next_subnodes = this_subnodes + (
+                    this_subnodes[-1].next(p, l, r),
                 )
                 score = scorer(next_subnodes, score_temperature)
 
@@ -883,7 +873,7 @@ class WindowedOptimizer:
         for _ in its:
             p = np.array(
                 [n.tracker.total_size for n in self.nodes.values()],
-                dtype='float'
+                dtype="float",
             )
             p /= p.sum()
             wc = self.rng.choice(cs, p=p)
@@ -891,22 +881,20 @@ class WindowedOptimizer:
             # window can't extend beyond edges
             wc = min(max(wl, wc), len(self.nodes) - wr)
             self.optimize_window(
-                wc - wl, wc + wr,
+                wc - wl,
+                wc + wr,
                 order_only=order_only,
                 max_window_tries=max_window_tries,
                 score_temperature=score_temperature,
                 queue_temperature=queue_temperature,
                 scorer=scorer,
                 queue_scorer=queue_scorer,
-                **kwargs
+                **kwargs,
             )
 
             if progbar:
                 its.set_description(f"{self.tracker}", refresh=False)
 
     def get_ssa_path(self):
-        bitpath = [
-            self.nodes[c].plr
-            for c in range(1, len(self.nodes))
-        ]
+        bitpath = [self.nodes[c].plr for c in range(1, len(self.nodes))]
         return bit_path_to_ssa_path(bitpath)

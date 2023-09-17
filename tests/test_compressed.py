@@ -5,10 +5,12 @@ import cotengra as ctg
 
 def test_compressed_greedy():
     chi = 4
-    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([10, 10])
+    inputs, output, _, size_dict = ctg.utils.lattice_equation([10, 10])
     opt = ctg.HyperCompressedOptimizer(
         chi=chi,
-        methods=['greedy-compressed',]
+        methods=[
+            "greedy-compressed",
+        ],
     )
     tree = opt.search(inputs, output, size_dict)
     assert isinstance(tree, ctg.ContractionTreeCompressed)
@@ -21,10 +23,12 @@ def test_compressed_greedy():
 
 def test_compressed_span():
     chi = 4
-    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([10, 10])
+    inputs, output, _, size_dict = ctg.utils.lattice_equation([10, 10])
     opt = ctg.HyperCompressedOptimizer(
         chi=chi,
-        methods=['greedy-span',]
+        methods=[
+            "greedy-span",
+        ],
     )
     tree = opt.search(inputs, output, size_dict)
     assert isinstance(tree, ctg.ContractionTreeCompressed)
@@ -41,7 +45,9 @@ def test_compressed_agglom():
     inputs, output, shapes, size_dict = ctg.utils.lattice_equation([16, 16])
     opt = ctg.HyperCompressedOptimizer(
         chi=chi,
-        methods=['kahypar-agglom',]
+        methods=[
+            "kahypar-agglom",
+        ],
     )
     tree = opt.search(inputs, output, size_dict)
     assert isinstance(tree, ctg.ContractionTreeCompressed)

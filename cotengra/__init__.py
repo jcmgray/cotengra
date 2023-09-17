@@ -213,7 +213,6 @@ __all__ = (
     "register_preset",
     "ReusableHyperCompressedOptimizer",
     "ReusableHyperOptimizer",
-    "SlicedContractor",
     "SliceFinder",
     "UniformOptimizer",
     "utils",

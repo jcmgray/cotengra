@@ -814,8 +814,7 @@ def rand_equation(
 
     num_inds = max((n * reg) // 2, n_hyper_out + n_hyper_in + n_out)
     size_dict = {
-        get_symbol(i): rng.randint(d_min, d_max)
-        for i in range(num_inds)
+        get_symbol(i): rng.randint(d_min, d_max) for i in range(num_inds)
     }
 
     inds = iter(size_dict)
@@ -935,8 +934,7 @@ def randreg_equation(
 
     rng = random.Random(seed)
     size_dict = {
-        get_symbol(i): rng.randint(d_min, d_max)
-        for i in range(len(G.edges))
+        get_symbol(i): rng.randint(d_min, d_max) for i in range(len(G.edges))
     }
 
     output = []

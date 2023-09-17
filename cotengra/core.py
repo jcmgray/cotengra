@@ -2255,7 +2255,7 @@ class ContractionTree:
             for l1, l2 in boundary_pairs(self.root)
         ]
 
-        for p, l, r in self.descend():
+        for _, l, r in self.descend():
             for child in (r, l):
                 # for each current candidate check all the possible extensions
                 for _ in range(len(candidates)):
@@ -3107,6 +3107,8 @@ class PartitionTreeBuilder:
         if dynamic_imbalance:
             imbalance = partition_opts.pop("imbalance")
             imbalance_decay = partition_opts.pop("imbalance_decay")
+        else:
+            imbalance = imbalance_decay = None
 
         dynamic_fix = partition_opts.get("fix_output_nodes", None) == "auto"
 

@@ -151,11 +151,7 @@ class HyperGraph:
         return self.edges_size(set(self.get_node(i) + self.get_node(j)))
 
     def neighborhood_compress_cost(self, chi, nodes):
-        region_edges = {
-            e
-            for n in nodes
-            for e in self.get_node(n)
-        }
+        region_edges = {e for n in nodes for e in self.get_node(n)}
 
         # group edges that are incident to the same set of nodes
         incidences = {}
@@ -404,9 +400,8 @@ class HyperGraph:
         default_distance = 10 * self.num_nodes
 
         condensed = []
-        for i in range(len(nodes)):
+        for i, ni in enumerate(nodes):
             for j in range(i + 1, len(nodes)):
-                ni = nodes[i]
                 nj = nodes[j]
                 key = (ni, nj) if ni < nj else (nj, ni)
                 condensed.append(distances.get(key, default_distance))
@@ -760,7 +755,7 @@ def calc_edge_weight_float(ix, size_dict, scale="log"):
     w = size_dict[ix]
 
     if scale == "linear":
-        w
+        w = float(w)
     elif scale == "log":
         w = math.log2(w)
     elif scale == "exp":

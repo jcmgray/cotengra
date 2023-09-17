@@ -9,7 +9,7 @@ def test_slicer():
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     # arrays = [np.random.uniform(size=s) for s in shapes]
-    path, info = oe.contract_path(eq, *shapes, shapes=True)
+    _, info = oe.contract_path(eq, *shapes, shapes=True)
 
     sf = ctg.SliceFinder(info, target_size=1_000_000, target_overhead=None)
     inds, ccost = sf.search()
@@ -26,23 +26,23 @@ def test_slicer():
 
 
 def test_plot():
-    pytest.importorskip('matplotlib')
+    pytest.importorskip("matplotlib")
     pytest.importorskip("opt_einsum")
 
     import opt_einsum as oe
-
     import matplotlib
-    matplotlib.use('Template')
+
+    matplotlib.use("Template")
 
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
-    path, info = oe.contract_path(eq, *shapes, shapes=True)
+    _, info = oe.contract_path(eq, *shapes, shapes=True)
     sf = ctg.SliceFinder(info, target_size=1_000_000, target_overhead=None)
-    inds, ccost = sf.search()
+    sf.search()
     sf.plot_slicings()
 
 
 def test_plot_alt():
-    pytest.importorskip('altair')
+    pytest.importorskip("altair")
     pytest.importorskip("opt_einsum")
 
     import opt_einsum as oe
@@ -50,5 +50,5 @@ def test_plot_alt():
     eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
     path, info = oe.contract_path(eq, *shapes, shapes=True)
     sf = ctg.SliceFinder(info, target_size=1_000_000, target_overhead=None)
-    inds, ccost = sf.search()
+    sf.search()
     sf.plot_slicings_alt()

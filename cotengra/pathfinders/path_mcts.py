@@ -169,7 +169,7 @@ class MCTS:
         cnodes = self.children[node] = set()
 
         # for all possible next contractions
-        for e, (i, j) in hg.edges.items():
+        for i, j in hg.edges.values():
             hg_next = hg.copy()
 
             # compress then contract
@@ -219,7 +219,7 @@ class MCTS:
     def delete_node(self, node):
         """ """
         if node is self.root:
-            raise
+            raise KeyError("Cannot delete root node")
 
         dnodes = []
 

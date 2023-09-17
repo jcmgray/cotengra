@@ -42,7 +42,6 @@ NEUTRAL_STYLE = {
 
 
 def use_neutral_style(fn):
-
     @functools.wraps(fn)
     def new_fn(*args, use_neutral_style=True, **kwargs):
         import matplotlib as mpl
@@ -126,12 +125,12 @@ def plot_scatter(
     factor = None
     if x not in ("trial", "score"):
         xminimize = ctg.scoring.get_score_fn(x)
-        x = getattr(xminimize, 'name', x)
-        factor = getattr(xminimize, 'factor', 64)
+        x = getattr(xminimize, "name", x)
+        factor = getattr(xminimize, "factor", 64)
     if y not in ("trial", "score"):
         yminimize = ctg.scoring.get_score_fn(y)
-        y = getattr(yminimize, 'name', y)
-        factor = getattr(yminimize, 'factor', 64)
+        y = getattr(yminimize, "name", y)
+        factor = getattr(yminimize, "factor", 64)
 
     if factor is None:
         factor = 64
@@ -252,13 +251,15 @@ def tree_to_networkx(tree):
 
     for c, (p, l, r) in enumerate(tree.traverse()):
         G.add_edge(
-            p, l,
+            p,
+            l,
             size=math.log10(tree.get_size(l) + 1) + 1,
             weight=len(l),
             contraction=c,
         )
         G.add_edge(
-            p, r,
+            p,
+            r,
             size=math.log10(tree.get_size(r) + 1) + 1,
             weight=len(r),
             contraction=c,
@@ -354,7 +355,7 @@ def span(xy):
     return xy[:, 1].max() - xy[:, 1].min()
 
 
-def massage_pos(pos, nangles=12, flatten=False):
+def massage_pos(pos, nangles=100, flatten=False):
     """Rotate a position dict's points to cover a small vertical span"""
     import numpy as np
 
@@ -365,7 +366,7 @@ def massage_pos(pos, nangles=12, flatten=False):
 
     thetas = np.linspace(0, 2 * np.pi, nangles, endpoint=False)
     rxys = (rotate(xy, theta) for theta in thetas)
-    rxy0 = min(rxys, key=lambda rxy: span(rxy))
+    rxy0 = min(rxys, key=span)
 
     if flatten:
         rxy0[:, 1] /= 2
@@ -596,7 +597,7 @@ def plot_tree(
             edge_colormap = getattr(mpl.cm, edge_colormap)
         emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_colormap)
         edge_colors = [
-            emapper.to_rgba(d['contraction'])
+            emapper.to_rgba(d["contraction"])
             for _, _, d in G_tree.edges(data=True)
         ]
     else:
@@ -615,7 +616,7 @@ def plot_tree(
             node_colormap = getattr(mpl.cm, node_colormap)
         nmapper = mpl.cm.ScalarMappable(norm=enorm, cmap=node_colormap)
         node_colors = [
-            nmapper.to_rgba(d['contraction'])
+            nmapper.to_rgba(d["contraction"])
             for _, d in G_tree.nodes(data=True)
         ]
     else:
@@ -1275,8 +1276,8 @@ def plot_tree_rubberband(
             resolution=20,
             radius=radius,
             edgecolor=color,
-            facecolor='none',
-            linestyle='-',
+            facecolor="none",
+            linestyle="-",
             zorder=-prog,
         )
 

@@ -121,8 +121,8 @@ class AutoHQOptimizer(AutoOptimizer):
         kwargs.setdefault("max_time", "rate:1e8")
         kwargs.setdefault("parallel", False)
         kwargs.setdefault("reconf_opts", {})
-        kwargs['reconf_opts'].setdefault("subtree_size", 8)
-        kwargs['reconf_opts'].setdefault("maxiter", 500)
+        kwargs["reconf_opts"].setdefault("subtree_size", 8)
+        kwargs["reconf_opts"].setdefault("maxiter", 500)
         super().__init__(**kwargs)
 
 
