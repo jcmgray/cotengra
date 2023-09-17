@@ -192,10 +192,10 @@ def test_lazy_sliced_output_reduce():
     tree = opt.search(inputs, output, size_dict)
 
     # slice both inner and outer indices
-    tree.remove_ind_("g")
+    tree.remove_ind_("a")
+    tree.remove_ind_("x")
     tree.remove_ind_("b")
     tree.remove_ind_("y")
-    tree.remove_ind_("a")
 
     # for such a quantity, sum(f(x)), the inner slice sum must be performed 1st
     x = (tree.contract(arrays) ** 2).sum()
