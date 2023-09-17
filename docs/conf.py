@@ -5,38 +5,42 @@
 
 import os
 import sys
+
 sys.path.append(os.path.abspath("./_pygments"))
 
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'cotengra'
-copyright = '2020-2022, Johnnie Gray'
-author = 'Johnnie Gray'
+project = "cotengra"
+copyright = "2020-2023, Johnnie Gray"
+author = "Johnnie Gray"
 
 try:
     from cotengra import __version__
+
     release = __version__
 except ImportError:
     try:
         from importlib.metadata import version
-        release = version('cotengra')
+
+        release = version("cotengra")
     except ImportError:
-        release = '0.0.0+unknown'
+        release = "0.0.0+unknown"
 
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'myst_nb',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.extlinks',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.linkcode',
-    'sphinx_copybutton',
-    'autoapi.extension',
+    "myst_nb",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.extlinks",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.linkcode",
+    "sphinx_copybutton",
+    "autoapi.extension",
+    "sphinx_design",
 ]
 
 nb_execution_mode = "off"
@@ -50,16 +54,16 @@ myst_enable_extensions = [
 ]
 
 # sphinx-autoapi
-autoapi_dirs = ['../cotengra']
+autoapi_dirs = ["../cotengra"]
 
-templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
+templates_path = ["_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'furo'
+html_theme = "furo"
 
 html_theme_options = {
     "sidebar_hide_name": True,
@@ -75,10 +79,10 @@ html_theme_options = {
     "dark_logo": "logo-full.png",
 }
 
-pygments_style = '_pygments_light.MarianaLight'
+pygments_style = "_pygments_light.MarianaLight"
 pygments_dark_style = "_pygments_dark.MarianaDark"
 
-html_static_path = ['_static']
+html_static_path = ["_static"]
 html_css_files = ["my-styles.css"]
 html_favicon = "_static/logo-favicon.ico"
 

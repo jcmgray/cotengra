@@ -24,6 +24,7 @@ Indeed, in collaboration with NVidia, ``cotengra`` & ``quimb`` have now been use
 :maxdepth: 2
 
 installation.md
+high-level-interface.ipynb
 basics.ipynb
 advanced.ipynb
 visualization.ipynb

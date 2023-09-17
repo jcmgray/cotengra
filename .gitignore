@@ -69,3 +69,5 @@ target/
 Cargo.lock
 
 cotengra/_version.py
+
+experiments
