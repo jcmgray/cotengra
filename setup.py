@@ -47,6 +47,7 @@ setup(
             "setuptools_scm",
             "sphinx-autoapi",
             "sphinx-copybutton",
+            "sphinx-design",
             "sphinx>=2.0",
         ],
         "test": [
