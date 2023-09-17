@@ -2,7 +2,6 @@
 contraction.
 """
 import jax
-import tqdm
 import numpy as np
 import cotengra as ctg
 from concurrent.futures import ThreadPoolExecutor

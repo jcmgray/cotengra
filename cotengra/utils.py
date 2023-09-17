@@ -1,8 +1,10 @@
-import pickle
-import pathlib
-import itertools
 import collections
+import itertools
+import math
 import operator
+import pathlib
+import pickle
+import random
 
 from functools import reduce, lru_cache, partial
 from operator import or_
@@ -693,29 +695,16 @@ class DiskDict:
 
 
 class GumbelBatchedGenerator:
-    """Get a gumbel random number generator, that pre-batches the numbers using
-    numpy for both speed and repeatibility.
+    """Non numpy version of gumbel number generator."""
 
-    Parameters
-    ----------
-    rng : np.random.Generator
-        The random number generator to use.
-    batch : int, optional
-        The number of random numbers to generate at once.
-    """
-
-    def __init__(self, rng, batch=1000):
-        self.rng = rng
-        self.batch = batch
-        self.i = 0
-        self.gs = iter(())
+    def __init__(self, seed=None):
+        if isinstance(seed, random.Random):
+            self.rng = seed
+        else:
+            self.rng = random.Random(seed)
 
     def __call__(self):
-        try:
-            return next(self.gs)
-        except StopIteration:
-            self.gs = iter(self.rng.gumbel(size=self.batch))
-            return next(self.gs)
+        return -math.log(-math.log(self.rng.random()))
 
 
 class BadTrial(Exception):
@@ -821,51 +810,49 @@ def rand_equation(
     shapes : list[tuple[int]]
     size_dict : dict[str, int]
     """
-    import numpy as np
-
-    if seed is not None:
-        np.random.seed(seed)
+    rng = random.Random(seed)
 
     num_inds = max((n * reg) // 2, n_hyper_out + n_hyper_in + n_out)
     size_dict = {
-        get_symbol(i): np.random.randint(d_min, d_max + 1)
+        get_symbol(i): rng.randint(d_min, d_max)
         for i in range(num_inds)
     }
 
     inds = iter(size_dict)
+    positions = list(range(n))
     inputs = [[] for _ in range(n)]
     output = []
 
     for _ in range(n_hyper_out):
         ind = next(inds)
         output.append(ind)
-        s = np.random.randint(3, n + 1)
-        where = np.random.choice(np.arange(n), size=s, replace=False)
+        s = rng.randint(3, n)
+        where = rng.sample(positions, s)
         for i in where:
             inputs[i].append(ind)
 
     for _ in range(n_hyper_in):
         ind = next(inds)
-        s = np.random.randint(3, n + 1)
-        where = np.random.choice(np.arange(n), size=s, replace=False)
+        s = rng.randint(3, n)
+        where = rng.sample(positions, s)
         for i in where:
             inputs[i].append(ind)
 
     for _ in range(n_out):
         ind = next(inds)
         output.append(ind)
-        where = np.random.choice(np.arange(n), size=1, replace=False)
+        where = rng.sample(positions, 1)
         for i in where:
             inputs[i].append(ind)
 
     for ind in inds:
-        where = np.random.choice(np.arange(n), size=2, replace=False)
+        where = rng.sample(positions, 2)
         for i in where:
             inputs[i].append(ind)
 
     shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
 
-    output = list(np.random.permutation(output))
+    rng.shuffle(output)
 
     return inputs, output, shapes, size_dict
 
@@ -890,20 +877,18 @@ def tree_equation(
     n_outer : int, optional
         The number of outer indices.
     """
-    import numpy as np
-
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
 
     inputs = [[]]
     size_dict = {}
     for i in range(1, n):
         ix = get_symbol(i - 1)
-        size_dict[ix] = rng.integers(d_min, d_max + 1)
-        ci = rng.integers(0, len(inputs))
+        size_dict[ix] = rng.randint(d_min, d_max)
+        ci = rng.randint(0, len(inputs) - 1)
         inputs[ci].append(ix)
         inputs.append([ix])
 
-    output = list(rng.choice(list(size_dict), size=n_outer, replace=False))
+    output = rng.sample(list(size_dict), n_outer)
     shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
 
     return inputs, output, shapes, size_dict
@@ -940,7 +925,6 @@ def randreg_equation(
     size_dict : dict[str, int]
     """
     import networkx as nx
-    import numpy as np
 
     G = nx.random_regular_graph(reg, n, seed=seed)
     inputs = [[] for _ in range(n)]
@@ -949,9 +933,9 @@ def randreg_equation(
         inputs[na].append(ix)
         inputs[nb].append(ix)
 
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
     size_dict = {
-        get_symbol(i): rng.integers(d_min, d_max + 1)
+        get_symbol(i): rng.randint(d_min, d_max)
         for i in range(len(G.edges))
     }
 
@@ -991,26 +975,24 @@ def perverse_equation(
     n_outer : int, optional
         The number of outer indices.
     seed : None or int, optional
-        Seed for ``np.random.default_rng`` for repeatibility.
+        Seed for ``random.Random`` for repeatibility.
     """
-    import numpy as np
-
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
     indices = [get_symbol(i) for i in range(num_indices)]
 
-    size_dict = {ix: rng.integers(d_min, d_max + 1) for ix in indices}
+    size_dict = {ix: rng.randint(d_min, d_max) for ix in indices}
 
     inputs = []
     shapes = []
     for _ in range(n):
-        K = rng.integers(min_rank, max_rank + 1)
+        K = rng.randint(min_rank, max_rank)
         term = [rng.choice(indices) for _ in range(K)]
         inputs.append(term)
         shapes.append(tuple(size_dict[ix] for ix in term))
 
     # can't have more outputs than indices
     n_outer = min(n_outer, num_indices)
-    output = rng.choice(indices, replace=False, size=n_outer).tolist()
+    output = rng.sample(indices, n_outer)
 
     return inputs, output, shapes, size_dict
 
@@ -1060,10 +1042,8 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
         The maximum size of an index. If ``None``, defaults to ``d_min``, i.e.
         all indices are the same size.
     seed : None or int, optional
-        Seed for ``np.random.default_rng`` for repeatibility.
+        Seed for ``random.Random`` for repeatibility.
     """
-    import numpy as np
-
     if d_max is None:
         d_max = d_min
 
@@ -1099,11 +1079,10 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
 
     output = []
 
-    rng = np.random.default_rng(seed)
-
+    rng = random.Random(seed)
     size_dict = {
         # avoid overflow issues by converting back to python int
-        ix: int(rng.integers(d_min, d_max + 1))
+        ix: int(rng.randint(d_min, d_max))
         for ix in symbol_map.values()
     }
 
@@ -1224,15 +1203,13 @@ def make_rand_size_dict_from_inputs(inputs, d_min=2, d_max=3, seed=None):
     size_dict : dict[str, int]
         The index size dictionary.
     """
-    import numpy as np
-
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
 
     size_dict = {}
     for term in inputs:
         for ix in term:
             if ix not in size_dict:
-                size_dict[ix] = rng.integers(d_min, d_max + 1)
+                size_dict[ix] = rng.randint(d_min, d_max)
     return size_dict
 
 
@@ -1334,7 +1311,6 @@ def find_output_from_inputs(inputs):
 
     # dict insertion order is same as appearance order
     return tuple(once)
-
 
 
 def canonicalize_inputs(inputs, output=None, shapes=None, size_dict=None):

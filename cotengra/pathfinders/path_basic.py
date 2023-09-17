@@ -1,10 +1,11 @@
+import math
 import heapq
 import bisect
 import functools
 import itertools
 
 from ..oe import PathOptimizer
-
+from ..utils import GumbelBatchedGenerator
 
 def is_simplifiable(legs, appearances):
     """Check if ``legs`` contains any diag (repeated) or reduced (appears
@@ -483,21 +484,14 @@ class ContractionProcessor:
                 return sab - costmod * (sa + sb)
 
         else:
-            import numpy as np
-            from ..utils import GumbelBatchedGenerator
-
-            if isinstance(seed, np.random.Generator):
-                rng = seed
-            else:
-                rng = np.random.default_rng(seed)
-            gmblgen = GumbelBatchedGenerator(rng)
+            gmblgen = GumbelBatchedGenerator(seed)
 
             def local_score(sa, sb, sab):
                 score = sab - costmod * (sa + sb)
                 if score > 0:
-                    return np.log(score) - temperature * gmblgen()
+                    return math.log(score) - temperature * gmblgen()
                 elif score < 0:
-                    return -np.log(-score) - temperature * gmblgen()
+                    return -math.log(-score) - temperature * gmblgen()
                 else:
                     return - temperature * gmblgen()
 

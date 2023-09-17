@@ -1,10 +1,9 @@
 import math
 import heapq
+import random
 import functools
 import itertools
 import collections
-
-import numpy as np
 
 from ..core import (
     ContractionTreeCompressed,
@@ -155,8 +154,7 @@ class GreedyCompressed:
         self.temperature = temperature
         self.score_perm = score_perm
         self.early_terminate_size = early_terminate_size
-        self.rng = np.random.default_rng(seed)
-        self.gumbel = GumbelBatchedGenerator(self.rng)
+        self.gumbel = GumbelBatchedGenerator(seed)
 
     def _score(self, i1, i2):
         # the two inputs tensors (with prior compressions)
@@ -365,7 +363,7 @@ class GreedySpan:
         self.score_perm = score_perm
         self.distance_p = distance_p
         self.distance_steal = distance_steal
-        self.rng = np.random.default_rng(seed)
+        self.rng = random.Random(seed)
         self.gumbel = GumbelBatchedGenerator(self.rng)
 
     def get_ssa_path(self, inputs, output, size_dict):

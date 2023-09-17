@@ -27,9 +27,6 @@ setup(
     include_package_data=True,
     install_requires=[
         "autoray",
-        "optuna",
-        "numpy",
-        "tqdm",
     ],
     extras_require={
         "recommended": [
@@ -37,8 +34,11 @@ setup(
             "cytoolz",
             "kahypar",
             "networkx",
+            "numpy",
             "opt_einsum",
+            "optuna",
             "ray",
+            "tqdm",
         ],
         "docs": [
             "furo",

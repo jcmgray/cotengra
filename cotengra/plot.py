@@ -4,8 +4,6 @@ import importlib
 import itertools
 import collections
 
-import numpy as np
-
 
 def show_and_close(fn):
     @functools.wraps(fn)
@@ -339,6 +337,8 @@ def hypergraph_compute_plot_info_G(
 
 def rotate(xy, theta):
     """Return a rotated set of points."""
+    import numpy as np
+
     s = np.sin(theta)
     c = np.cos(theta)
 
@@ -356,6 +356,8 @@ def span(xy):
 
 def massage_pos(pos, nangles=12, flatten=False):
     """Rotate a position dict's points to cover a small vertical span"""
+    import numpy as np
+
     xy = np.empty((len(pos), 2))
     for i, (x, y) in enumerate(pos.values()):
         xy[i, 0] = x

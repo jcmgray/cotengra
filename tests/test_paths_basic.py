@@ -165,8 +165,8 @@ def test_optimal_lattice_eq():
 
     path = pb.optimize_optimal(inputs, output, size_dict, minimize="flops")
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-    assert tree.contraction_cost() == 3628
+    assert tree.contraction_cost() == 1464
 
     path = pb.optimize_optimal(inputs, output, size_dict, minimize="size")
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-    assert tree.contraction_width() == pytest.approx(6.754887502163468)
+    assert tree.contraction_width() == pytest.approx(5.584962500721156)

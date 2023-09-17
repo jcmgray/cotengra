@@ -702,9 +702,9 @@ def do_contraction(
     exponent = 0.0 if (strip_exponent is not False) else None
 
     if progbar:
-        from tqdm import tqdm
+        import tqdm
 
-        contractions = tqdm(contractions, total=N - 1)
+        contractions = tqdm.tqdm(contractions, total=N - 1)
 
     for p, l, r, tdot, arg, perm in contractions:
         if (l is None) and (r is None):

@@ -4,8 +4,6 @@ import itertools
 import collections
 from time import sleep
 
-import tqdm
-
 from .path_basic import ssa_to_linear
 from ..scoring import get_score_fn
 from ..core import (
@@ -235,6 +233,8 @@ class CompressedExhaustive:
         self.setup(inputs, output, size_dict)
 
         if self.progbar:
+            import tqdm
+
             pbar = tqdm.tqdm()
         else:
             pbar = None
@@ -739,15 +739,13 @@ class WindowedOptimizer:
         ssa_path,
         seed=None,
     ):
-        import numpy as np
         bitpath = ssa_path_to_bit_path(ssa_path)
         self.nodes = {
             0: Node.first(inputs, output, size_dict, minimize)
         }
         for c, (nij, ni, nj) in enumerate(bitpath):
             self.nodes[c + 1] = self.nodes[c].next(nij, ni, nj)
-        self.rng = np.random.default_rng(seed)
-        self.gumbel = GumbelBatchedGenerator(self.rng)
+        self.gumbel = GumbelBatchedGenerator(seed)
 
     @property
     def tracker(self):
@@ -877,8 +875,9 @@ class WindowedOptimizer:
 
         its = range(max_iterations)
         if progbar:
-            from tqdm import tqdm
-            its = tqdm(its)
+            import tqdm
+
+            its = tqdm.tqdm(its)
 
         cs = np.array(list(self.nodes.keys()))
         for _ in its:

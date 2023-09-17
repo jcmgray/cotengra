@@ -11,6 +11,7 @@ from .pathfinders.path_basic import (
     get_optimize_optimal,
 )
 from .interface import register_preset
+from .hyperoptimizers.hyper import get_default_hq_methods
 
 
 def estimate_optimal_hardness(inputs):
@@ -115,7 +116,7 @@ class AutoHQOptimizer(AutoOptimizer):
 
     def __init__(self, **kwargs):
         kwargs.setdefault("optimal_cutoff", 650)
-        kwargs.setdefault("methods", ("greedy", "kahypar"))
+        kwargs.setdefault("methods", get_default_hq_methods())
         kwargs.setdefault("max_repeats", 128)
         kwargs.setdefault("max_time", "rate:1e8")
         kwargs.setdefault("parallel", False)

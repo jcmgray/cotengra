@@ -1,13 +1,13 @@
 import re
 import time
 import pickle
+import random
 import hashlib
 import warnings
+import functools
 import importlib
 import collections
 from math import log2, log10
-
-import numpy as np
 
 from ..oe import PathOptimizer
 from ..scoring import get_score_fn
@@ -21,34 +21,40 @@ from ..parallel import parse_parallel_arg, get_n_workers, submit, should_nest
 from ..plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
 
 
-DEFAULT_METHODS = ["greedy"]
-if importlib.util.find_spec("kahypar"):
-    DEFAULT_METHODS += ["kahypar"]
-else:
-    DEFAULT_METHODS += ["labels"]
-    warnings.warn(
-        "Couldn't import `kahypar` - skipping from default "
-        "hyper optimizer and using basic `labels` method instead."
-    )
+@functools.lru_cache(maxsize=None)
+def get_default_hq_methods():
+    methods = ["greedy"]
+    if importlib.util.find_spec("kahypar"):
+        methods .append("kahypar")
+    else:
+        methods .append("labels")
+        warnings.warn(
+            "Couldn't import `kahypar` - skipping from default "
+            "hyper optimizer and using basic `labels` method instead."
+        )
+    return tuple(methods)
 
 
-if importlib.util.find_spec("optuna"):
-    DEFAULT_OPTLIB = "optuna"
-elif importlib.util.find_spec("btb"):
-    DEFAULT_OPTLIB = "baytune"
-elif importlib.util.find_spec("chocolate"):
-    DEFAULT_OPTLIB = "chocolate"
-elif importlib.util.find_spec("nevergrad"):
-    DEFAULT_OPTLIB = "nevergrad"
-elif importlib.util.find_spec("skopt"):
-    DEFAULT_OPTLIB = "skopt"
-else:
-    DEFAULT_OPTLIB = "random"
-    warnings.warn(
-        "Couldn't find `optuna`, `baytune (btb)`, `chocolate`, "
-        "`nevergrad` or `skopt` so will use completely random "
-        "sampling in place of hyper-optimization."
-    )
+@functools.lru_cache(maxsize=None)
+def get_default_optlib():
+    if importlib.util.find_spec("optuna"):
+        optlib = "optuna"
+    elif importlib.util.find_spec("btb"):
+        optlib = "baytune"
+    elif importlib.util.find_spec("chocolate"):
+        optlib = "chocolate"
+    elif importlib.util.find_spec("nevergrad"):
+        optlib = "nevergrad"
+    elif importlib.util.find_spec("skopt"):
+        optlib = "skopt"
+    else:
+        optlib = "random"
+        warnings.warn(
+            "Couldn't find `optuna`, `baytune (btb)`, `chocolate`, "
+            "`nevergrad` or `skopt` so will use completely random "
+            "sampling in place of hyper-optimization."
+        )
+    return optlib
 
 
 _PATH_FNS = {}
@@ -247,11 +253,12 @@ class ComputeScore:
         score_smudge=1e-6,
         seed=0,
     ):
+
         self.fn = fn
         self.score_fn = score_fn
         self.score_compression = score_compression
         self.score_smudge = score_smudge
-        self.rng = np.random.default_rng(seed)
+        self.rng = random.Random(seed)
 
     def __call__(self, *args, **kwargs):
         ti = time.time()
@@ -259,7 +266,7 @@ class ComputeScore:
             trial = self.fn(*args, **kwargs)
             trial["score"] = self.score_fn(trial) ** self.score_compression
             # random smudge is for baytune/scikit-learn nan/inf bug
-            trial["score"] += self.rng.normal(scale=self.score_smudge)
+            trial["score"] += self.rng.gauss(0.0, self.score_smudge)
         except BadTrial:
             trial = {
                 "score": float("inf"),
@@ -343,7 +350,7 @@ class HyperOptimizer(PathOptimizer):
         slicing_opts=None,
         slicing_reconf_opts=None,
         reconf_opts=None,
-        optlib=DEFAULT_OPTLIB,
+        optlib=None,
         space=None,
         score_compression=0.75,
         max_training_steps=None,
@@ -366,11 +373,14 @@ class HyperOptimizer(PathOptimizer):
         self.costs_size = []
 
         if methods is None:
-            self._methods = DEFAULT_METHODS
+            self._methods = get_default_hq_methods()
         elif isinstance(methods, str):
             self._methods = [methods]
         else:
             self._methods = list(methods)
+
+        if optlib is None:
+            optlib = get_default_optlib()
 
         # which score to feed to the hyper optimizer (setter below handles)
         self.minimize = minimize
