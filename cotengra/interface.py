@@ -8,6 +8,7 @@ from .core import ContractionTree
 from .utils import (
     canonicalize_inputs,
     eq_to_inputs_output,
+    find_output_from_inputs,
     inputs_output_to_eq,
     shapes_inputs_to_size_dict,
 )
@@ -181,8 +182,9 @@ def find_tree(inputs, output, size_dict, optimize="auto", **kwargs):
 
 def array_contract_tree(
     inputs,
-    output,
-    size_dict,
+    output=None,
+    size_dict=None,
+    shapes=None,
     optimize="auto",
     canonicalize=False,
     sort_contraction_indices=False,
@@ -194,12 +196,15 @@ def array_contract_tree(
 
     Parameters
     ----------
-    inputs : Sequence[Sequence[str]]
+    inputs : Sequence[Sequence[Hashable]]
         The inputs terms.
-    output : Sequence[str]
+    output : Sequence[Hashable], optional
         The output term.
-    size_dict : dict[str, int]
-        The size of each index.
+    size_dict : dict[Hashable, int], optional
+        The size of each index, if given, ``shapes`` is ignored.
+    shapes : Sequence[tuple[int]], optional
+        The shape of each input array. Only needed if ``canonicalize=True``
+        and ``size_dict`` is not provided.
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
@@ -226,9 +231,19 @@ def array_contract_tree(
         inputs, output, size_dict = canonicalize_inputs(
             inputs,
             output,
-            shapes=None,
+            shapes=shapes,
             size_dict=size_dict,
         )
+    elif output is None:
+        # didn't canonicalize or specify output
+        output = find_output_from_inputs(inputs)
+
+    if size_dict is None:
+        if shapes is None:
+            raise ValueError("Either `size_dict` or `shapes` must be given.")
+        else:
+            # didn't canonicalize and only shapes given
+            size_dict = shapes_inputs_to_size_dict(shapes, inputs)
 
     nterms = len(inputs)
 
@@ -362,8 +377,9 @@ def _array_contract_expression_with_constants(
 
 def array_contract_expression(
     inputs,
-    output,
-    size_dict,
+    output=None,
+    size_dict=None,
+    shapes=None,
     optimize="auto",
     constants=None,
     implementation=None,
@@ -381,11 +397,11 @@ def array_contract_expression(
 
     Parameters
     ----------
-    inputs : Sequence[Sequence[str]]
+    inputs : Sequence[Sequence[Hashable]]
         The inputs terms.
-    output : Sequence[str]
+    output : Sequence[Hashable]
         The output term.
-    size_dict : dict[str, int]
+    size_dict : dict[Hashable, int]
         The size of each index.
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
@@ -399,7 +415,8 @@ def array_contract_expression(
     constants : dict[int, array_like], optional
         A mapping of constant input positions to constant arrays. If given, the
         final expression will take only the remaining non-constant tensors as
-        inputs.
+        inputs. Note this is a different format to the ``constants`` kwarg of
+        :func:`einsum_expression` since it also provides the constant arrays.
     implementation : str or tuple[callable, callable], optional
         What library to use to actually perform the contractions. Options
         are:
@@ -438,6 +455,17 @@ def array_contract_expression(
     --------
     einsum_expression, array_contract, array_contract_tree
     """
+    if output is None:
+        # didn't canonicalize or specify output
+        output = find_output_from_inputs(inputs)
+
+    if size_dict is None:
+        if shapes is None:
+            raise ValueError("Either `size_dict` or `shapes` must be given.")
+        else:
+            # didn't canonicalize and only shapes given
+            size_dict = shapes_inputs_to_size_dict(shapes, inputs)
+
     if constants is not None:
         # handle constants specially with autoray
         return _array_contract_expression_with_constants(
@@ -517,7 +545,7 @@ _CONTRACT_EXPR_CACHE = {}
 def array_contract(
     arrays,
     inputs,
-    output,
+    output=None,
     optimize="auto",
     cache_expression=True,
     backend=None,
@@ -532,9 +560,9 @@ def array_contract(
     ----------
     arrays : Sequence[array_like]
         The arrays to contract.
-    inputs : Sequence[Sequence[str]]
+    inputs : Sequence[Sequence[Hashable]]
         The inputs terms.
-    output : Sequence[str]
+    output : Sequence[Hashable]
         The output term.
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
@@ -565,8 +593,8 @@ def array_contract(
     """
     # canonicalize
     inputs, output, size_dict = canonicalize_inputs(
-        inputs,
-        output,
+        inputs=inputs,
+        output=output,
         shapes=tuple(map(ar.shape, arrays)),
     )
 
@@ -696,7 +724,10 @@ def einsum_expression(
         If the optimizer provides sliced indices they will be used.
     constants : Sequence of int, optional
         The indices of tensors to treat as constant, the final expression will
-        take the remaining non-constant tensors as inputs.
+        take the remaining non-constant tensors as inputs. Note this is a
+        different format to the ``constants`` kwarg of
+        :func:`array_contract_expression` since the actual constant arrays are
+        inserted into ``shapes``.
     implementation : str or tuple[callable, callable], optional
         What library to use to actually perform the contractions. Options
         are:

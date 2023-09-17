@@ -1304,20 +1304,61 @@ def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None):
     return make_arrays_from_inputs(inputs, size_dict, seed=seed)
 
 
-def canonicalize_inputs(inputs, output, shapes=None, size_dict=None):
-    """Return a canonicalized version of the inputs and output, with the
-    indices labelled 'a', 'b', 'c', in the order they appear in the equation.
-    Either ``shapes`` or ``size_dict`` must be provided.
+def find_output_from_inputs(inputs):
+    """Find the output indices for a given set of inputs. The outputs are
+    calculated as the set of indices that appear only once, in the order they
+    appear in the inputs. This is different to `einsum` where they in sorted
+    order since we only require the indices to be hashable.
 
     Parameters
     ----------
-    inputs : Sequence[Sequence[hashable]]
+    inputs : Sequence[Sequence[Hashable]]
         The input terms.
-    output : Sequence[hashable]
-        The output term.
+
+    Returns
+    -------
+    output : tuple[Hashable]
+    """
+    # need to compute output
+    appeared = set()
+    once = {}
+    for term in inputs:
+        for ind in term:
+            if ind in appeared:
+                # appeared more than once
+                once.pop(ind, None)
+            else:
+                # first appearance
+                once[ind] = None
+                appeared.add(ind)
+
+    # dict insertion order is same as appearance order
+    return tuple(once)
+
+
+
+def canonicalize_inputs(inputs, output=None, shapes=None, size_dict=None):
+    """Return a canonicalized version of the inputs and output, with the
+    indices labelled from 'a', 'b', 'c', ... according to the order they appear
+    in the equation.
+
+    If ``output`` is not provided, it will be computed as the set of indices
+    that appear once, in the order they appear on the inputs (note that this is
+    different to `einsum` where they in sorted order since we only require the
+    indices to be hashable and not comparable).
+
+    If either ``shapes`` or ``size_dict`` is provided, then also compute the
+    corresponding canonicalized ``size_dict`` for new index labels.
+
+    Parameters
+    ----------
+    inputs : Sequence[Sequence[Hashable]]
+        The input terms.
+    output : Sequence[Hashable], optional
+        The output term. If not supplied it will be computed.
     shapes : None or Sequence[tuple[int]], optional
         The shapes of each input.
-    size_dict : None or dict[hashable, int], optional
+    size_dict : None or dict[Hashable, int], optional
         The index size dictionary.
 
     Returns
@@ -1326,23 +1367,30 @@ def canonicalize_inputs(inputs, output, shapes=None, size_dict=None):
         The canonicalized input terms.
     output : tuple[str]
         The canonicalized output term.
-    csize_dict : dict[str, int]
-        The canonicalized index size dictionary.
+    size_dict : dict[str, int] or None
+        The canonicalized index size dictionary, ``None`` if ``size_dict`` or
+        ``shapes`` was not provided.
     """
     ind_map = collections.defaultdict(
         map(get_symbol, itertools.count()).__next__
     )
 
-    cinputs = tuple(tuple(ind_map[ind] for ind in term) for term in inputs)
-    coutput = tuple(ind_map[ind] for ind in output)
+    new_inputs = tuple(tuple(ind_map[ind] for ind in term) for term in inputs)
+
+    if output is not None:
+        new_output = tuple(ind_map[ind] for ind in output)
+    else:
+        new_output = find_output_from_inputs(new_inputs)
 
     if size_dict is not None:
-        csize_dict = {ind_map[ind]: d for ind, d in size_dict.items()}
-    else:
-        csize_dict = {
+        new_size_dict = {ind_map[ind]: d for ind, d in size_dict.items()}
+    elif shapes is not None:
+        new_size_dict = {
             ix: d
-            for term, shape in zip(cinputs, shapes)
+            for term, shape in zip(new_inputs, shapes)
             for ix, d in zip(term, shape)
         }
+    else:
+        new_size_dict = None
 
-    return cinputs, coutput, csize_dict
+    return new_inputs, new_output, new_size_dict
