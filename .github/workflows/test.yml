@@ -1,4 +1,4 @@
-name: Test cotengra
+name: Tests
 
 on:
   workflow_dispatch:
