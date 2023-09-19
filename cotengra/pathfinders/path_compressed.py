@@ -1,5 +1,6 @@
 import math
 import heapq
+import random
 import itertools
 import collections
 from time import sleep
@@ -723,6 +724,9 @@ def bit_path_to_ssa_path(bitpath):
 
 
 class WindowedOptimizer:
+    """
+    """
+
     def __init__(
         self,
         inputs,
@@ -736,7 +740,8 @@ class WindowedOptimizer:
         self.nodes = {0: Node.first(inputs, output, size_dict, minimize)}
         for c, (nij, ni, nj) in enumerate(bitpath):
             self.nodes[c + 1] = self.nodes[c].next(nij, ni, nj)
-        self.gumbel = GumbelBatchedGenerator(seed)
+        self.rng = random.Random(seed)
+        self.gumbel = GumbelBatchedGenerator(self.rng)
 
     @property
     def tracker(self):
@@ -858,8 +863,6 @@ class WindowedOptimizer:
         progbar=False,
         **kwargs,
     ):
-        import numpy as np
-
         wl = window_size // 2
         wr = window_size - wl
 
@@ -869,14 +872,10 @@ class WindowedOptimizer:
 
             its = tqdm.tqdm(its)
 
-        cs = np.array(list(self.nodes.keys()))
+        cs = list(self.nodes.keys())
         for _ in its:
-            p = np.array(
-                [n.tracker.total_size for n in self.nodes.values()],
-                dtype="float",
-            )
-            p /= p.sum()
-            wc = self.rng.choice(cs, p=p)
+            p = [n.tracker.total_size for n in self.nodes.values()]
+            wc = self.rng.choices(cs, weights=p)[0]
 
             # window can't extend beyond edges
             wc = min(max(wl, wc), len(self.nodes) - wr)
