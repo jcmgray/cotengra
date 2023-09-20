@@ -158,3 +158,55 @@ def test_compressed_rank(optimize):
 @pytest.mark.parametrize("seed", range(10))
 def test_print_contractions(seed):
     ctg.utils.rand_tree(10, 3, 2, 2, 2).print_contractions()
+
+
+def test_remove_ind():
+    import copy
+
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        10, 3, n_out=0, n_hyper_in=4, n_hyper_out=1, seed=42
+    )
+    tree = ctg.array_contract_tree(
+        inputs, output, size_dict, optimize="greedy"
+    )
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
+
+    x = tree.contract(arrays)
+
+    sf = ctg.SliceFinder(tree, target_slices=2)
+    ix_sl, _ = sf.search()
+    (ix,) = ix_sl
+
+    orig_stats = tree.contract_stats()
+    orig_info = copy.deepcopy(tree.info)
+
+    tree_sliced = tree.remove_ind(ix, project=None)
+    sliced_stats = tree_sliced.contract_stats()
+    assert sliced_stats['flops'] > orig_stats['flops']
+    # make sure we haven't mutated original tree
+    assert tree.info == orig_info
+    assert tree_sliced.info != orig_info
+    assert tree_sliced.contract(arrays) == pytest.approx(x)
+
+    tree_rem0 = tree.remove_ind(ix, project=0)
+    rem_stats = tree_rem0.contract_stats()
+    assert rem_stats['flops'] < orig_stats['flops']
+    # make sure we haven't mutated original tree
+    assert tree.info == orig_info
+    assert tree_rem0.info != orig_info
+    y0 = tree_rem0.contract(arrays)
+    assert y0 != pytest.approx(x)
+
+    for j in range(1, tree.size_dict[ix]):
+
+        tree_remj = tree.remove_ind(ix, project=j)
+        rem_stats = tree_remj.contract_stats()
+        assert rem_stats['flops'] < orig_stats['flops']
+        # make sure we haven't mutated original tree
+        assert tree.info == orig_info
+        assert tree_remj.info != orig_info
+        yj = tree_remj.contract(arrays)
+        assert yj != pytest.approx(x)
+        y0 += yj
+
+    assert y0 == pytest.approx(x)

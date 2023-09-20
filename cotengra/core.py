@@ -6,12 +6,14 @@ import itertools
 import functools
 import collections
 
+from dataclasses import dataclass
+from typing import Optional
+
 from autoray import do
 
 from .utils import (
     compute_size_by_dict,
     deprecated,
-    dynary,
     get_symbol,
     groupby,
     interleave,
@@ -74,6 +76,9 @@ def union_it(bs):
 
 
 def legs_union(legs_seq):
+    """Combine a sequence of legs into a single set of legs, summing their
+    appearances.
+    """
     new_legs, *rem_legs = legs_seq
     new_legs = new_legs.copy()
     for legs in rem_legs:
@@ -82,8 +87,42 @@ def legs_union(legs_seq):
     return new_legs
 
 
+def legs_without(legs, ind):
+    """Discard ``ind`` from legs to create a new set of legs."""
+    new_legs = legs.copy()
+    new_legs.pop(ind, None)
+    return new_legs
+
+
 def get_with_default(k, obj, default):
     return obj.get(k, default)
+
+
+@dataclass(order=True, frozen=True)
+class SliceInfo:
+    inner: bool
+    ind: str
+    size: int
+    project: Optional[int]
+
+    @property
+    def sliced_range(self):
+        if self.project is None:
+            return range(self.size)
+        else:
+            return [self.project]
+
+
+def get_slice_strides(sliced_inds):
+    """Compute the 'strides' given the (ordered) dictionary of sliced indices.
+    """
+    slice_infos = list(sliced_inds.values())
+    nsliced = len(slice_infos)
+    strides = [1] * nsliced
+    # backwards cumulative product
+    for i in range(nsliced - 2, -1, -1):
+        strides[i] = strides[i + 1] * slice_infos[i + 1].size
+    return strides
 
 
 class ContractionTree:
@@ -170,7 +209,8 @@ class ContractionTree:
         for i, (term, legs) in enumerate(zip(inputs, self.inputs_legs)):
             is_simplifiable = (
                 # repeated indices (diag or traces)
-                (len(term) != len(legs)) or
+                (len(term) != len(legs))
+                or
                 # reduced indices (summed immediately)
                 any(
                     ix_count == self.appearances[ix]
@@ -229,7 +269,7 @@ class ContractionTree:
 
         # info relating to slicing (base constructor is always unsliced)
         self.multiplicity = 1
-        self.sliced_inds = self.sliced_sizes = ()
+        self.sliced_inds = {}
         self.sliced_inputs = frozenset()
 
         # cache for compiled contraction cores
@@ -239,26 +279,25 @@ class ContractionTree:
         """Set the internal state of this tree to that of ``other``."""
         # immutable properties
         for attr in (
-            "inputs",
-            "output",
-            "size_dict",
-            "N",
-            "root",
-            "multiplicity",
-            "sliced_inds",
-            "sliced_sizes",
-            "sliced_inputs",
             "appearances",
+            "inputs",
+            "multiplicity",
+            "N",
+            "output",
             "preprocessing",
+            "root",
+            "size_dict",
+            "sliced_inputs",
         ):
             setattr(self, attr, getattr(other, attr))
 
         # mutable properties
         for attr in (
             "children",
+            "contraction_cores",
             "inputs_legs",
             "output_legs",
-            "contraction_cores",
+            "sliced_inds",
         ):
             setattr(self, attr, getattr(other, attr).copy())
 
@@ -305,9 +344,7 @@ class ContractionTree:
         indices.
         """
         return prod(
-            d
-            for ix, d in zip(self.sliced_inds, self.sliced_sizes)
-            if ix in self.output
+            si.size for si in self.sliced_inds.values() if not si.inner
         )
 
     def node_to_terms(self, node):
@@ -749,7 +786,6 @@ class ContractionTree:
             The total flops, write and size.
         """
         if not (self._track_flops and self._track_write and self._track_size):
-
             self._flops = self._write = 0
             self._sizes = MaxCounter()
 
@@ -985,17 +1021,18 @@ class ContractionTree:
         path_output = tuple(self.get_legs(grandparent))
 
         path = find_path(
-            path_inputs, path_output, self.size_dict,
-            optimize=optimize, **(extra_opts or {})
+            path_inputs,
+            path_output,
+            self.size_dict,
+            optimize=optimize,
+            **(extra_opts or {}),
         )
 
         # now we have path create the nodes in between
         temp_nodes = list(nodes)
         for p in path:
             to_contract = [temp_nodes.pop(i) for i in sorted(p, reverse=True)]
-            temp_nodes.append(
-                self.contract_nodes(to_contract, check=check)
-            )
+            temp_nodes.append(self.contract_nodes(to_contract, check=check))
 
         (parent,) = temp_nodes
 
@@ -1198,9 +1235,9 @@ class ContractionTree:
 
         return tuple(sub_leaves), tuple(branches)
 
-    def remove_ind(self, ind, inplace=False):
-        """Remove (i.e. slice) index ``ind`` from this contraction tree,
-        taking care to update all relevant information about each node.
+    def remove_ind(self, ind, project=None, inplace=False):
+        """Remove (i.e. by default slice) index ``ind`` from this contraction
+        tree, taking care to update all relevant information about each node.
         """
         tree = self if inplace else self.copy()
 
@@ -1220,13 +1257,13 @@ class ContractionTree:
                 continue
 
             # else update all the relevant information about this node
-            involved.pop(ind, None)
+            node_info["involved"] = legs_without(involved, ind)
             removed = tree.get_removed(node)
 
             # update information regarding node indices sets
             if ind in legs:
                 # removing indices changes both flops and size of node
-                legs.pop(ind)
+                node_info["legs"] = legs_without(legs, ind)
 
                 old_size = tree.get_size(node)
                 tree._sizes.discard(old_size)
@@ -1239,7 +1276,7 @@ class ContractionTree:
                     tree._write += -old_size + new_size
             else:
                 # removing indices only changes flops
-                removed.pop(ind, None)
+                node_info["removed"] = legs_without(removed, ind)
 
             old_flops = tree.get_flops(node)
             new_flops = old_flops // d
@@ -1250,10 +1287,10 @@ class ContractionTree:
                 # its a leaf - corresponding input will be sliced
                 i = node_get_single_el(node)
                 tree.sliced_inputs = tree.sliced_inputs | frozenset([i])
-                tree.inputs_legs[i].pop(ind, None)
+                tree.inputs_legs[i] = legs_without(tree.inputs_legs[i], ind)
             elif len(node) == tree.N:
                 # root node
-                tree.output_legs.pop(ind, None)
+                tree.output_legs = legs_without(tree.output_legs, ind)
 
             # delete info we can't change
             for k in (
@@ -1265,19 +1302,19 @@ class ContractionTree:
             ):
                 tree.info[node].pop(k, None)
 
-        tree.multiplicity = tree.multiplicity * d
+        if project is None:
+            # we are slicing the index
+            si = SliceInfo(ind not in tree.output, ind, d, None)
+            tree.multiplicity = tree.multiplicity * d
+        else:
+            si = SliceInfo(ind not in tree.output, ind, 1, project)
 
-        # update the tuples of sliced indices and sliced sizes, but maintain
-        # the order such that output sliced indices always appear first
-        tree.sliced_inds, tree.sliced_sizes = zip(
-            *sorted(
-                zip(
-                    itertools.chain(tree.sliced_inds, (ind,)),
-                    itertools.chain(tree.sliced_sizes, (tree.size_dict[ind],)),
-                ),
-                key=lambda x: (x[0] not in tree.output, x),
-            )
-        )
+        # update the ordered slice information dictionary, but maintain the
+        # order such that output sliced indices always appear first ->
+        # enforced by the dataclass SliceInfo ordering
+        tree.sliced_inds = {
+            si.ind: si for si in sorted((*tree.sliced_inds.values(), si))
+        }
 
         tree.already_optimized.clear()
         tree.contraction_cores.clear()
@@ -1924,7 +1961,7 @@ class ContractionTree:
                 res.sort(key=score)
                 res = list(
                     interleave(
-                        groupby(lambda r: r["sliced_inds"], res).values()
+                        groupby(lambda r: r["sliced_ind_set"], res).values()
                     )
                 )
 
@@ -2636,7 +2673,7 @@ class ContractionTree:
 
         return result
 
-    def slice_key(self, i):
+    def slice_key(self, i, strides=None):
         """Get the combination of sliced index values for overall slice ``i``.
 
         Parameters
@@ -2649,7 +2686,19 @@ class ContractionTree:
         key : dict[str, int]
             The value each sliced index takes for slice ``i``.
         """
-        return dict(zip(self.sliced_inds, dynary(i, self.sliced_sizes)))
+        if strides is None:
+            strides = get_slice_strides(self.sliced_inds)
+
+        key = {}
+        for (ind, info), stride in zip(self.sliced_inds.items(), strides):
+            if info.project is None:
+                key[ind] = i // stride
+                i %= stride
+            else:
+                # size is 1 and i doesn't change
+                key[ind] = info.project
+
+        return key
 
     def slice_arrays(self, arrays, i):
         """Take ``arrays`` and slice the relevant inputs according to
@@ -2709,7 +2758,7 @@ class ContractionTree:
                 return chunks[loc]
             arrays = [
                 recursively_stack_chunks(loc + (d,), rem[1:])
-                for d in range(self.size_dict[rem[0]])
+                for d in self.sliced_inds[rem[0]].sliced_range
             ]
             axes = output_pos[rem[0]] - len(loc)
             return do("stack", arrays, axes, like=backend)
@@ -2746,9 +2795,7 @@ class ContractionTree:
         # consecutive slices of size ``stepsize`` all belong to the same output
         # block because the sliced indices are sorted output first
         stepsize = prod(
-            d
-            for ix, d in zip(self.sliced_inds, self.sliced_sizes)
-            if ix not in self.output
+            si.size for si in self.sliced_inds.values() if si.inner
         )
 
         if progbar:
@@ -2970,7 +3017,7 @@ def _slice_and_reconfigure_tree(tree, *args, **kwargs):
 
 def _get_tree_info(tree):
     stats = tree.contract_stats()
-    stats["sliced_inds"] = frozenset(tree.sliced_inds)
+    stats["sliced_ind_set"] = frozenset(tree.sliced_inds)
     return stats
 
 

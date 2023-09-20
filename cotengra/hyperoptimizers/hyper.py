@@ -921,7 +921,8 @@ class ReusableHyperOptimizer(PathOptimizer):
         self._opt._search(inputs, output, size_dict)
         return {
             "path": self._opt.path,
-            "sliced_inds": self._opt.tree.sliced_inds,
+            # dont' need to store all slice info, just which indices
+            "sliced_inds": tuple(self._opt.tree.sliced_inds),
         }
 
     def update_from_tree(self, tree, overwrite=True):
@@ -934,7 +935,8 @@ class ReusableHyperOptimizer(PathOptimizer):
         if overwrite or missing:
             self._cache[h] = {
                 "path": tree.get_path(),
-                "sliced_inds": tree.sliced_inds,
+                # dont' need to store all slice info, just which indices
+                "sliced_inds": tuple(tree.sliced_inds),
             }
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):
