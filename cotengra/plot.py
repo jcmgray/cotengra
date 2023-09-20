@@ -877,50 +877,110 @@ def tree_to_df(tree):
 
 
 @show_and_close
+@use_neutral_style
 def plot_contractions(
     tree,
-    x="peak-size",
-    y="flops",
-    color="stage",
-    size="scaling",
-    point_opacity=0.8,
-    color_scheme="viridis_r",
-    x_scale="log",
-    y_scale="log",
-    figsize=(6, 4),
+    order=None,
+    color_size=(0.6, 0.4, 0.7),
+    color_cost=(0.3, 0.7, 0.5),
+    figsize=(8, 3),
 ):
-    from matplotlib import pyplot as plt
-    import matplotlib as mpl
-    import seaborn as sns
+    import matplotlib.pyplot as plt
 
-    df = tree_to_df(tree)
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    sz = sum(tree.get_size(node) for node in tree.gen_leaves())
 
-    sns.scatterplot(
-        x=x,
-        y=y,
-        hue=color,
-        size=size,
-        palette=color_scheme,
-        data=df,
-        alpha=point_opacity,
+    sizes = []
+    peaks = []
+    costs = []
+    for p, l, r in tree.traverse(order):
+        sz -= tree.get_size(l)
+        sz -= tree.get_size(r)
+        sz += tree.get_size(p)
+        sizes.append(math.log2(tree.get_size(p)))
+        peaks.append(math.log2(sz))
+        costs.append(math.log10(tree.get_flops(p)))
+
+    cons = list(range(len(peaks)))
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    ax.set_xlabel("contraction")
+
+    ax.plot(
+        cons,
+        peaks,
+        color=color_size,
+        marker="x",
+        markersize=3,
+        alpha=0.5,
+        label="peak",
+    )
+    ax.plot(
+        cons,
+        sizes,
+        color=color_size,
+        marker="o",
+        markersize=3,
+        alpha=0.5,
+        linestyle=(1, (1, 1)),
+        label="write",
+    )
+    M = math.log2(tree.total_write())
+    ax.axhline(
+        M,
+        color=color_size,
+        xmax=0.04,
+        linewidth=0.8,
+    )
+    ax.text(
+        0,
+        M,
+        "total write",
+        ha="left",
+        va="center",
+        color=color_size,
+    )
+    ax.spines["right"].set_color(color_size)
+    ax.tick_params(axis="y", colors=color_size)
+    ax.set_ylim(0, 1.06 * M)
+    ax.set_ylabel("$\\log_2[SIZE]$", color=color_size)
+
+    rax = ax.twinx()
+    rax.spines["right"].set_visible(True)
+    rax.spines["right"].set_color(color_cost)
+    rax.tick_params(axis="y", colors=color_cost)
+    rax.plot(
+        cons,
+        costs,
+        color=color_cost,
+        marker="s",
+        markersize=3,
+        alpha=0.5,
+        linestyle=(0, (1, 1)),
+        label="cost",
     )
 
-    ax.set(yscale=y_scale, xscale=x_scale)
-    ax.grid(True, c=(0.98, 0.98, 0.98))
-    ax.set_axisbelow(True)
-    ax.get_legend().remove()
+    C = math.log10(tree.contraction_cost())
 
-    ax_cb = fig.add_axes([1.02, 0.25, 0.02, 0.55])
-    ax_cb.set(title="Stage")
-    if not isinstance(color_scheme, mpl.colors.Colormap):
-        color_scheme = getattr(mpl.cm, color_scheme)
-    cb = mpl.colorbar.ColorbarBase(ax_cb, cmap=color_scheme)
-    cb.outline.set_visible(False)
+    rax.axhline(
+        C,
+        color=color_cost,
+        xmin=0.96,
+        linewidth=0.8,
+    )
+    rax.text(
+        cons[-1],
+        C,
+        "total cost",
+        ha="right",
+        va="center",
+        color=color_cost,
+    )
+    rax.set_ylim(0, 1.03 * C)
+    rax.set_ylabel("$\\log_{10}[COST]$", color=color_cost)
 
-    # with warnings.catch_warnings():
-    #     warnings.simplefilter('ignore', UserWarning)
-    #     plt.tight_layout()
+    ax.legend(ncol=2, bbox_to_anchor=(0.4, 1.00), loc="center")
+    rax.legend(bbox_to_anchor=(0.7, 1.00), loc="center")
 
     return fig, ax
 
