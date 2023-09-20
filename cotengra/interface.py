@@ -186,7 +186,7 @@ def array_contract_tree(
     size_dict=None,
     shapes=None,
     optimize="auto",
-    canonicalize=False,
+    canonicalize=True,
     sort_contraction_indices=False,
 ):
     """Get the `ContractionTree` for the tensor contraction specified by
