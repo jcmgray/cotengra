@@ -220,15 +220,15 @@ class SlicedReconfTrialFn:
 
 
 class CompressedReconfTrial:
-    def __init__(self, trial_fn, chi, **opts):
+    def __init__(self, trial_fn, minimize, **opts):
         self.trial_fn = trial_fn
-        self.chi = chi
+        self.minimize = minimize
         self.opts = opts
 
     def __call__(self, *args, **kwargs):
         trial = self.trial_fn(*args, **kwargs)
         tree = trial["tree"]
-        tree.compressed_reconfigure_(chi=self.chi, **self.opts)
+        tree.windowed_reconfigure_(minimize=self.minimize, **self.opts)
         return trial
 
 
@@ -331,6 +331,9 @@ class HyperOptimizer(PathOptimizer):
         Supplied to the hyper-optimizer library initialization.
     """
 
+    compressed = False
+    multicontraction = False
+
     def __init__(
         self,
         methods=None,
@@ -345,8 +348,6 @@ class HyperOptimizer(PathOptimizer):
         space=None,
         score_compression=0.75,
         max_training_steps=None,
-        compressed=False,
-        multicontraction=False,
         progbar=False,
         **optlib_opts,
     ):
@@ -375,8 +376,6 @@ class HyperOptimizer(PathOptimizer):
 
         # which score to feed to the hyper optimizer (setter below handles)
         self.minimize = minimize
-        self.compressed = compressed
-        self.multicontraction = multicontraction
         self.score_compression = score_compression
         self.best_score = float("inf")
         self.max_training_steps = max_training_steps
@@ -828,7 +827,8 @@ def hash_contraction(inputs, output, size_dict, method="a"):
 
 class ReusableHyperOptimizer(PathOptimizer):
     """Like ``HyperOptimizer`` but it will re-instantiate the optimizer
-    whenever a new contraction is detected, and also cache the paths found.
+    whenever a new contraction is detected, and also cache the paths (and
+    sliced indices) found.
 
     Parameters
     ----------
@@ -855,12 +855,14 @@ class ReusableHyperOptimizer(PathOptimizer):
         Supplied to ``HyperOptimizer``.
     """
 
+    suboptimizer = HyperOptimizer
+    set_surface_order = False
+
     def __init__(
         self,
         *,
         directory=None,
         overwrite=False,
-        set_surface_order=False,
         hash_method="a",
         cache_only=False,
         **opt_kwargs,
@@ -872,7 +874,6 @@ class ReusableHyperOptimizer(PathOptimizer):
             directory = f"ctg_cache/opts{self.auto_hash_path_relevant_opts()}"
         self._cache = DiskDict(directory)
         self.overwrite = overwrite
-        self._set_surface_order = set_surface_order
         self._hash_method = hash_method
         self.cache_only = cache_only
 
@@ -917,7 +918,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         return h, missing
 
     def _compute_path(self, inputs, output, size_dict):
-        self._opt = HyperOptimizer(**self._opt_kwargs)
+        self._opt = self.suboptimizer(**self._opt_kwargs)
         self._opt._search(inputs, output, size_dict)
         return {
             "path": self._opt.path,
@@ -960,7 +961,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         # reconstruct tree
         con = self._cache[h]
 
-        if self._set_surface_order:
+        if self.set_surface_order:
             # need ssa_path to set order
             tree = ContractionTreeCompressed.from_path(
                 inputs, output, size_dict, path=con["path"]
@@ -977,3 +978,155 @@ class ReusableHyperOptimizer(PathOptimizer):
 
     def cleanup(self):
         self._cache.cleanup()
+
+
+class HyperCompressedOptimizer(HyperOptimizer):
+    """A compressed contraction path optimizer that samples a series of ordered
+    contraction trees while optimizing the hyper parameters used to generate
+    them.
+
+    Parameters
+    ----------
+    chi : None or int, optional
+        The maximum bond dimension to compress to. If ``None`` then use the
+        square of the largest existing dimension. If ``minimize`` is specified
+        as a full scoring function, this is ignored.
+    methods : None or sequence[str] or str, optional
+        Which method(s) to use from ``list_hyper_functions()``.
+    minimize : str, Objective or callable, optional
+        How to score each trial, used to train the optimizer and rank the
+        results. If a custom callable, it should take a ``trial`` dict as its
+        argument and return a single float.
+    max_repeats : int, optional
+        The maximum number of trial contraction trees to generate.
+        Default: 128.
+    max_time : None or float, optional
+        The maximum amount of time to run for. Use ``None`` for no limit. You
+        can also set an estimated execution 'rate' here like ``'rate:1e9'``
+        that will terminate the search when the estimated FLOPs of the best
+        contraction found divided by the rate is greater than the time spent
+        searching, allowing quick termination on easy contractions.
+    parallel : 'auto', False, True, int, or distributed.Client
+        Whether to parallelize the search.
+    slicing_opts : dict, optional
+        If supplied, once a trial contraction path is found, try slicing with
+        the given options, and then update the flops and size of the trial with
+        the sliced versions.
+    slicing_reconf_opts : dict, optional
+        If supplied, once a trial contraction path is found, try slicing
+        interleaved with subtree reconfiguation with the given options, and
+        then update the flops and size of the trial with the sliced and
+        reconfigured versions.
+    reconf_opts : dict, optional
+        If supplied, once a trial contraction path is found, try subtree
+        reconfiguation with the given options, and then update the flops and
+        size of the trial with the reconfigured versions.
+    optlib : {'baytune', 'nevergrad', 'chocolate', 'skopt'}, optional
+        Which optimizer to sample and train with.
+    space : dict, optional
+        The hyper space to search, see ``get_hyper_space`` for the default.
+    score_compression : float, optional
+        Raise scores to this power in order to compress or accentuate the
+        differences. The lower this is, the more the selector will sample from
+        various optimizers rather than quickly specializing.
+    max_training_steps : int, optional
+        The maximum number of trials to train the optimizer with. Setting this
+        can be helpful when the optimizer itself becomes costly to train (e.g.
+        for Gaussian Processes).
+    progbar : bool, optional
+        Show live progress of the best contraction found so far.
+    optlib_opts
+        Supplied to the hyper-optimizer library initialization.
+    """
+
+    compressed = True
+    multicontraction = False
+
+    def __init__(
+        self,
+        chi=None,
+        methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
+        minimize="peak-compressed",
+        **kwargs,
+    ):
+        if (chi is not None) and not callable(minimize):
+            minimize += f"-{chi}"
+
+        kwargs["methods"] = methods
+        kwargs["minimize"] = minimize
+
+        if kwargs.pop("slicing_opts", None) is not None:
+            raise ValueError(
+                "Cannot use slicing_opts with compressed contraction."
+            )
+        if kwargs.pop("slicing_reconf_opts", None) is not None:
+            raise ValueError(
+                "Cannot use slicing_reconf_opts with compressed contraction."
+            )
+
+        super().__init__(**kwargs)
+
+
+class ReusableHyperCompressedOptimizer(ReusableHyperOptimizer):
+    """Like ``HyperCompressedOptimizer`` but it will re-instantiate the
+    optimizer whenever a new contraction is detected, and also cache the paths
+    found.
+
+    Parameters
+    ----------
+    chi : None or int, optional
+        The maximum bond dimension to compress to. If ``None`` then use the
+        square of the largest existing dimension. If ``minimize`` is specified
+        as a full scoring function, this is ignored.
+    directory : None, True, or str, optional
+        If specified use this directory as a persistent cache. If ``True`` auto
+        generate a directory in the current working directory based on the
+        options which are most likely to affect the path (see
+        `ReusableHyperOptimizer.get_path_relevant_opts`).
+    overwrite : bool, optional
+        If ``True``, the optimizer will always run, overwriting old results in
+        the cache. This can be used to update paths with deleting the whole
+        cache.
+    set_surface_order : bool, optional
+        If ``True``, when reloading a path to turn into a ``ContractionTree``,
+        the 'surface order' of the path (used for compressed paths), will be
+        set manually to the order the disk path is.
+    hash_method : {'a', 'b', ...}, optional
+        The method used to hash the contraction tree. The default, ``'a'``, is
+        faster hashwise but doesn't recognize when indices are permuted.
+    cache_only : bool, optional
+        If ``True``, the optimizer will only use the cache, and will raise
+        ``KeyError`` if a contraction is not found.
+    opt_kwargs
+        Supplied to ``HyperCompressedOptimizer``.
+    """
+    suboptimizer = HyperCompressedOptimizer
+    set_surface_order = True
+
+    def __init__(
+        chi=None,
+        methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
+        minimize="peak-compressed",
+        **kwargs,
+    ):
+        if (chi is not None) and not callable(minimize):
+            minimize += f"-{chi}"
+
+        kwargs["methods"] = methods
+        kwargs["minimize"] = minimize
+
+        if kwargs.pop("slicing_opts", None) is not None:
+            raise ValueError(
+                "Cannot use slicing_opts with compressed contraction."
+            )
+        if kwargs.pop("slicing_reconf_opts", None) is not None:
+            raise ValueError(
+                "Cannot use slicing_reconf_opts with compressed contraction."
+            )
+
+        super().__init__(**kwargs)
+
+
+class HyperMultiOptimizer(HyperOptimizer):
+    compressed = False
+    multicontraction = True

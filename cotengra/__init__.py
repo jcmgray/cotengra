@@ -56,11 +56,14 @@ from .hyperoptimizers import hyper_optuna
 from .hyperoptimizers import hyper_random
 
 from .hyperoptimizers.hyper import (
-    list_hyper_functions,
     get_hyper_space,
-    HyperOptimizer,
-    ReusableHyperOptimizer,
     hash_contraction,
+    HyperCompressedOptimizer,
+    HyperMultiOptimizer,
+    HyperOptimizer,
+    list_hyper_functions,
+    ReusableHyperCompressedOptimizer,
+    ReusableHyperOptimizer,
 )
 
 from .presets import (
@@ -102,49 +105,6 @@ QuasiRandOptimizer = functools.partial(
 """Does no gaussian process tuning by default, just randomly samples but in a
 more 'even' way than purely random - requires ``chocolate``.
 """
-
-
-def HyperCompressedOptimizer(
-    chi=None,
-    methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
-    minimize="peak-compressed",
-    **kwargs,
-):
-    """Instantiates a HyperOptimizer but with default arguments applicable to
-    compressed path finding.
-    """
-    if (chi is not None) and not callable(minimize):
-        minimize += f"-{chi}"
-
-    return HyperOptimizer(
-        methods=methods, minimize=minimize, compressed=True, **kwargs
-    )
-
-
-def ReusableHyperCompressedOptimizer(
-    chi=None,
-    methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
-    set_surface_order=True,
-    minimize="peak-compressed",
-    **kwargs,
-):
-    """Instantiates a HyperOptimizer but with default arguments applicable to
-    compressed path finding.
-    """
-    if (chi is not None) and not callable(minimize):
-        minimize += f"-{chi}"
-    return ReusableHyperOptimizer(
-        methods=methods,
-        minimize=minimize,
-        compressed=True,
-        set_surface_order=set_surface_order,
-        **kwargs,
-    )
-
-
-def HyperMultiOptimizer(*args, **kwargs):
-    return HyperOptimizer(*args, multicontraction=True, **kwargs)
-
 
 contract_expression = einsum_expression
 """Alias for :func:`cotengra.einsum_expression`."""
