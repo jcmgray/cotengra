@@ -960,7 +960,7 @@ def plot_contractions(
         label="cost",
     )
 
-    C = math.log10(tree.contraction_cost())
+    C = tree.contraction_cost(log=10)
 
     rax.axhline(
         C,
