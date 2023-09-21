@@ -813,14 +813,14 @@ class ContractionTree:
         """Get the total number of scalar operations ~ time complexity."""
         C = float(self.total_flops(dtype=None))
         if log is not None:
-            C = math.log(C, base=log)
+            C = math.log(C, log)
         return C
 
     def contraction_width(self, log=2):
         """Get log2 of the size of the largest tensor."""
         W = self.max_size()
         if log is not None:
-            W = math.log(W, base=log)
+            W = math.log(W, log)
         return W
 
     def compressed_contract_stats(
