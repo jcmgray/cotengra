@@ -253,6 +253,14 @@ class GreedyCompressed:
 
         return self.ssapath
 
+    def search(self, inputs, output, size_dict):
+        return ContractionTreeCompressed.from_path(
+            inputs,
+            output,
+            size_dict,
+            ssa_path=self.get_ssa_path(inputs, output, size_dict),
+        )
+
     def __call__(self, inputs, output, size_dict, memory_limit=None):
         return ssa_to_linear(
             self.get_ssa_path(inputs, output, size_dict), len(inputs)
@@ -472,9 +480,11 @@ class GreedySpan:
         return ssapath
 
     def search(self, inputs, output, size_dict):
-        ssa_path = self.get_ssa_path(inputs, output, size_dict)
         return ContractionTreeCompressed.from_path(
-            inputs, output, size_dict, ssa_path=ssa_path
+            inputs,
+            output,
+            size_dict,
+            ssa_path=self.get_ssa_path(inputs, output, size_dict),
         )
 
     def __call__(self, inputs, output, size_dict, memory_limit=None):

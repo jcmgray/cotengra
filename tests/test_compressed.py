@@ -42,7 +42,7 @@ def test_compressed_span():
 def test_compressed_agglom():
     pytest.importorskip("kahypar")
     chi = 4
-    inputs, output, shapes, size_dict = ctg.utils.lattice_equation([16, 16])
+    inputs, output, _, size_dict = ctg.utils.lattice_equation([16, 16])
     opt = ctg.HyperCompressedOptimizer(
         chi=chi,
         methods=[
@@ -56,3 +56,18 @@ def test_compressed_agglom():
     assert tree.max_size(chi) < tree.max_size_exact()
     assert tree.peak_size(chi) < tree.peak_size_exact()
     assert tree.contraction_width(chi) < 20
+
+
+@pytest.mark.parametrize("order_only", (False, True))
+def test_compressed_reconfigure(order_only):
+    chi = 16
+    minimize = ctg.scoring.CompressedPeakObjective(chi)
+    inputs, output, _, size_dict = ctg.utils.lattice_equation([16, 16])
+    tree = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize=ctg.path_greedy.GreedyCompressed(chi),
+    )
+    tree_wr = tree.windowed_reconfigure(minimize, order_only=order_only)
+    assert tree_wr.peak_size(chi) < tree.peak_size(chi)
