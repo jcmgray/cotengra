@@ -1104,6 +1104,7 @@ class ReusableHyperCompressedOptimizer(ReusableHyperOptimizer):
     set_surface_order = True
 
     def __init__(
+        self,
         chi=None,
         methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
         minimize="peak-compressed",
