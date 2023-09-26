@@ -259,3 +259,21 @@ def test_insane_nested(parallel_backend):
     )
     oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
     assert optimizer.get_tree().max_size() <= 2**20
+
+
+def test_plotting():
+    pytest.importorskip("matplotlib")
+
+    import matplotlib
+
+    matplotlib.use("Template")
+
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
+    hg = ctg.HyperGraph(inputs, output, size_dict)
+    hg.plot()
+    opt = ctg.HyperOptimizer(max_repeats=16)
+    opt.search(inputs, output, size_dict)
+    opt.plot_trials()
+    opt.plot_scatter()
