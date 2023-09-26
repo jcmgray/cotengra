@@ -1,7 +1,7 @@
 import math
 import random
 
-from .path_basic import ssa_to_linear
+from ..pathfinders.path_basic import ssa_to_linear
 from ..core import ContractionTreeCompressed, get_hypergraph
 
 
@@ -45,9 +45,9 @@ class Node:
         nodes score.
         """
         self.count += 1
-        # delta = x - self.mean
-        # self.mean += delta / self.count
-        self.mean = min(self.mean, x)
+        delta = x - self.mean
+        self.mean += delta / self.count
+        # self.mean = min(self.mean, x)
 
         phi = math.log2(self.mean)
         phi -= (phi / self.count) ** 0.5
