@@ -2054,7 +2054,9 @@ class ContractionTree:
         -------
         ContractionTree
         """
-        from .pathfinders.path_compressed import CompressedExhaustive
+        from .experimental.path_compressed_branchbound import (
+            CompressedExhaustive,
+        )
 
         if max_nodes == "auto":
             if max_time is None:
