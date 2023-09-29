@@ -1,3 +1,5 @@
+"""Base hyper optimization functionality.
+"""
 import re
 import time
 import pickle

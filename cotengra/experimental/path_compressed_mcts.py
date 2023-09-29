@@ -1,3 +1,5 @@
+"""Compressed contraction tree search using monte carlo tree search.
+"""
 import math
 import random
 

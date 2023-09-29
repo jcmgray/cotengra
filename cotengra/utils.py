@@ -1,3 +1,5 @@
+"""Various utilities for cotengra.
+"""
 import collections
 import itertools
 import math

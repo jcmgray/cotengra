@@ -1,3 +1,5 @@
+"""Flowcutter based pathfinder.
+"""
 import re
 import time
 import random

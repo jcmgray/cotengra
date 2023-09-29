@@ -1,3 +1,5 @@
+"""Compressed contraction tree finding routines.
+"""
 import heapq
 import random
 import itertools

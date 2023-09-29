@@ -1,3 +1,5 @@
+"""Contraction tree finders using kahypar hypergraph partitioning.
+"""
 import random
 import functools
 import itertools

@@ -1,3 +1,5 @@
+"""Compressed contraction path finding using branch and bound.
+"""
 import math
 import heapq
 import itertools

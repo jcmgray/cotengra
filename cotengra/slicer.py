@@ -1,3 +1,5 @@
+"""Functionality for identifying indices to sliced.
+"""
 import random
 import collections
 from math import log
@@ -432,11 +434,3 @@ class SliceFinder:
 
     plot_slicings = plot_slicings
     plot_slicings_alt = plot_slicings_alt
-
-
-def create_size_dict(inputs, arrays):
-    size_dict = {}
-    for term, array in zip(inputs, arrays):
-        for ix, d in zip(term, array.shape):
-            size_dict[ix] = max(size_dict.get(ix, 1), d)
-    return size_dict

@@ -1,3 +1,5 @@
+"""Core contraction tree data structure and methods.
+"""
 import math
 import random
 import warnings

@@ -1,3 +1,5 @@
+"""Quickbb based pathfinder.
+"""
 import re
 import time
 import signal

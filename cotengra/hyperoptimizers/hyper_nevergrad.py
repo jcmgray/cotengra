@@ -1,3 +1,5 @@
+"""Hyper optimization using nevergrad.
+"""
 from .hyper import register_hyper_optlib
 
 

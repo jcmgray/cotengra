@@ -1,3 +1,5 @@
+"""Basic optimization routines.
+"""
 import math
 import heapq
 import bisect

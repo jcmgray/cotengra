@@ -1,3 +1,5 @@
+"""Greedy contraction tree finders.
+"""
 import math
 import heapq
 import random

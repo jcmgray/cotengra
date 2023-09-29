@@ -1,3 +1,5 @@
+"""igraph based pathfinders.
+"""
 import random
 import functools
 from collections import defaultdict

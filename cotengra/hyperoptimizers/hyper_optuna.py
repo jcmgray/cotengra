@@ -1,3 +1,5 @@
+"""Hyper optimization using optuna.
+"""
 import warnings
 
 from .hyper import register_hyper_optlib

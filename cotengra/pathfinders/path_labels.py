@@ -1,3 +1,5 @@
+"""Contraction tree finders using pure python 'labels' hypergraph partitioning.
+"""
 import math
 import random
 import collections

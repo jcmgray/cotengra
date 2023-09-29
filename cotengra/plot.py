@@ -1,3 +1,5 @@
+"""Hypergraph, optimizer, and contraction tree visualization tools.
+"""
 import math
 import functools
 import importlib
