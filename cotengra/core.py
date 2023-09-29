@@ -809,6 +809,13 @@ class ContractionTree:
         """
         return self.total_flops(dtype=None) / self.total_write()
 
+    def contraction_scaling(self):
+        """This is computed simply as the maximum number of indices involved
+        in any single contraction, which will match the scaling assuming that
+        all dimensions are equal.
+        """
+        return max(len(self.get_involved(node)) for node in self.info)
+
     def contraction_cost(self, log=None):
         """Get the total number of scalar operations ~ time complexity."""
         C = float(self.total_flops(dtype=None))
