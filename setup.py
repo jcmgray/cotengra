@@ -45,7 +45,7 @@ setup(
             "ipython!=8.7.0",
             "myst-nb",
             "setuptools_scm",
-            "sphinx-autoapi",
+            "sphinx-autoapi!=3.0.0",
             "sphinx-copybutton",
             "sphinx-design",
             "sphinx>=2.0",
