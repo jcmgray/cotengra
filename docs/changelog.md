@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.1 (2023-10-3)
+
+- add [tree.contraction_scaling](cotengra.ContractionTree.contraction_scaling)
+- add [get_symbol_map](cotengra.get_symbol_map)
+
+
 ## v0.5.0 (2023-09-26)
 
 - add [`einsum`](cotengra.einsum)
