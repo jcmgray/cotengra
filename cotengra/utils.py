@@ -717,18 +717,18 @@ def get_symbol(i):
     letters before resorting to unicode characters, starting at ``chr(192)``
     and skipping surrogates.
 
-    **Examples:**
+    Examples
+    --------
 
-    ```python
-    get_symbol(2)
-    #> 'c'
+        get_symbol(2)
+        #> 'c'
 
-    get_symbol(200)
-    #> 'Ŕ'
+        get_symbol(200)
+        #> 'Ŕ'
 
-    get_symbol(20000)
-    #> '京'
-    ```
+        get_symbol(20000)
+        #> '京'
+
     """
     if i < 52:
         return _einsum_symbols_base[i]
@@ -737,6 +737,20 @@ def get_symbol(i):
         return chr(i + 2048)
     else:
         return chr(i + 140)
+
+
+def get_symbol_map(inputs):
+    """Get a mapping of arbitrary hashable 'indices' to single unicode symbols,
+    matching the canonicalization of the expression.
+    """
+    symbol_map = {}
+    c = 0
+    for term in inputs:
+        for ind in term:
+            if ind not in symbol_map:
+                symbol_map[ind] = get_symbol(c)
+                c += 1
+    return symbol_map
 
 
 def rand_equation(

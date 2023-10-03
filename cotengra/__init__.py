@@ -94,7 +94,10 @@ from .plot import (
 )
 
 from . import utils
-from .utils import get_symbol
+from .utils import (
+    get_symbol,
+    get_symbol_map,
+)
 
 UniformOptimizer = functools.partial(HyperOptimizer, optlib="random")
 """Does no gaussian process tuning by default, just randomly samples - requires
@@ -135,6 +138,7 @@ __all__ = (
     "get_hyper_space",
     "get_hypergraph",
     "get_symbol",
+    "get_symbol_map",
     "greedy_optimize",
     "hash_contraction",
     "hyper_baytune",
