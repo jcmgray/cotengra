@@ -41,13 +41,22 @@ Other than that, the optional dependencies are detailed below.
 ````{hint}
 The recommended selection of optional dependencies from below covering most use-cases is:
 ```
-autoray cytoolz kahypar loky networkx opt_einsum optuna tqdm
+autoray cotengrust cytoolz kahypar loky networkx opt_einsum optuna tqdm
 ```
 ````
+
+## Contraction
+
+If you want to perform the contractions using ``cotengra`` itself you'll need:
+
+* [`autoray`](https://github.com/jcmgray/autoray)
+
+which supports at least `numpy`, `cupy`, `torch`, `tensorflow`, `jax`, and `autograd` among others.
 
 ## Optimization
 
 * [`kahypar`](https://github.com/SebastianSchlag/kahypar) - **Karlsruhe Hypergraph Partitioning** for high quality divisive tree building ([available via pip](https://pypi.org/project/kahypar/), unfortunately not yet via `conda` or for windows)
+* [`cotengrust`](https://github.com/jcmgray/cotengrust/tree/main) - rust accelerated pathfinding primitives
 * [`tqdm`](https://github.com/tqdm/tqdm) - for showing live progress (available via [pip](https://pypi.org/project/tqdm/) or `conda`)
 * [`cytoolz`](https://github.com/pytoolz/cytoolz/) - a couple of slightly faster utility functions
 
@@ -73,6 +82,7 @@ The latter two are both accessed simply using their command line interface and s
 
 The parallel functionality can requires any of the following:
 
+* [`concurrent.futures`](https://docs.python.org/3/library/concurrent.futures.html) - python standard library
 * [`loky`](https://github.com/joblib/loky) either directly or via [`joblib`](https://joblib.readthedocs.io/)
 * [`ray`](https://www.ray.io/) - distributed computing
 * [`dask distributed`](http://distributed.dask.org) - distributed computing
@@ -84,12 +94,3 @@ The following packages enable visualization:
 
 * [`networkx`](https://networkx.org/) for most visualizations
 * [`quimb`](https://github.com/jcmgray/quimb) for the 'rubberband' visualization
-
-
-## Contraction
-
-If you want to perform the contractions using ``cotengra`` itself you'll need:
-
-* [`autoray`](https://github.com/jcmgray/autoray)
-
-which supports at least `numpy`, `cupy`, `torch`, `tensorflow`, `jax`, and `autograd` among others.
