@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.2 (unreleased)
+
+- add [``ctg.array_contract_path``](cotengra.array_contract_path) for returning
+  the raw contraction path only, with caching. Add caching to
+  [``array_contract_expression``](cotengra.array_contract_expression) and
+  related functions too.
+- fix [`tree.get_eq()`](cotengra.ContractionTree.get_eq) when the ``inputs``
+  are a tuple of `Sequence[str]` rather than a `str`.
+
+
 ## v0.5.1 (2023-10-3)
 
 - add [tree.contraction_scaling](cotengra.ContractionTree.contraction_scaling)

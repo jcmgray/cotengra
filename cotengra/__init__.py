@@ -29,6 +29,7 @@ from .hypergraph import (
 )
 from .interface import (
     array_contract_expression,
+    array_contract_path,
     array_contract_tree,
     array_contract,
     einsum_expression,
@@ -120,6 +121,7 @@ contract = einsum
 
 __all__ = (
     "array_contract_expression",
+    "array_contract_path",
     "array_contract_tree",
     "array_contract",
     "auto_hq_optimize",

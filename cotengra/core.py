@@ -18,6 +18,7 @@ from .utils import (
     deprecated,
     get_symbol,
     groupby,
+    inputs_output_to_eq,
     interleave,
     is_valid_node,
     MaxCounter,
@@ -433,7 +434,7 @@ class ContractionTree:
         -------
         eq : str
         """
-        return ",".join(self.inputs) + "->" + self.output
+        return inputs_output_to_eq(self.inputs, self.output)
 
     def get_shapes(self):
         """Get the shapes of the input tensors corresponding to this tree.
@@ -477,10 +478,9 @@ class ContractionTree:
         -------
         eq : str
         """
-        return (
-            ",".join(("".join(term) for term in self.get_inputs_sliced()))
-            + "->"
-            + "".join(self.get_output_sliced())
+        return inputs_output_to_eq(
+            self.get_inputs_sliced(),
+            self.get_output_sliced()
         )
 
     def get_shapes_sliced(self):
