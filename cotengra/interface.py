@@ -90,8 +90,8 @@ def hash_contraction(inputs, output, size_dict, optimize, **kwargs):
 def normalize_input(
     inputs,
     output=None,
-    shapes=None,
     size_dict=None,
+    shapes=None,
     canonicalize=True,
 ):
     """Parse a contraction definition, optionally canonicalizing the indices
@@ -234,7 +234,7 @@ def array_contract_path(
         contraction *appended*.
     """
     inputs, output, size_dict = normalize_input(
-        inputs, output, shapes, size_dict, canonicalize=canonicalize
+        inputs, output, size_dict, shapes, canonicalize=canonicalize
     )
 
     if cache and can_hash_optimize(optimize.__class__):
@@ -367,7 +367,7 @@ def array_contract_tree(
     array_contract, array_contract_expression, einsum_tree
     """
     inputs, output, size_dict = normalize_input(
-        inputs, output, shapes, size_dict, canonicalize=canonicalize
+        inputs, output, size_dict, shapes, canonicalize=canonicalize
     )
 
     nterms = len(inputs)
@@ -573,6 +573,9 @@ def _build_expression(
     return fn
 
 
+_CONTRACT_EXPR_CACHE = {}
+
+
 def array_contract_expression(
     inputs,
     output=None,
@@ -669,7 +672,7 @@ def array_contract_expression(
         )
 
     inputs, output, size_dict = normalize_input(
-        inputs, output, shapes, size_dict, canonicalize=canonicalize
+        inputs, output, size_dict, shapes, canonicalize=canonicalize
     )
 
     if cache and can_hash_optimize(optimize.__class__):
@@ -702,9 +705,6 @@ def array_contract_expression(
         )
 
     return expr
-
-
-_CONTRACT_EXPR_CACHE = {}
 
 
 def array_contract(
@@ -820,6 +820,7 @@ def einsum_tree(
         output,
         shapes=shapes,
         optimize=optimize,
+        canonicalize=canonicalize,
         sort_contraction_indices=sort_contraction_indices,
     )
 

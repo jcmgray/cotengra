@@ -14,3 +14,25 @@ def test_array_contract_path_cache():
     xa = np.einsum(eq, *arrays)
     xb = ctg.einsum(eq, *arrays, optimize=pa)
     assert np.allclose(xa, xb)
+
+
+def test_array_contract_expression_cache():
+    inputs, output, shapes, size_dict = ctg.utils.rand_equation(10, 3)
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
+    expra = ctg.array_contract_expression(
+        inputs, output, shapes=shapes, cache=True
+    )
+    exprb = ctg.array_contract_expression(
+        inputs, output, shapes=shapes, cache=True
+    )
+    exprc = ctg.array_contract_expression(
+        inputs, output, shapes=shapes, cache=False
+    )
+    assert expra is exprb
+    assert exprb is not exprc
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    xa = np.einsum(eq, *arrays)
+    xb = expra(*arrays)
+    assert np.allclose(xa, xb)
+    xc = expra(*arrays)
+    assert np.allclose(xa, xc)
