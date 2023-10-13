@@ -124,6 +124,8 @@ _find_path_handlers = {}
 
 
 def _find_path_explicit_path(inputs, output, size_dict, optimize):
+    if isinstance(optimize, list):
+        optimize = tuple(optimize)
     return optimize
 
 
