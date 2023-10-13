@@ -661,6 +661,10 @@ def array_contract_expression(
     --------
     einsum_expression, array_contract, array_contract_tree
     """
+    inputs, output, size_dict = normalize_input(
+        inputs, output, size_dict, shapes, canonicalize=canonicalize
+    )
+
     if constants is not None:
         # handle constants specially with autoray
         return _array_contract_expression_with_constants(
@@ -672,10 +676,6 @@ def array_contract_expression(
             cache=cache,
             **kwargs,
         )
-
-    inputs, output, size_dict = normalize_input(
-        inputs, output, size_dict, shapes, canonicalize=canonicalize
-    )
 
     if cache and can_hash_optimize(optimize.__class__):
         try:
