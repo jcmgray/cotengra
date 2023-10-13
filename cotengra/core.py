@@ -752,6 +752,9 @@ class ContractionTree:
 
     def max_size(self):
         """The size of the largest intermediate tensor."""
+        if self.N == 1:
+            return self.get_size(self.root)
+
         if self._track_size:
             return self._sizes.max()
 
@@ -1134,6 +1137,9 @@ class ContractionTree:
         --------
         descend
         """
+        if self.N == 1:
+            return
+
         if order is None:
             order = self.get_default_order()
 

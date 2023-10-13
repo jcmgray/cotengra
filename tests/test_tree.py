@@ -210,3 +210,12 @@ def test_remove_ind():
         y0 += yj
 
     assert y0 == pytest.approx(x)
+
+
+def test_tree_with_one_node():
+    eq = "abc->abc"
+    size_dict = {"a": 2, "b": 3, "c": 4}
+    tree = ctg.ContractionTree.from_eq(eq, size_dict)
+    assert tree.get_path() == ()
+    assert tree.contraction_cost() == 0
+    assert tree.contraction_width(None) == 2 * 3 * 4
