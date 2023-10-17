@@ -1,5 +1,7 @@
 """Preset configured optimizers.
 """
+import threading
+
 from .core import ContractionTree
 from .hyperoptimizers.hyper import HyperOptimizer, ReusableHyperOptimizer
 from .oe import (
@@ -48,22 +50,33 @@ class AutoOptimizer(PathOptimizer):
         self.optimal_cutoff = optimal_cutoff
         self._optimize_optimal_fn = get_optimize_optimal()
 
-        hyperoptimizer_kwargs.setdefault("methods", ("rgreedy",))
-        hyperoptimizer_kwargs.setdefault("max_repeats", 128)
-        hyperoptimizer_kwargs.setdefault("max_time", "rate:1e9")
-        hyperoptimizer_kwargs.setdefault("parallel", False)
-        hyperoptimizer_kwargs.setdefault("reconf_opts", {})
-        hyperoptimizer_kwargs["reconf_opts"].setdefault("subtree_size", 4)
-        hyperoptimizer_kwargs["reconf_opts"].setdefault("maxiter", 100)
+        self.kwargs = hyperoptimizer_kwargs
+        self.kwargs.setdefault("methods", ("rgreedy",))
+        self.kwargs.setdefault("max_repeats", 128)
+        self.kwargs.setdefault("max_time", "rate:1e9")
+        self.kwargs.setdefault("parallel", False)
+        self.kwargs.setdefault("reconf_opts", {})
+        self.kwargs["reconf_opts"].setdefault("subtree_size", 4)
+        self.kwargs["reconf_opts"].setdefault("maxiter", 100)
 
+        self._hyperoptimizers_by_thread = {}
         if cache:
-            self._optimizer_hyper = ReusableHyperOptimizer(
-                minimize=minimize, **hyperoptimizer_kwargs
-            )
+            self._optimizer_hyper_cls = ReusableHyperOptimizer
         else:
-            self._optimizer_hyper = HyperOptimizer(
-                minimize=minimize, **hyperoptimizer_kwargs
+            self._optimizer_hyper_cls = HyperOptimizer
+
+    def _get_optimizer_hyper_threadsafe(self):
+        # since the hyperoptimizer is stateful while running,
+        # we need to instantiate a separate one for each thread
+        tid = threading.get_ident()
+        try:
+            return self._hyperoptimizers_by_thread[tid]
+        except KeyError:
+            opt = self._optimizer_hyper_cls(
+                minimize=self.minimize, **self.kwargs
             )
+            self._hyperoptimizers_by_thread[tid] = opt
+            return opt
 
     def search(self, inputs, output, size_dict, **kwargs):
         if estimate_optimal_hardness(inputs) < self.optimal_cutoff:
@@ -84,7 +97,7 @@ class AutoOptimizer(PathOptimizer):
             )
         else:
             # use hyperoptimizer
-            return self._optimizer_hyper.search(
+            return self._get_optimizer_hyper_threadsafe().search(
                 inputs,
                 output,
                 size_dict,
@@ -104,7 +117,9 @@ class AutoOptimizer(PathOptimizer):
             )
         else:
             # use hyperoptimizer
-            return self._optimizer_hyper(inputs, output, size_dict, **kwargs)
+            return self._get_optimizer_hyper_threadsafe()(
+                inputs, output, size_dict, **kwargs
+            )
 
 
 class AutoHQOptimizer(AutoOptimizer):

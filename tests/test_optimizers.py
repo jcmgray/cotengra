@@ -277,3 +277,22 @@ def test_plotting():
     opt.search(inputs, output, size_dict)
     opt.plot_trials()
     opt.plot_scatter()
+
+
+def test_auto_optimizers_threadsafe():
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool = ThreadPoolExecutor(2)
+
+    contractions = [ctg.utils.tree_equation(100, seed=i) for i in range(10)]
+    fs = [
+        pool.submit(
+            ctg.array_contract_tree,
+            inputs,
+            output,
+            size_dict,
+            optimize="auto-hq",
+        )
+        for inputs, output, _, size_dict in contractions
+    ]
+    [f.result() for f in fs]
