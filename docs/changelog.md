@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.4 (2023-10-17)
+
+**Bug fixes**
+
+- the `auto` and `auto-hq` optimizers are now safe to run under multi-threading.
+
 ## v0.5.3 (2023-10-16)
 
 - [``einsum``](cotengra.einsum), [`einsum_tree`](cotengra.einsum_tree)
