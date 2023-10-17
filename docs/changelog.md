@@ -1,15 +1,11 @@
 # Changelog
 
-## v0.5.4 (2023-10-16)
-
-- remove some hidden `opt_einsum` dependence (via a `PathOptimizer` method)
-
-
 ## v0.5.3 (2023-10-16)
 
 - [``einsum``](cotengra.einsum), [`einsum_tree`](cotengra.einsum_tree)
   and [`einsum_expression`](cotengra.einsum_expression): add support for all
   numpy input formats, including interleaved indices and ellipses.
+- remove some hidden `opt_einsum` dependence (via a `PathOptimizer` method)
 
 
 ## v0.5.2 (2023-10-13)
