@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.4 (2023-10-16)
+
+- remove some hidden `opt_einsum` dependence (via a `PathOptimizer` method)
+
+
 ## v0.5.3 (2023-10-16)
 
 - [``einsum``](cotengra.einsum), [`einsum_tree`](cotengra.einsum_tree)
