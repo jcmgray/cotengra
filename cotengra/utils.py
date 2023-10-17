@@ -1,6 +1,7 @@
 """Various utilities for cotengra.
 """
 import collections
+import functools
 import itertools
 import math
 import operator
@@ -10,6 +11,8 @@ import random
 
 from functools import reduce, lru_cache, partial
 from operator import or_
+
+import autoray as ar
 
 try:
     from cytoolz import groupby, interleave, unique
@@ -748,8 +751,11 @@ def get_symbol_map(inputs):
     for term in inputs:
         for ind in term:
             if ind not in symbol_map:
-                symbol_map[ind] = get_symbol(c)
-                c += 1
+                if ind is ...:
+                    symbol_map[ind] = "..."
+                else:
+                    symbol_map[ind] = get_symbol(c)
+                    c += 1
     return symbol_map
 
 
@@ -1345,3 +1351,151 @@ def canonicalize_inputs(inputs, output=None, shapes=None, size_dict=None):
         new_size_dict = None
 
     return new_inputs, new_output, new_size_dict
+
+
+def convert_from_interleaved(args):
+    """Convert from interleaved format ``array0, input0, array1, input1, ...``
+    to a single equation and list of arrays. The arrays can just be shapes.
+    """
+    nargs = len(args)
+    arrays = []
+    inputs = []
+    for i in range(0, nargs // 2):
+        arrays.append(args[2 * i])
+        inputs.append(args[2 * i + 1])
+    symbol_map = get_symbol_map(inputs)
+    eq = ",".join("".join(symbol_map[ix] for ix in term) for term in inputs)
+    if nargs % 2 == 1:
+        # has output specified
+        eq += f"->{''.join(symbol_map[ix] for ix in args[-1])}"
+    return eq, arrays
+
+
+def check_ellipsis(term):
+    """Check if a einsum term has exactly one ellipsis ('...') or else no
+    dots at all.
+    """
+    num_dots = term.count(".")
+    if num_dots == 0:
+        # no dots, no ellipsis
+        return False
+    elif num_dots == 3:
+        has_ellipsis = "..." in term
+        if has_ellipsis:
+            # has 1 full ellipsis
+            return True
+        else:
+            # has 3 dots but not consecutive
+            raise ValueError(f"Term is invalid: {term!r}")
+    else:
+        # not 0 or 3 dots
+        raise ValueError(f"Term is invalid: {term!r}")
+
+
+@functools.lru_cache(2**14)
+def parse_equation_ellipses(eq, shapes, tuples=False):
+    """ """
+    lhs, *rhs = eq.split("->")
+    inputs = lhs.split(",")
+
+    if len(inputs) != len(shapes):
+        raise ValueError(
+            f"Number of inputs ({len(inputs)}) does not "
+            f"match number of shapes ({len(shapes)})."
+        )
+
+    if "." in lhs:
+        # need to handle ellipsis expansions
+        replacements = {}
+        used = set()
+        for i, term in enumerate(inputs):
+            used.update(term)
+            if check_ellipsis(term):
+                # how many indices needed to be expanded on this term
+                replacements[i] = len(shapes[i]) - (len(term) - 3)
+
+        # how many indices we need to expand all the ellipses
+        req_ellipsis_inds = max(replacements.values())
+        # get symbols for ellipses
+        c = 0
+        ellipses_inds = []
+        while len(ellipses_inds) < req_ellipsis_inds:
+            ix = get_symbol(c)
+            if ix not in used:
+                ellipses_inds.append(ix)
+            c += 1
+
+        # make replacements
+        for i, ne in replacements.items():
+            inputs[i] = inputs[i].replace("...", "".join(ellipses_inds[req_ellipsis_inds - ne:]))
+
+        # check for output
+        out_ellipses_indices = "".join(ellipses_inds)
+        if rhs:
+            output = rhs[0]
+            if check_ellipsis(output):
+                output = output.replace("...", out_ellipses_indices)
+        else:
+            # ellipsis dimension have to be leftmost in output
+            # so we cannot leave to the default sort order
+            output = out_ellipses_indices + find_output_str(lhs)
+
+    else:
+        # no ellipsis, just check for output
+        if rhs:
+            output = rhs[0]
+        else:
+            output = find_output_str(lhs)
+
+    if tuples:
+        return tuple(map(tuple, inputs)), tuple(output)
+
+    return ",".join(inputs), output
+
+
+def parse_einsum_input(args, shapes=False, tuples=False, constants=None):
+    """Reproduce einsum input parsing, which handles both interleaved input,
+    ellipsis expansions, and output calculation. The main processing is cached.
+
+    Parameters
+    ----------
+    args : tuple
+        The arguments to ``einsum``.
+    shapes : bool, optional
+        Whether arrays are being supplied (``False``) or shapes (``True``).
+    tuples : bool, optional
+        Whether to return parsed indices as strings or tuples.
+    """
+    if not isinstance(args[0], str):
+        # convert from interleaved
+        eq, arrays = convert_from_interleaved(args)
+    else:
+        eq, *arrays = args
+
+    # prepare shapes for caching
+    if shapes:
+        if constants is not None:
+            # need to resolve constants arrays to their shape
+            _shapes = tuple(
+                ar.shape(s) if i in constants else s
+                for i, s in enumerate(arrays)
+            )
+        else:
+            _shapes = arrays
+
+        if not isinstance(next((d for s in _shapes for d in s), 1), int):
+            # first check any dimension to see if python int
+            _shapes = tuple(tuple(int(d) for d in s) for s in _shapes)
+        elif not isinstance(_shapes[0], tuple):
+            # then check if individual shapes not supplied as tuples
+            _shapes = tuple(tuple(s) for s in _shapes)
+        else:
+            # otherwise just need to convert list to tuple
+            _shapes = tuple(_shapes)
+    else:
+        _shapes = tuple(map(ar.shape, arrays))
+
+    # handle ellipsis expansions and compute output
+    inputs, output = parse_equation_ellipses(eq, _shapes, tuples=tuples)
+
+    return (inputs, output, arrays)

@@ -1,6 +1,13 @@
 # Changelog
 
-## v0.5.2 (unreleased)
+## v0.5.3 (unreleased)
+
+- [``einsum``](cotengra.einsum), [`einsum_tree`](cotengra.einsum_tree)
+  and [`einsum_expression`](cotengra.einsum_expression): add support for all
+  numpy input formats, including interleaved indices and ellipses.
+
+
+## v0.5.2 (2023-10-13)
 
 - add [``ctg.array_contract_path``](cotengra.array_contract_path) for returning
   the raw contraction path only, with caching. Add caching to

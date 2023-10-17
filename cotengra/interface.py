@@ -7,9 +7,9 @@ import autoray as ar
 from .core import ContractionTree
 from .utils import (
     canonicalize_inputs,
-    eq_to_inputs_output,
     find_output_from_inputs,
     inputs_output_to_eq,
+    parse_einsum_input,
     shapes_inputs_to_size_dict,
 )
 from .oe import (
@@ -771,14 +771,8 @@ def array_contract(
     return expr(*arrays, backend=backend)
 
 
-@functools.lru_cache(None)
-def _cached_eq_to_inputs_output(eq):
-    return eq_to_inputs_output(eq)
-
-
 def einsum_tree(
-    eq,
-    *shapes,
+    *args,
     optimize="auto",
     canonicalize=False,
     sort_contraction_indices=False,
@@ -816,7 +810,7 @@ def einsum_tree(
     einsum, einsum_expression, array_contract_tree
     """
     # construct the individual terms and find explicit output
-    inputs, output = _cached_eq_to_inputs_output(eq)
+    inputs, output, shapes = parse_einsum_input(args, shapes=True, tuples=True)
     return array_contract_tree(
         inputs,
         output,
@@ -828,8 +822,7 @@ def einsum_tree(
 
 
 def einsum_expression(
-    eq,
-    *shapes,
+    *args,
     optimize="auto",
     constants=None,
     cache=True,
@@ -910,7 +903,12 @@ def einsum_expression(
     einsum, einsum_tree, array_contract_expression
     """
     # construct the individual terms and find explicit output
-    inputs, output = _cached_eq_to_inputs_output(eq)
+    inputs, output, shapes = parse_einsum_input(
+        args,
+        shapes=True,
+        tuples=True,
+        constants=constants,
+    )
 
     if constants is not None:
         # shapes includes the constant arrays
@@ -938,8 +936,7 @@ def einsum_expression(
 
 
 def einsum(
-    eq,
-    *arrays,
+    *args,
     optimize="auto",
     cache_expression=True,
     backend=None,
@@ -984,7 +981,11 @@ def einsum(
     --------
     einsum_expression, einsum_tree, array_contract
     """
-    inputs, output = _cached_eq_to_inputs_output(eq)
+    inputs, output, arrays = parse_einsum_input(
+        args,
+        shapes=False,
+        tuples=True,
+    )
     return array_contract(
         arrays,
         inputs,
