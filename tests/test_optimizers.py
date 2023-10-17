@@ -3,8 +3,8 @@ import functools
 from collections import defaultdict
 
 import pytest
-from opt_einsum.contract import Shaped
 import numpy as np
+import autoray as ar
 
 import cotengra as ctg
 
@@ -40,7 +40,7 @@ def rand_reg_contract(n, deg, seed=None):
         "".join(output)
     )
     shapes = [(2,) * deg] * n
-    views = list(map(Shaped, shapes))
+    views = list(map(ar.lazy.Variable, shapes))
 
     return eq, shapes, views, inputs, output
 

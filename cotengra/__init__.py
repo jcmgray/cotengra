@@ -187,7 +187,7 @@ __all__ = (
 )
 
 
-# add some defaults to opt_einsum
+# add some presets
 
 
 def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
@@ -272,5 +272,4 @@ try:
     )
 except KeyError:
     # KeyError: if reloading cotengra e.g. library entries already registered
-    # NotImplementedError: if opt_einsum not installed
     pass
