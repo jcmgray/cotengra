@@ -46,7 +46,7 @@ setup(
             "myst-nb",
             "setuptools_scm",
             "sphinx-autoapi",
-            "astroid!=3.0.0",
+            "astroid<3.0.0",
             "sphinx-copybutton",
             "sphinx-design",
             "sphinx>=2.0",
