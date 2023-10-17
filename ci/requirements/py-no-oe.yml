@@ -1,0 +1,19 @@
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - autoray
+  - coverage
+  - matplotlib
+  - networkx
+  - optuna
+  - pytest
+  - pytest-cov
+  - seaborn
+  - tqdm
+  - pip
+  - pip:
+    - kahypar
+    - nevergrad
+    - ray
+

@@ -24,6 +24,9 @@ jobs:
         - os: windows-latest
           python-version: '3.11'
           env: win
+        - os: ubuntu-latest
+          python-version: '3.11'
+          env: no-oe
 
     steps:
     - uses: actions/checkout@v3

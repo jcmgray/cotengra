@@ -565,8 +565,6 @@ class HyperOptimizer(PathOptimizer):
             yield self._get_and_report_next_future()
 
     def _search(self, inputs, output, size_dict):
-        self._check_args_against_first_call(inputs, output, size_dict)
-
         # start a timer?
         if self.max_time is not None:
             t0 = time.time()

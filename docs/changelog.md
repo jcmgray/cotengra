@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.3 (unreleased)
+## v0.5.3 (2023-10-16)
 
 - [``einsum``](cotengra.einsum), [`einsum_tree`](cotengra.einsum_tree)
   and [`einsum_expression`](cotengra.einsum_expression): add support for all
