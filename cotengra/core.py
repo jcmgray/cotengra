@@ -117,8 +117,7 @@ class SliceInfo:
 
 
 def get_slice_strides(sliced_inds):
-    """Compute the 'strides' given the (ordered) dictionary of sliced indices.
-    """
+    """Compute the 'strides' given the (ordered) dictionary of sliced indices."""
     slice_infos = list(sliced_inds.values())
     nsliced = len(slice_infos)
     strides = [1] * nsliced
@@ -243,10 +242,7 @@ class ContractionTree:
         # ... which we can fill in already for final / top node i.e.
         # the collection of all nodes
         self.root = node_supremum(self.N)
-        self.info[self.root] = {
-            "legs": self.output_legs,
-            "size": compute_size_by_dict(self.output, size_dict),
-        }
+        self.info[self.root] = {"legs": self.output_legs}
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -399,8 +395,7 @@ class ContractionTree:
 
     @classmethod
     def from_info(cls, info, **kwargs):
-        """Create a ``ContractionTree`` from an ``opt_einsum.PathInfo`` object.
-        """
+        """Create a ``ContractionTree`` from an ``opt_einsum.PathInfo`` object."""
         return cls.from_path(
             inputs=info.input_subscripts.split(","),
             output=info.output_subscript,
@@ -479,8 +474,7 @@ class ContractionTree:
         eq : str
         """
         return inputs_output_to_eq(
-            self.get_inputs_sliced(),
-            self.get_output_sliced()
+            self.get_inputs_sliced(), self.get_output_sliced()
         )
 
     def get_shapes_sliced(self):
@@ -580,8 +574,7 @@ class ContractionTree:
 
     @cached_node_property("involved")
     def get_involved(self, node):
-        """Get all the indices involved in the formation of subgraph ``node``.
-        """
+        """Get all the indices involved in the formation of subgraph ``node``."""
         if len(node) == 1:
             return {}
         sub_legs = map(self.get_legs, self.children[node])
@@ -731,8 +724,7 @@ class ContractionTree:
             return 8 * C
 
     def total_write(self):
-        """Sum the total amount of memory that will be created and operated on.
-        """
+        """Sum the total amount of memory that will be created and operated on."""
         if not self._track_write:
             self._write = 0
             for node, _, _ in self.traverse():
@@ -779,7 +771,7 @@ class ContractionTree:
             peak = max(peak, tot_size)
         return peak
 
-    def contract_stats(self):
+    def contract_stats(self, force=False):
         """Simulteneously compute the total flops, write and size of the
         contraction tree. This is more efficient than calling each of the
         individual methods separately. Once computed, each quantity is then
@@ -790,7 +782,9 @@ class ContractionTree:
         stats : dict[str, int]
             The total flops, write and size.
         """
-        if not (self._track_flops and self._track_write and self._track_size):
+        if force or not (
+            self._track_flops and self._track_write and self._track_size
+        ):
             self._flops = self._write = 0
             self._sizes = MaxCounter()
 

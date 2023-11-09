@@ -31,12 +31,15 @@ def trial_greedy(
     costmod=1.0,
 ):
     if random_strength != 0.0:
-        size_dict = jitter_dict(size_dict, random_strength)
+        # don't supply randomized sizes to actual contraction tree
+        greedy_size_dict = jitter_dict(size_dict, random_strength)
+    else:
+        greedy_size_dict = size_dict
 
     ssa_path = ssa_greedy_optimize(
         inputs,
         output,
-        size_dict,
+        greedy_size_dict,
         temperature=temperature,
         costmod=costmod,
     )
