@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.5 (unreleased)
+
+**Enhancements**
+
+- [`HyperOptimizer`](cotengra.HyperOptimizer): by default simply warn if an
+  individual trial fails, rather than raising an exception. This is to ensure
+  rare failures do not spoil an entire optimization run. The behavior can
+  be controlled with the `on_trial_error` argument.
+
+**Bug fixes**
+
+- fixed bug in greedy optimizer that produced negative scores and otherwise
+  inaccurate scores.
+- fixed bug for contraction with many inputs and also preprocessing steps
+
+
 ## v0.5.4 (2023-10-17)
 
 **Bug fixes**

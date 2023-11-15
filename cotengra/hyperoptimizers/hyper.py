@@ -245,12 +245,18 @@ class ComputeScore:
         score_fn,
         score_compression=0.75,
         score_smudge=1e-6,
+        on_trial_error="warn",
         seed=0,
     ):
         self.fn = fn
         self.score_fn = score_fn
         self.score_compression = score_compression
         self.score_smudge = score_smudge
+        self.on_trial_error = {
+            "raise": "raise",
+            "warn": "warn",
+            "ignore": "ignore",
+        }[on_trial_error]
         self.rng = random.Random(seed)
 
     def __call__(self, *args, **kwargs):
@@ -267,6 +273,22 @@ class ComputeScore:
                 "write": float("inf"),
                 "size": float("inf"),
             }
+        except Exception as e:
+            if self.on_trial_error == "raise":
+                raise e
+            elif self.on_trial_error == "warn":
+                warnings.warn(
+                    f"Trial error: {e}. Set `HyperOptimizer` kwarg "
+                    "`on_trial_error='raise'` to raise this error, or "
+                    "`on_trial_error='ignore'` to silence."
+                )
+            trial = {
+                "score": float("inf"),
+                "flops": float("inf"),
+                "write": float("inf"),
+                "size": float("inf"),
+            }
+
         tf = time.time()
         trial["time"] = tf - ti
         return trial
@@ -323,6 +345,11 @@ class HyperOptimizer(PathOptimizer):
         Raise scores to this power in order to compress or accentuate the
         differences. The lower this is, the more the selector will sample from
         various optimizers rather than quickly specializing.
+    on_trial_error : {'warn', 'raise', 'ignore'}, optional
+        What to do if a trial fails. If ``'warn'`` (default), a warning will be
+        printed and the trial will be given a score of ``inf``. If ``'raise'``
+        the error will be raised. If ``'ignore'`` the trial will be given a
+        score of ``inf`` silently.
     max_training_steps : int, optional
         The maximum number of trials to train the optimizer with. Setting this
         can be helpful when the optimizer itself becomes costly to train (e.g.
@@ -349,6 +376,7 @@ class HyperOptimizer(PathOptimizer):
         optlib=None,
         space=None,
         score_compression=0.75,
+        on_trial_error="warn",
         max_training_steps=None,
         progbar=False,
         **optlib_opts,
@@ -379,6 +407,7 @@ class HyperOptimizer(PathOptimizer):
         # which score to feed to the hyper optimizer (setter below handles)
         self.minimize = minimize
         self.score_compression = score_compression
+        self.on_trial_error = on_trial_error
         self.best_score = float("inf")
         self.max_training_steps = max_training_steps
 
@@ -476,6 +505,7 @@ class HyperOptimizer(PathOptimizer):
             trial_fn,
             score_fn=self._minimize_score_fn,
             score_compression=self.score_compression,
+            on_trial_error=self.on_trial_error,
         )
 
         return trial_fn, (inputs, output, size_dict)
@@ -1100,6 +1130,7 @@ class ReusableHyperCompressedOptimizer(ReusableHyperOptimizer):
     opt_kwargs
         Supplied to ``HyperCompressedOptimizer``.
     """
+
     suboptimizer = HyperCompressedOptimizer
     set_surface_order = True
 

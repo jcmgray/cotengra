@@ -229,7 +229,7 @@ class ContractionTree:
                 # modify the input legs as if these were the inputs
                 self.inputs_legs[i] = new_legs
                 # add a preprocessing step to the list of contractions
-                eq = f"{''.join(term)}->{''.join(new_legs)}"
+                eq = inputs_output_to_eq((term,), new_legs, canonicalize=True)
                 preprocessing.append((i, eq))
         self.preprocessing = tuple(preprocessing)
 

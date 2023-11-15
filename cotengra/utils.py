@@ -1123,7 +1123,7 @@ def eq_to_inputs_output(eq):
     return inputs, output
 
 
-def inputs_output_to_eq(inputs, output):
+def inputs_output_to_eq(inputs, output, canonicalize=False):
     """Convert an explicit list of inputs and output to a str einsum equation.
 
     Parameters
@@ -1132,12 +1132,21 @@ def inputs_output_to_eq(inputs, output):
         The input terms.
     output : list[str]
         The output term.
+    canonicalize : bool, optional
+        Whether to canonicalize (map into [a-zA-Z]) equation, by default False.
 
     Returns
     -------
     eq : str
         The einsum equation.
     """
+    if canonicalize:
+        ind_map = collections.defaultdict(
+            map(get_symbol, itertools.count()).__next__
+        )
+        inputs = (map(ind_map.__getitem__, term) for term in inputs)
+        output = tuple(map(ind_map.__getitem__, output))
+
     return f"{','.join(map(''.join, inputs))}->{''.join(output)}"
 
 
