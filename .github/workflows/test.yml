@@ -29,15 +29,16 @@ jobs:
           env: no-oe
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install micromamba
-      uses: mamba-org/provision-with-micromamba@v15
+      uses: mamba-org/setup-micromamba@v1
       with:
         environment-file: ci/requirements/py-${{ matrix.env }}.yml
         environment-name: test-env
-        extra-specs: python=${{ matrix.python-version }}
-        cache-env: true
+        create-args: >-
+          python=${{ matrix.python-version }}
+        cache-environment: true
 
     - name: Test with pytest
       run: pytest --cov=cotengra tests/ --cov-report=xml tests
