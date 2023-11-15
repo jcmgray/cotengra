@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.5 (unreleased)
+## v0.5.5 (2023-11-15)
 
 **Enhancements**
 
