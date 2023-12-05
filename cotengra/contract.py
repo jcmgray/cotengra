@@ -706,32 +706,39 @@ def do_contraction(
 
         contractions = tqdm.tqdm(contractions, total=N - 1)
 
-    for p, l, r, tdot, arg, perm in contractions:
-        if (l is None) and (r is None):
-            # single term simplification, perform inplace with einsum
-            temps[p] = _einsum(arg, temps[p])
-            continue
+    try:
+        for p, l, r, tdot, arg, perm in contractions:
+            if (l is None) and (r is None):
+                # single term simplification, perform inplace with einsum
+                temps[p] = _einsum(arg, temps[p])
+                continue
 
-        # get input arrays for this contraction
-        l_array = temps.pop(l)
-        r_array = temps.pop(r)
+            # get input arrays for this contraction
+            l_array = temps.pop(l)
+            r_array = temps.pop(r)
 
-        if tdot:
-            p_array = _tensordot(l_array, r_array, arg)
-            if perm:
-                p_array = do("transpose", p_array, perm, like=backend)
-        else:
-            p_array = _einsum(arg, l_array, r_array)
+            if tdot:
+                p_array = _tensordot(l_array, r_array, arg)
+                if perm:
+                    p_array = do("transpose", p_array, perm, like=backend)
+            else:
+                p_array = _einsum(arg, l_array, r_array)
 
-        if exponent is not None:
-            factor = do("max", do("abs", p_array, like=backend), like=backend)
-            if check_zero and float(factor) == 0.0:
-                return 0.0, 0.0
-            exponent = exponent + do("log10", factor, like=backend)
-            p_array = p_array / factor
+            if exponent is not None:
+                factor = do("max", do("abs", p_array, like=backend), like=backend)
+                if check_zero and float(factor) == 0.0:
+                    return 0.0, 0.0
+                exponent = exponent + do("log10", factor, like=backend)
+                p_array = p_array / factor
 
-        # insert the new intermediate array
-        temps[p] = p_array
+            # insert the new intermediate array
+            temps[p] = p_array
+    except IndexError as e:
+        raise IndexError(
+            f"Original error: {e}\n",
+            f"Contractions: {contractions}\n",
+            f"Array shapes: {[shape(x) for x in arrays]}\n",
+        )
 
     if exponent is not None:
         return p_array, exponent
