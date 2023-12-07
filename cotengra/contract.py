@@ -739,6 +739,8 @@ class Contractor:
             import tqdm
 
             contractions = tqdm.tqdm(self.contractions, total=N - 1)
+        else:
+            contractions = self.contractions
 
         for p, l, r, tdot, arg, perm in contractions:
             if (l is None) and (r is None):
