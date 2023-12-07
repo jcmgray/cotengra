@@ -387,6 +387,8 @@ def array_contract_tree(
 
     tree = find_tree(inputs, output, size_dict, optimize)
 
+    assert tree.N == nterms
+
     if sort_contraction_indices:
         tree.sort_contraction_indices()
 

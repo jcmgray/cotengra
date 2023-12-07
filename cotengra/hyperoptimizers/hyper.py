@@ -992,7 +992,10 @@ class ReusableHyperOptimizer(PathOptimizer):
                 raise KeyError("Contraction missing from cache.")
             # run and immediately retrieve tree directly
             self._cache[h] = self._compute_path(inputs, output, size_dict)
-            return self._opt.tree
+            tree = self._opt.tree
+            assert tree.is_complete()
+            assert tree.N == len(inputs)
+            return tree
 
         # reconstruct tree
         con = self._cache[h]
