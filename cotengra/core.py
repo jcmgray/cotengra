@@ -1437,13 +1437,13 @@ class ContractionTree:
         node_cost = getattr(scorer, "cost_local_tree_node", lambda _: 2)
 
         # different caches as we might want to reconfigure one before other
-        self.already_optimized.setdefault(minimize, set())
-        already_optimized = self.already_optimized[minimize]
+        tree.already_optimized.setdefault(minimize, set())
+        already_optimized = tree.already_optimized[minimize]
 
         if seed is not None:
             random.seed(seed)
 
-        candidates, weights = self.calc_subtree_candidates(
+        candidates, weights = tree.calc_subtree_candidates(
             pwr=weight_pwr, what=weight_what
         )
 
@@ -2100,6 +2100,7 @@ class ContractionTree:
             self.set_state_from(rtree)
             rtree = self
         rtree.set_surface_order_from_path(ssa_path)
+        rtree.contraction_cores.clear()
         return rtree
 
     compressed_reconfigure_ = functools.partialmethod(
@@ -2158,7 +2159,7 @@ class ContractionTree:
             self.set_state_from(rtree)
             rtree = self
         rtree.set_surface_order_from_path(ssa_path)
-
+        rtree.contraction_cores.clear()
         return rtree
 
     windowed_reconfigure_ = functools.partialmethod(
