@@ -103,9 +103,10 @@ def list_hyper_functions():
     return sorted(_PATH_FNS)
 
 
-def base_trial_fn(*args, **kwargs):
-    method = kwargs.pop("method")
-    tree = _PATH_FNS[method](*args, **kwargs)
+def base_trial_fn(inputs, output, size_dict, method, **kwargs):
+    tree = _PATH_FNS[method](inputs, output, size_dict, **kwargs)
+    assert tree.is_complete()
+    assert tree.N == len(inputs)
     return {"tree": tree}
 
 
@@ -951,6 +952,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         self._opt = self.suboptimizer(**self._opt_kwargs)
         self._opt._search(inputs, output, size_dict)
         return {
+            "N": len(inputs),
             "path": self._opt.path,
             # dont' need to store all slice info, just which indices
             "sliced_inds": tuple(self._opt.tree.sliced_inds),
