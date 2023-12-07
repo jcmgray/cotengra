@@ -51,7 +51,7 @@ class AutoOptimizer(PathOptimizer):
         self._optimize_optimal_fn = get_optimize_optimal()
 
         self.kwargs = hyperoptimizer_kwargs
-        self.kwargs.setdefault("methods", ("rgreedy",))
+        self.kwargs.setdefault("methods", ("random-greedy",))
         self.kwargs.setdefault("max_repeats", 128)
         self.kwargs.setdefault("max_time", "rate:1e9")
         self.kwargs.setdefault("parallel", False)

@@ -557,6 +557,8 @@ def _build_expression(
             sort_contraction_indices=sort_contraction_indices,
         )
 
+        assert tree.is_complete()
+
         if not tree.sliced_inds:
             # can extract pure sliced contraction function, forget tree
             fn = tree.get_contractor(
@@ -686,6 +688,9 @@ def array_contract_expression(
             key = hash_contraction(
                 inputs, output, size_dict, optimize, **kwargs
             )
+
+            assert key[1] == len(inputs)
+
             try:
                 expr = _CONTRACT_EXPR_CACHE[key]
             except KeyError:
@@ -772,6 +777,14 @@ def array_contract(
         cache=cache_expression,
         **kwargs,
     )
+
+    if hasattr(expr, "contractions"):
+        cons = expr.contractions
+        assert len(cons) >= len(inputs) - 1
+        last_con = cons[-1]
+        p, *_ = last_con
+        assert len(p) == len(inputs)
+
     return expr(*arrays, backend=backend)
 
 

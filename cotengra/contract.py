@@ -618,21 +618,11 @@ def extract_contractions(
     return tuple(contractions)
 
 
-def do_contraction(
-    *arrays,
-    contractions,
-    strip_exponent=False,
-    check_zero=False,
-    implementation="auto",
-    backend=None,
-    progbar=False,
-):
-    """Contract ``arrays`` using operations listed in ``contractions``.
+class Contractor:
+    """Default cotengra network contractor.
 
     Parameters
     ----------
-    arrays : sequence of array-like
-        The arrays to contract.
     contractions : tuple[tuple]
         The sequence of contractions to perform. Each contraction should be a
         tuple containing:
@@ -664,49 +654,92 @@ def do_contraction(
         arrays if not given.
     progbar : bool, optional
         Whether to show a progress bar.
-
-    Returns
-    -------
-    output : array
-        The contracted output, it will be scaled if ``strip_exponent==True``.
-    exponent : float
-        The exponent of the output in base 10, returned only if
-        ``strip_exponent==True``.
     """
-    if backend is None:
-        backend = infer_backend_multi(*arrays)
 
-    if implementation == "auto":
-        if backend == "numpy":
-            # by default only replace numpy's einsum/tensordot
-            implementation = "cotengra"
+    __slots__ = (
+        "contractions",
+        "strip_exponent",
+        "check_zero",
+        "implementation",
+        "backend",
+        "progbar",
+    )
+
+    def __init__(
+        self,
+        contractions,
+        strip_exponent=False,
+        check_zero=False,
+        implementation="auto",
+        backend=None,
+        progbar=False,
+    ):
+        self.contractions = contractions
+        self.strip_exponent = strip_exponent
+        self.check_zero = check_zero
+        self.implementation = implementation
+        self.backend = backend
+        self.progbar = progbar
+
+    def __call__(self, *arrays, **kwargs):
+        """Contract ``arrays`` using operations listed in ``contractions``.
+
+        Parameters
+        ----------
+        arrays : sequence of array-like
+            The arrays to contract.
+        kwargs : dict
+            Override the default settings for this contraction only.
+
+        Returns
+        -------
+        output : array
+            The contracted output, it will be scaled if ``strip_exponent==True``.
+        exponent : float
+            The exponent of the output in base 10, returned only if
+            ``strip_exponent==True``.
+        """
+        backend = kwargs.pop("backend", self.backend)
+        progbar = kwargs.pop("progbar", self.progbar)
+        check_zero = kwargs.pop("check_zero", self.check_zero)
+        strip_exponent = kwargs.pop("strip_exponent", self.strip_exponent)
+        implementation = kwargs.pop("implementation", self.implementation)
+        if kwargs:
+            raise TypeError(f"Unknown keyword arguments: {kwargs}.")
+
+        if backend is None:
+            backend = infer_backend_multi(*arrays)
+
+        if implementation == "auto":
+            if backend == "numpy":
+                # by default only replace numpy's einsum/tensordot
+                implementation = "cotengra"
+            else:
+                implementation = "autoray"
+
+        if implementation == "cotengra":
+            _einsum, _tensordot = einsum, tensordot
+        elif implementation == "autoray":
+            _einsum = get_lib_fn(backend, "einsum")
+            _tensordot = get_lib_fn(backend, "tensordot")
         else:
-            implementation = "autoray"
+            # manually supplied
+            _einsum, _tensordot = implementation
 
-    if implementation == "cotengra":
-        _einsum, _tensordot = einsum, tensordot
-    elif implementation == "autoray":
-        _einsum = get_lib_fn(backend, "einsum")
-        _tensordot = get_lib_fn(backend, "tensordot")
-    else:
-        # manually supplied
-        _einsum, _tensordot = implementation
+        # temporary storage for intermediates
+        N = len(arrays)
+        temps = {
+            leaf: array
+            for leaf, array in zip(map(node_from_single, range(N)), arrays)
+        }
 
-    # temporary storage for intermediates
-    N = len(arrays)
-    temps = {
-        leaf: array
-        for leaf, array in zip(map(node_from_single, range(N)), arrays)
-    }
+        exponent = 0.0 if (strip_exponent is not False) else None
 
-    exponent = 0.0 if (strip_exponent is not False) else None
+        if progbar:
+            import tqdm
 
-    if progbar:
-        import tqdm
+            contractions = tqdm.tqdm(self.contractions, total=N - 1)
 
-        contractions = tqdm.tqdm(contractions, total=N - 1)
-
-    try:
         for p, l, r, tdot, arg, perm in contractions:
             if (l is None) and (r is None):
                 # single term simplification, perform inplace with einsum
@@ -733,17 +766,11 @@ def do_contraction(
 
             # insert the new intermediate array
             temps[p] = p_array
-    except IndexError as e:
-        raise IndexError(
-            f"Original error: {e}\n",
-            f"Contractions: {contractions}\n",
-            f"Array shapes: {[shape(x) for x in arrays]}\n",
-        )
 
-    if exponent is not None:
-        return p_array, exponent
+        if exponent is not None:
+            return p_array, exponent
 
-    return p_array
+        return p_array
 
 
 class CuQuantumContractor:
@@ -885,8 +912,7 @@ def make_contractor(
         fn = CuQuantumContractor(tree)
 
     else:
-        fn = functools.partial(
-            do_contraction,
+        fn = Contractor(
             contractions=extract_contractions(tree, order, prefer_einsum),
             strip_exponent=strip_exponent,
             implementation=implementation,
