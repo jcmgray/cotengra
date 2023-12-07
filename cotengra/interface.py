@@ -558,6 +558,7 @@ def _build_expression(
         )
 
         assert tree.is_complete()
+        assert tree.N == len(inputs)
 
         if not tree.sliced_inds:
             # can extract pure sliced contraction function, forget tree
