@@ -575,6 +575,13 @@ def _build_expression(
                 implementation=implementation,
             )
 
+    if hasattr(fn, "contractions"):
+        cons = fn.contractions
+        assert len(cons) >= len(inputs) - 1
+        last_con = cons[-1]
+        p, *_ = last_con
+        assert len(p) == len(inputs)
+
     if via is not None:
         fn = Via(fn, *via)
 
