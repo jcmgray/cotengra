@@ -965,6 +965,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         h, missing = self.hash_query(tree.inputs, tree.output, tree.size_dict)
         if overwrite or missing:
             self._cache[h] = {
+                "N": tree.N,
                 "path": tree.get_path(),
                 # dont' need to store all slice info, just which indices
                 "sliced_inds": tuple(tree.sliced_inds),
@@ -976,7 +977,12 @@ class ReusableHyperOptimizer(PathOptimizer):
             if self.cache_only:
                 raise KeyError("Contraction missing from cache.")
             self._cache[h] = self._compute_path(inputs, output, size_dict)
-        return self._cache[h]["path"]
+
+        con = self._cache[h]
+        if "N" in con:
+            assert len(inputs) == con["N"]
+
+        return con["path"]
 
     def search(self, inputs, output, size_dict):
         h, missing = self.hash_query(inputs, output, size_dict)
@@ -990,6 +996,8 @@ class ReusableHyperOptimizer(PathOptimizer):
 
         # reconstruct tree
         con = self._cache[h]
+        if "N" in con:
+            assert len(inputs) == con["N"]
 
         if self.set_surface_order:
             # need ssa_path to set order

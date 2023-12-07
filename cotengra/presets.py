@@ -66,20 +66,17 @@ class AutoOptimizer(PathOptimizer):
             self._optimizer_hyper_cls = HyperOptimizer
 
     def _get_optimizer_hyper_threadsafe(self):
-        # # since the hyperoptimizer is stateful while running,
-        # # we need to instantiate a separate one for each thread
-        # tid = threading.get_ident()
-        # try:
-        #     return self._hyperoptimizers_by_thread[tid]
-        # except KeyError:
-        #     opt = self._optimizer_hyper_cls(
-        #         minimize=self.minimize, **self.kwargs
-        #     )
-        #     self._hyperoptimizers_by_thread[tid] = opt
-        #     return opt
-        return self._optimizer_hyper_cls(
-            minimize=self.minimize, **self.kwargs
-        )
+        # since the hyperoptimizer is stateful while running,
+        # we need to instantiate a separate one for each thread
+        tid = threading.get_ident()
+        try:
+            return self._hyperoptimizers_by_thread[tid]
+        except KeyError:
+            opt = self._optimizer_hyper_cls(
+                minimize=self.minimize, **self.kwargs
+            )
+            self._hyperoptimizers_by_thread[tid] = opt
+            return opt
 
     def search(self, inputs, output, size_dict, **kwargs):
         if estimate_optimal_hardness(inputs) < self.optimal_cutoff:
