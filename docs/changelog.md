@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.6 (2023-12-07)
+
+**Bug fixes**
+
+- fix a very rare but very infuriating bug related somehow to
+  [ReusableHyperOptimizer](cotengra.ReusableHyperOptimizer) not being
+  thread-safe and returning the wrong tree on github actions
+
+
 ## v0.5.5 (2023-11-15)
 
 **Enhancements**
