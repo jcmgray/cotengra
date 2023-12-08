@@ -62,7 +62,7 @@ register_hyper_function(
 # greedy but don't explore costmod or add index size noise
 # -> better for a small number of runs
 register_hyper_function(
-    name="rgreedy",
+    name="random-greedy",
     ssa_func=trial_greedy,
     space={
         "temperature": {"type": "FLOAT_EXP", "min": 0.001, "max": 0.01},

@@ -84,7 +84,11 @@ def hash_contraction(inputs, output, size_dict, optimize, **kwargs):
     """Compute a hash key for the specified contraction."""
     optimize = hash_prepare_optimize(optimize)
     kwargs = frozenset(kwargs.items())
-    return hash((inputs, output, tuple(size_dict.items()), optimize, kwargs))
+    return (
+        hash((inputs, output, tuple(size_dict.items()), optimize, kwargs)),
+        # add this as a basic way to decrease collisions
+        len(inputs),
+    )
 
 
 def normalize_input(

@@ -1,14 +1,15 @@
 """Base hyper optimization functionality.
 """
-import re
-import time
+import collections
+import functools
+import hashlib
+import importlib
 import pickle
 import random
-import hashlib
+import re
+import threading
+import time
 import warnings
-import functools
-import importlib
-import collections
 from math import log2, log10
 
 from ..oe import PathOptimizer
@@ -103,9 +104,8 @@ def list_hyper_functions():
     return sorted(_PATH_FNS)
 
 
-def base_trial_fn(*args, **kwargs):
-    method = kwargs.pop("method")
-    tree = _PATH_FNS[method](*args, **kwargs)
+def base_trial_fn(inputs, output, size_dict, method, **kwargs):
+    tree = _PATH_FNS[method](inputs, output, size_dict, **kwargs)
     return {"tree": tree}
 
 
@@ -524,11 +524,17 @@ class HyperOptimizer(PathOptimizer):
             self.best_score = score
 
         # only fit optimizers after the training epoch if the score is best
-        if (
+        should_report = (
             (self.max_training_steps is None)
             or (len(self.scores) < self.max_training_steps)
             or new_best
-        ):
+        ) and (
+            # don't report bad trials
+            # XXX: should we map to some high value?
+            trial["score"] < float("inf")
+        )
+
+        if should_report:
             self._optimizer["report_result"](self, setting, trial, score)
 
         self.method_choices.append(setting["method"])
@@ -897,8 +903,8 @@ class ReusableHyperOptimizer(PathOptimizer):
         cache_only=False,
         **opt_kwargs,
     ):
-        self._opt = None
-        self._opt_kwargs = opt_kwargs
+        self._suboptimizers = {}
+        self._suboptimizer_kwargs = opt_kwargs
         if directory is True:
             # automatically generate the directory
             directory = f"ctg_cache/opts{self.auto_hash_path_relevant_opts()}"
@@ -909,7 +915,7 @@ class ReusableHyperOptimizer(PathOptimizer):
 
     @property
     def last_opt(self):
-        return self._opt
+        return self._suboptimizers.get(threading.get_ident(), None)
 
     def get_path_relevant_opts(self):
         """Get a frozenset of the options that are most likely to affect the
@@ -917,7 +923,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         manually specified.
         """
         return tuple(
-            (key, make_hashable(self._opt_kwargs.get(key, default)))
+            (key, make_hashable(self._suboptimizer_kwargs.get(key, default)))
             for key, default in [
                 ("methods", None),
                 ("minimize", "flops"),
@@ -948,12 +954,14 @@ class ReusableHyperOptimizer(PathOptimizer):
         return h, missing
 
     def _compute_path(self, inputs, output, size_dict):
-        self._opt = self.suboptimizer(**self._opt_kwargs)
-        self._opt._search(inputs, output, size_dict)
+        opt = self.suboptimizer(**self._suboptimizer_kwargs)
+        opt._search(inputs, output, size_dict)
+        thrid = threading.get_ident()
+        self._suboptimizers[thrid] = opt
         return {
-            "path": self._opt.path,
+            "path": opt.path,
             # dont' need to store all slice info, just which indices
-            "sliced_inds": tuple(self._opt.tree.sliced_inds),
+            "sliced_inds": tuple(opt.tree.sliced_inds),
         }
 
     def update_from_tree(self, tree, overwrite=True):
@@ -976,6 +984,7 @@ class ReusableHyperOptimizer(PathOptimizer):
             if self.cache_only:
                 raise KeyError("Contraction missing from cache.")
             self._cache[h] = self._compute_path(inputs, output, size_dict)
+
         return self._cache[h]["path"]
 
     def search(self, inputs, output, size_dict):
@@ -986,7 +995,7 @@ class ReusableHyperOptimizer(PathOptimizer):
                 raise KeyError("Contraction missing from cache.")
             # run and immediately retrieve tree directly
             self._cache[h] = self._compute_path(inputs, output, size_dict)
-            return self._opt.tree
+            return self.last_opt.tree
 
         # reconstruct tree
         con = self._cache[h]
