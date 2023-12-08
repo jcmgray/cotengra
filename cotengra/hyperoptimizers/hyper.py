@@ -106,8 +106,6 @@ def list_hyper_functions():
 
 def base_trial_fn(inputs, output, size_dict, method, **kwargs):
     tree = _PATH_FNS[method](inputs, output, size_dict, **kwargs)
-    assert tree.is_complete()
-    assert tree.N == len(inputs)
     return {"tree": tree}
 
 
@@ -660,7 +658,6 @@ class HyperOptimizer(PathOptimizer):
             if trial["score"] < self.best["score"]:
                 self.trials_since_best = 0
                 self.best = trial
-                assert self.best["tree"].N == len(inputs)
                 self.best["params"] = dict(self.param_choices[-1])
                 self.best["params"]["method"] = self.method_choices[-1]
 
@@ -906,8 +903,8 @@ class ReusableHyperOptimizer(PathOptimizer):
         cache_only=False,
         **opt_kwargs,
     ):
-        self._opts = {}
-        self._opt_kwargs = opt_kwargs
+        self._suboptimizers = {}
+        self._suboptimizer_kwargs = opt_kwargs
         if directory is True:
             # automatically generate the directory
             directory = f"ctg_cache/opts{self.auto_hash_path_relevant_opts()}"
@@ -918,7 +915,7 @@ class ReusableHyperOptimizer(PathOptimizer):
 
     @property
     def last_opt(self):
-        return self._opts.get(threading.get_ident(), None)
+        return self._suboptimizers.get(threading.get_ident(), None)
 
     def get_path_relevant_opts(self):
         """Get a frozenset of the options that are most likely to affect the
@@ -926,7 +923,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         manually specified.
         """
         return tuple(
-            (key, make_hashable(self._opt_kwargs.get(key, default)))
+            (key, make_hashable(self._suboptimizer_kwargs.get(key, default)))
             for key, default in [
                 ("methods", None),
                 ("minimize", "flops"),
@@ -957,10 +954,10 @@ class ReusableHyperOptimizer(PathOptimizer):
         return h, missing
 
     def _compute_path(self, inputs, output, size_dict):
-        opt = self.suboptimizer(**self._opt_kwargs)
+        opt = self.suboptimizer(**self._suboptimizer_kwargs)
         opt._search(inputs, output, size_dict)
         thrid = threading.get_ident()
-        self._opts[thrid] = opt
+        self._suboptimizers[thrid] = opt
         return {
             "N": len(inputs),
             "path": opt.path,
@@ -990,11 +987,7 @@ class ReusableHyperOptimizer(PathOptimizer):
                 raise KeyError("Contraction missing from cache.")
             self._cache[h] = self._compute_path(inputs, output, size_dict)
 
-        con = self._cache[h]
-        if "N" in con:
-            assert len(inputs) == con["N"]
-
-        return con["path"]
+        return self._cache[h]["path"]
 
     def search(self, inputs, output, size_dict):
         h, missing = self.hash_query(inputs, output, size_dict)
@@ -1004,15 +997,10 @@ class ReusableHyperOptimizer(PathOptimizer):
                 raise KeyError("Contraction missing from cache.")
             # run and immediately retrieve tree directly
             self._cache[h] = self._compute_path(inputs, output, size_dict)
-            tree = self.last_opt.tree
-            assert tree.is_complete()
-            assert tree.N == len(inputs)
-            return tree
+            return self.last_opt.tree
 
         # reconstruct tree
         con = self._cache[h]
-        if "N" in con:
-            assert len(inputs) == con["N"]
 
         if self.set_surface_order:
             # need ssa_path to set order

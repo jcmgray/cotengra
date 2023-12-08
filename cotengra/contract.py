@@ -615,11 +615,6 @@ def extract_contractions(
         for p, l, r in tree.traverse(order=order)
     )
 
-    assert len(contractions) >= tree.N - 1
-    last_con = contractions[-1]
-    p, *_ = last_con
-    assert len(p) == tree.N
-
     return tuple(contractions)
 
 

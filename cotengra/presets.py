@@ -89,7 +89,7 @@ class AutoOptimizer(PathOptimizer):
                 minimize=self.minimize,
                 **kwargs,
             )
-            tree = ContractionTree.from_path(
+            return ContractionTree.from_path(
                 inputs,
                 output,
                 size_dict,
@@ -97,16 +97,12 @@ class AutoOptimizer(PathOptimizer):
             )
         else:
             # use hyperoptimizer
-            tree = self._get_optimizer_hyper_threadsafe().search(
+            return self._get_optimizer_hyper_threadsafe().search(
                 inputs,
                 output,
                 size_dict,
                 **kwargs,
             )
-
-        assert tree.is_complete()
-        assert tree.N == len(inputs)
-        return tree
 
     def __call__(self, inputs, output, size_dict, **kwargs):
         if estimate_optimal_hardness(inputs) < self.optimal_cutoff:

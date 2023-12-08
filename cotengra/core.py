@@ -2627,13 +2627,6 @@ class ContractionTree:
                 autojit=autojit,
             )
 
-        if hasattr(fn, "contractions"):
-            cons = fn.contractions
-            assert len(cons) >= self.N - 1
-            last_con = cons[-1]
-            p, *_ = last_con
-            assert len(p) == self.N
-
         return fn
 
     def contract_core(
