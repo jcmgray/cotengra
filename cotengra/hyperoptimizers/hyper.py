@@ -959,7 +959,6 @@ class ReusableHyperOptimizer(PathOptimizer):
         thrid = threading.get_ident()
         self._suboptimizers[thrid] = opt
         return {
-            "N": len(inputs),
             "path": opt.path,
             # dont' need to store all slice info, just which indices
             "sliced_inds": tuple(opt.tree.sliced_inds),
@@ -974,7 +973,6 @@ class ReusableHyperOptimizer(PathOptimizer):
         h, missing = self.hash_query(tree.inputs, tree.output, tree.size_dict)
         if overwrite or missing:
             self._cache[h] = {
-                "N": tree.N,
                 "path": tree.get_path(),
                 # dont' need to store all slice info, just which indices
                 "sliced_inds": tuple(tree.sliced_inds),
