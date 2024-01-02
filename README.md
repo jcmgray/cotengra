@@ -14,7 +14,7 @@ Some of the key feautures of `cotengra` include:
 
 * drop-in ``einsum`` replacement
 * an explicit **contraction tree** object that can be flexibly built, modified and visualized
-* a **'hyper optimizer'** that samples trees while tuning the generating meta-paremeters
+* a **'hyper optimizer'** that samples trees while tuning the generating meta-parameters
 * **dynamic slicing** for massive memory savings and parallelism
 * support for **hyper** edge tensor networks and thus arbitrary einsum equations
 * **paths** that can be supplied to [`numpy.einsum`](https://numpy.org/doc/stable/reference/generated/numpy.einsum.html), [`opt_einsum`](https://dgasmith.github.io/opt_einsum/), [`quimb`](https://quimb.readthedocs.io/en/latest/) among others
