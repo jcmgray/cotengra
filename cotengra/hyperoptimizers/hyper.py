@@ -875,7 +875,7 @@ class ReusableHyperOptimizer(PathOptimizer):
         `ReusableHyperOptimizer.get_path_relevant_opts`).
     overwrite : bool, optional
         If ``True``, the optimizer will always run, overwriting old results in
-        the cache. This can be used to update paths with deleting the whole
+        the cache. This can be used to update paths without deleting the whole
         cache.
     set_surface_order : bool, optional
         If ``True``, when reloading a path to turn into a ``ContractionTree``,
@@ -1124,7 +1124,7 @@ class ReusableHyperCompressedOptimizer(ReusableHyperOptimizer):
         `ReusableHyperOptimizer.get_path_relevant_opts`).
     overwrite : bool, optional
         If ``True``, the optimizer will always run, overwriting old results in
-        the cache. This can be used to update paths with deleting the whole
+        the cache. This can be used to update paths without deleting the whole
         cache.
     set_surface_order : bool, optional
         If ``True``, when reloading a path to turn into a ``ContractionTree``,

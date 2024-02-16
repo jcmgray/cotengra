@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.7 (unreleased)
+
+**Enhancements**
+
+- add [`ContractionTree.plot_flat`](cotengra.plot.plot_flat): a new method for
+  plotting the contraction tree as a flat diagram showing all indices on every
+  intermediate (without requiring any graph layouts), which is useful for
+  visualizing and understanding small contractions.
+- [`HyperGraph.plot`](cotengra.plot.plot_hypergraph): support showing hyper
+  outer indices, multi-edges, and automatic unique coloring of nodes and
+  indices (to match `plot_flat`).
+
+
 ## v0.5.6 (2023-12-07)
 
 **Bug fixes**

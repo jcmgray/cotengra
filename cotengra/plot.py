@@ -1,10 +1,10 @@
 """Hypergraph, optimizer, and contraction tree visualization tools.
 """
-import math
+import collections
 import functools
 import importlib
 import itertools
-import collections
+import math
 
 
 def show_and_close(fn):
@@ -122,6 +122,7 @@ def plot_scatter(
     figsize=(5, 5),
 ):
     import matplotlib.pyplot as plt
+
     import cotengra as ctg
 
     factor = None
@@ -286,6 +287,9 @@ def hypergraph_compute_plot_info_G(
     colormap="Spectral_r",
     centrality=False,
     sliced_inds=(),
+    edge_style="-",
+    hyperedge_style="--",
+    sliced_style=":",
 ):
     """Imbue the networkx representation, ``G``, of hypergraph, ``H`` with
     relevant plot information as node and edge attributes.
@@ -293,20 +297,59 @@ def hypergraph_compute_plot_info_G(
     import matplotlib as mpl
     import matplotlib.cm
 
-    for e in G.edges:
-        ix = G.edges[e]["ind"]
-        width = math.log2(H.size_dict.get(ix, 2))
-        color = (
-            (*edge_color[:3], edge_alpha)
-            if ix not in highlight
-            else (1.0, 0.0, 1.0, edge_alpha**0.5)
-        )
-        label = ix if not G.edges[e]["hyperedge"] else ""
+    if edge_color is False:
+        edge_color = (0.5, 0.5, 0.5)
 
-        G.edges[e]["color"] = color
-        G.edges[e]["width"] = width
-        G.edges[e]["label"] = label
-        G.edges[e]["style"] = "dotted" if ix in sliced_inds else "solid"
+    if edge_color is True:
+        from .schematic import hash_to_color
+
+        def _edge_colorer(ix):
+            if ix in highlight:
+                return (1.0, 0.0, 1.0, edge_alpha**0.5)
+            return hash_to_color(ix)
+
+    else:
+        rgb = (*mpl.colors.to_rgb(edge_color), edge_alpha)
+
+        def _edge_colorer(ix):
+            if ix in highlight:
+                return (1.0, 0.0, 1.0, edge_alpha**0.5)
+            return rgb
+
+    for *_, edata in G.edges(data=True):
+        ix = edata["ind"]
+        width = math.log2(H.size_dict.get(ix, 2))
+        color = _edge_colorer(ix)
+
+        if edata["hyperedge"] or edata["output"]:
+            label = ""
+        else:
+            label = f"{ix}"
+
+        if ix in sliced_inds:
+            style = sliced_style
+        elif edata["hyperedge"]:
+            style = hyperedge_style
+        else:
+            style = edge_style
+
+        edata["color"] = color
+        edata["width"] = width
+        edata["label"] = label
+        edata["style"] = style
+
+        if "multi" in edata:
+            multidata = edata["multi"]
+            for ix in multidata["inds"]:
+                multidata.setdefault("widths", []).append(
+                    math.log2(H.size_dict.get(ix, 2))
+                )
+                multidata.setdefault("colors", []).append(_edge_colorer(ix))
+                # multiedges can only be inner non-hyper indices
+                multidata.setdefault("labels", []).append(f"{ix}")
+                multidata.setdefault("styles", []).append(
+                    sliced_style if ix in sliced_inds else edge_style
+                )
 
     if centrality:
         if centrality == "resistance":
@@ -321,21 +364,43 @@ def hypergraph_compute_plot_info_G(
         else:
             cmap = getattr(matplotlib.cm, colormap)
 
-    for nd in G.nodes:
-        if G.nodes[nd]["hyperedge"]:
+    if node_color is False:
+        node_color = (0.5, 0.5, 0.5)
+
+    if node_color is True:
+        from .schematic import auto_colors
+
+        node_colors = auto_colors(H.get_num_nodes())
+
+        def _node_colorer(nd):
+            return node_colors[nd]
+
+    elif node_color == "centrality":
+
+        def _node_colorer(nd):
+            return cmap(Cs[nd])
+
+    else:
+
+        def _node_colorer(nd):
+            return node_color
+
+    for nd, ndata in G.nodes(data=True):
+        hyperedge = ndata["hyperedge"]
+        output = ndata.get("output", False)
+
+        if hyperedge or output:
             color = (0.0, 0.0, 0.0, 0.0)
-            label = str(nd)
-        else:
-            if centrality:
-                c = Cs[nd]
-                G.nodes[nd]["centrality"] = c
-                color = cmap(c)
+            if hyperedge and output:
+                label = ""
             else:
-                color = node_color
+                label = f"{ndata['ind']}"
+        else:
+            color = _node_colorer(nd)
             label = f"{nd}"  # H.inputs[nd]
 
-        G.nodes[nd]["color"] = color
-        G.nodes[nd]["label"] = label
+        ndata["color"] = color
+        ndata["label"] = label
 
 
 def rotate(xy, theta):
@@ -565,8 +630,8 @@ def plot_tree(
     ax=None,
 ):
     """Plot a contraction tree using matplotlib."""
-    import networkx as nx
     import matplotlib as mpl
+    import networkx as nx
     from matplotlib import pyplot as plt
 
     hypergraph_layout_opts = (
@@ -1058,8 +1123,8 @@ def plot_slicings(
     point_opacity=0.8,
 ):
     import matplotlib as mpl
-    from matplotlib import pyplot as plt
     import seaborn as sns
+    from matplotlib import pyplot as plt
 
     df = slicefinder_to_df(slice_finder, relative_flops=relative_flops)
 
@@ -1132,6 +1197,8 @@ def plot_slicings_alt(
 def plot_hypergraph(
     H,
     *,
+    edge_color=True,
+    node_color=True,
     highlight=(),
     centrality="simple",
     colormap="plasma",
@@ -1144,28 +1211,24 @@ def plot_hypergraph(
     use_forceatlas2=False,
     flatten=False,
     node_size=None,
-    node_color=(0.5, 0.5, 0.5, 1.0),
+    node_scale=1.0,
     edge_alpha=1 / 3,
     edge_style="solid",
     hyperedge_style="dashed",
     draw_edge_labels=None,
+    fontcolor=(0.5, 0.5, 0.5),
     edge_labels_font_size=8,
     edge_labels_font_family="monospace",
+    node_labels_font_size=10,
+    node_labels_font_family="monospace",
     info=None,
     ax=None,
     figsize=(5, 5),
 ):
-    import networkx as nx
-    import matplotlib as mpl
-    from matplotlib import pyplot as plt
-    from matplotlib.colors import to_rgb
+    from .schematic import Drawing
 
-    font_color = edge_color = (0.5, 0.5, 0.5, 0.9)
-
-    # set the size of the nodes
-    if node_size is None:
-        node_size = 1000 / len(H) ** 0.7
-    node_outline_size = min(3, node_size**0.5 / 5)
+    if draw_edge_labels is None:
+        draw_edge_labels = len(H) <= 20
 
     G = H.to_networkx()
     hypergraph_compute_plot_info_G(
@@ -1175,8 +1238,10 @@ def plot_hypergraph(
         node_color=node_color,
         edge_color=edge_color,
         edge_alpha=edge_alpha,
+        edge_style=edge_style,
         colormap=colormap,
         centrality=centrality,
+        hyperedge_style=hyperedge_style,
     )
 
     if pos is None:
@@ -1191,80 +1256,100 @@ def plot_hypergraph(
             flatten=flatten,
         )
 
-    created_ax = ax is None
-    if created_ax:
-        fig, ax = plt.subplots(1, 1, figsize=figsize)
-        ax.set_aspect("equal")
-        ax.axis("off")
-    else:
-        fig = None
+    if node_size is None:
+        # compute a base size using the position and number of tensors
+        # first get plot volume (taken from quimb.tensor.drawing.py):
+        node_packing_factor = H.num_nodes**-0.45
+        xs, ys, *zs = zip(*pos.values())
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+        # if there only a few tensors we don't want to limit the node size
+        # because of flatness, also don't allow the plot volume to go to zero
+        xrange = max(((xmax - xmin) / 2, node_packing_factor, 0.1))
+        yrange = max(((ymax - ymin) / 2, node_packing_factor, 0.1))
+        plot_volume = xrange * yrange
+        if zs:
+            zmin, zmax = min(zs[0]), max(zs[0])
+            zrange = max(((zmax - zmin) / 2, node_packing_factor, 0.1))
+            plot_volume *= zrange
+        # in total we account for:
+        #     - user specified scaling
+        #     - number of tensors
+        #     - how flat the plot area is (flatter requires smaller nodes)
+        node_size = 0.2 * node_scale * node_packing_factor * plot_volume**0.5
 
-    nx.draw_networkx_nodes(
-        G,
-        pos=pos,
-        ax=ax,
-        node_size=node_size,
-        node_color=[G.nodes[nd]["color"] for nd in G.nodes],
-        edgecolors=[
-            tuple(
-                (1.0 if i == 3 else 0.8) * c
-                for i, c in enumerate(G.nodes[nd]["color"])
+    if info is not None:
+        info["node_size"] = node_size
+
+    d = Drawing(ax=ax, figsize=figsize)
+
+    edge_label_opts = dict(
+        color=fontcolor,
+        fontsize=edge_labels_font_size,
+        family=edge_labels_font_family,
+    )
+    node_label_opts = dict(
+        color=fontcolor,
+        fontsize=node_labels_font_size,
+        family=node_labels_font_family,
+    )
+
+    for n, ndata in G.nodes(data=True):
+        d.circle(
+            pos[n],
+            radius=node_size,
+            color=ndata["color"],
+        )
+        if draw_edge_labels:
+            d.text(pos[n], text=ndata["label"], **node_label_opts)
+
+    for na, nb, edata in G.edges(data=True):
+        if "multi" not in edata:
+            if draw_edge_labels and edata["label"]:
+                text = dict(text=edata["label"], **edge_label_opts)
+            else:
+                text = None
+
+            d.line(
+                pos[na],
+                pos[nb],
+                color=edata["color"],
+                linewidth=edata["width"],
+                linestyle=edata["style"],
+                text=text,
             )
-            for nd in G.nodes
-        ],
-        linewidths=node_outline_size,
-    )
-    nx.draw_networkx_edges(
-        G,
-        pos=pos,
-        ax=ax,
-        width=[G.edges[e]["width"] for e in G.edges],
-        edge_color=[G.edges[e]["color"] for e in G.edges],
-        style=[
-            hyperedge_style if G.edges[e]["hyperedge"] else edge_style
-            for e in G.edges
-        ],
-    )
+        else:
+            import numpy as np
 
-    if draw_edge_labels is None:
-        draw_edge_labels = len(H) <= 20
+            multidata = edata["multi"]
+            colors = (edata["color"], *multidata["colors"])
+            widths = (edata["width"], *multidata["widths"])
+            styles = (edata["style"], *multidata["styles"])
+            labels = (edata["label"], *multidata["labels"])
 
-    if draw_edge_labels:
-        nx.draw_networkx_labels(
-            G,
-            pos=pos,
-            ax=ax,
-            labels=dict(
-                zip(G.nodes, (G.nodes[nd]["label"] for nd in G.nodes))
-            ),
-            font_size=edge_labels_font_size,
-            font_color=font_color,
-            font_family=edge_labels_font_family,
-            bbox={
-                "color": to_rgb(mpl.rcParams["figure.facecolor"]),
-                "alpha": 0.0,
-            },
-        )
-        nx.draw_networkx_edge_labels(
-            G,
-            pos=pos,
-            ax=ax,
-            edge_labels=dict(
-                zip(G.edges, (G.edges[e]["label"] for e in G.edges))
-            ),
-            font_size=edge_labels_font_size,
-            font_color=font_color,
-            font_family=edge_labels_font_family,
-            bbox={
-                "color": to_rgb(mpl.rcParams["figure.facecolor"]),
-                "alpha": 0.0,
-            },
-        )
+            ne = len(colors)
+            offsets = np.linspace(-0.05 * ne, 0.05 * ne, ne)
+
+            for i in range(ne):
+                if draw_edge_labels and labels[i]:
+                    text = dict(text=labels[i], **edge_label_opts)
+                else:
+                    text = None
+
+                d.line_offset(
+                    pos[na],
+                    pos[nb],
+                    offset=offsets[i],
+                    color=colors[i],
+                    linewidth=widths[i],
+                    linestyle=styles[i],
+                    text=text,
+                )
 
     if info is not None and "pos" in info:
         info["pos"] = pos
 
-    return fig, ax
+    return d.fig, d.ax
 
 
 @show_and_close
@@ -1279,6 +1364,7 @@ def plot_tree_rubberband(
     layout="auto",
     node_size=None,
     node_color=(0.5, 0.5, 0.5, 1.0),
+    edge_color=(0.5, 0.5, 0.5),
     edge_alpha=1 / 3,
     edge_style="solid",
     hyperedge_style="dashed",
@@ -1290,11 +1376,12 @@ def plot_tree_rubberband(
     figsize=(5, 5),
 ):
     """Plot a ``ContractionTree`` using 'rubberbands' to represent intermediate
-    contractions / subgraphs - requires ``quimb``. This can be intuitive
-    for small and planar contractions.
+    contractions / subgraphs. This can be intuitive for small and / or  planar
+    contractions.
     """
-    from quimb.experimental.schematic import Drawing
     import matplotlib as mpl
+
+    from .schematic import Drawing
 
     H = tree.get_hypergraph()
     info = {"pos": None}
@@ -1305,6 +1392,7 @@ def plot_tree_rubberband(
         layout=layout,
         node_size=node_size,
         node_color=node_color,
+        edge_color=edge_color,
         edge_alpha=edge_alpha,
         edge_style=edge_style,
         hyperedge_style=hyperedge_style,
@@ -1317,6 +1405,7 @@ def plot_tree_rubberband(
         show_and_close=False,
     )
     pos = info["pos"]
+    r0 = info["node_size"]
 
     if isinstance(colormap, str):
         cmap = mpl.cm.get_cmap(colormap)
@@ -1330,7 +1419,7 @@ def plot_tree_rubberband(
         pts = [pos[node] for node in p]
         for node in p:
             counts[node] += 1
-        radius = [0.05 + 0.01 * counts[node] for node in p]
+        radius = [r0 + 0.01 * counts[node] for node in p]
         prog = i / (tree.N - 2)
         color = cmap(prog)
         d.patch_around(
@@ -1344,3 +1433,193 @@ def plot_tree_rubberband(
         )
 
     return fig, ax
+
+
+@show_and_close
+def plot_tree_flat(
+    tree,
+    edge_color=True,
+    leaf_color=True,
+    node_color=(0.5, 0.5, 0.5, 0.5),
+    hyperedge_style="dashed",
+    multiedge_spread=0.05,
+    multiedge_smoothing=0.5,
+    multiedge_midlength=0.5,
+    fontcolor=(0.5, 0.5, 0.5),
+    edge_labels_font_size=6,
+    edge_labels_font_family="monospace",
+    node_labels_font_size=8,
+    node_labels_font_family="monospace",
+    figsize=None,
+):
+    """Plot a ``ContractionTree`` as a flat, 2D diagram, including all indices
+    at every intermediate contraction. This can be useful for small
+    contractions, and does not require any graph layout algorithm.
+
+    Parameters
+    ----------
+    tree : ContractionTree
+        The contraction tree to plot.
+    edge_color : bool or color, optional
+        Whether to color the edges, or a specific color to use. If ``True``
+        (default), each edge will be colored according to a hash of its index.
+    leaf_color : bool or color, optional
+        Whether to color the input nodes, or a specific color to use. If
+        ``True`` (default), each leaf node will be colored with an
+        automatically generated sequence according to its linear position in
+        the input.
+    node_color : bool or color, optional
+        Whether to color the intermediate nodes, or a specific color to use. If
+        ``True`` (default), each intermediate node will be colored with the
+        average color of its children.
+    hyperedge_style : str, optional
+        The linestyle to use for hyperedges, i.e. indices that don't appeary
+        exactly twice on either inputs or the output.
+    multiedge_spread : float, optional
+        The spread of multi-edges between nodes.
+    multiedge_smoothing : float, optional
+        The smoothing of multi-edges between nodes.
+    multiedge_midlength : float, optional
+        The midlength of multi-edges between nodes.
+    fontcolor : color, optional
+        The color to use for edge and node labels.
+    edge_labels_font_size : int, optional
+        The font size to use for edge labels.
+    edge_labels_font_family : str, optional
+        The font family to use for edge labels.
+    node_labels_font_size : int, optional
+        The font size to use for node labels.
+    node_labels_font_family : str, optional
+        The font family to use for node labels.
+    figsize : tuple, optional
+        The size of the figure to create, if not specified will be based on the
+        number of nodes in the tree.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure containing the plot.
+    ax : matplotlib.axes.Axes
+        The axes containing the plot.
+    """
+    import math
+
+    import numpy as np
+
+    from .schematic import Drawing, auto_colors, average_color, hash_to_color
+
+    if figsize is None:
+        figsize = (2 * tree.N**0.5, 2 * tree.N**0.5)
+
+    edge_label_opts = dict(
+        color=fontcolor,
+        fontsize=edge_labels_font_size,
+        family=edge_labels_font_family,
+    )
+    node_label_opts = dict(
+        color=fontcolor,
+        fontsize=node_labels_font_size,
+        family=node_labels_font_family,
+    )
+
+    d = Drawing(figsize=figsize)
+
+    # order the leaves are contracted in
+    leaf_order = {leaf: i for i, leaf in enumerate(tree.get_leaves_ordered())}
+
+    if edge_color is True:
+        edge_colors = {ix: hash_to_color(ix) for ix in tree.size_dict}
+    else:
+        edge_colors = {ix: edge_color for ix in tree.size_dict}
+
+    if leaf_color is True:
+        node_colors = {
+            leaf: c for leaf, c in zip(tree.gen_leaves(), auto_colors(tree.N))
+        }
+    else:
+        node_colors = {leaf: leaf_color for leaf in tree.gen_leaves()}
+
+    hyperedges = {ix for ix, cnt in tree.appearances.items() if cnt != 2}
+
+    # position of each node
+    pos = {}
+    for i, (p, l, r) in enumerate(tree.traverse(), 1):
+        if len(l) == 1:
+            # left is a leaf
+            xyl = (leaf_order[l], i - 1)
+            (tid,) = l
+            d.circle(xyl, color=node_colors[l])
+            d.text(xyl, str(tid), **node_label_opts)
+        else:
+            xyl = pos[l]
+
+        if len(r) == 1:
+            # right is a leaf
+            xyr = (leaf_order[r], i - 1)
+            (tid,) = r
+            d.circle(xyr, color=node_colors[r])
+            d.text(xyr, str(tid), **node_label_opts)
+        else:
+            xyr = pos[r]
+
+        # position of parent is average of children
+        xyp = ((xyl[0] + xyr[0]) / 2, i)
+        pos[p] = xyp
+
+        if node_color is True:
+            # average color of children
+            node_colors[p] = average_color((node_colors[l], node_colors[r]))
+        else:
+            node_colors[p] = node_color
+
+        for xyc, edges in [
+            (xyl, sorted(tree.get_legs(l), reverse=True)),
+            (xyr, sorted(tree.get_legs(r))),
+        ]:
+            ne = len(edges)
+
+            if ne == 1:
+                offsets = [0.0]
+                text_centers = [0.5]
+            else:
+                offsets = np.linspace(
+                    -multiedge_spread * ne, multiedge_spread * ne, ne
+                )
+                text_centers = np.linspace(3 / 4, 1 / 4, ne)
+
+            for ix, offset, text_center in zip(edges, offsets, text_centers):
+                d.line_offset(
+                    xyc,
+                    xyp,
+                    offset,
+                    relative=False,
+                    color=edge_colors[ix],
+                    linewidth=math.log2(tree.size_dict.get(ix, 2)),
+                    linestyle=hyperedge_style if ix in hyperedges else "-",
+                    smoothing=multiedge_smoothing,
+                    midlength=multiedge_midlength,
+                    text=dict(text=ix, center=text_center, **edge_label_opts),
+                )
+
+        # draw intermediate node
+        d.circle(xyp, color=node_colors[p])
+
+    ne = len(tree.output_legs)
+    if ne:
+        xyp = pos[tree.root]
+        offsets = np.linspace(
+            -multiedge_spread * ne, multiedge_spread * ne, ne
+        )
+        for ix, offset in zip(tree.output_legs, offsets):
+            xym = (xyp[0] + offset, tree.N - 0.5)
+            xyo = (xyp[0] + offset, tree.N)
+            d.curve(
+                [xyp, xym, xyo],
+                color=edge_colors[ix],
+                zorder=0,
+                linewidth=math.log2(tree.size_dict.get(ix, 2)),
+                linestyle=hyperedge_style if ix in hyperedges else "-",
+            )
+            d.text(xyo, f"{ix}\n", **edge_label_opts)
+
+    return d.fig, d.ax

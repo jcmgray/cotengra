@@ -93,4 +93,4 @@ The parallel functionality can requires any of the following:
 The following packages enable visualization:
 
 * [`networkx`](https://networkx.org/) for most visualizations
-* [`quimb`](https://github.com/jcmgray/quimb) for the 'rubberband' visualization
+* [`pygraphviz`](https://pygraphviz.github.io/) for fast and nice graph layouts

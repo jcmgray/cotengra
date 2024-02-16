@@ -662,15 +662,46 @@ class HyperGraph:
             if as_tree_leaves:
                 nodes = [frozenset([node]) for node in nodes]
 
-            if len(nodes) == 2:
+            output = ix in H.output
+
+            if len(nodes) == 2 and (not output):
                 # regular edge
-                G.add_edge(*nodes, ind=ix, hyperedge=False)
+                if not G.has_edge(*nodes):
+                    G.add_edge(*nodes, ind=ix, hyperedge=False, output=False)
+                else:
+                    multi = G.edges[nodes].setdefault("multi", {})
+                    multi.setdefault("inds", []).append(ix)
             else:
                 # hyperedge
                 G.graph["any_hyper"] = True
-                G.add_node(ix, hyperedge=True)
+                output = ix in H.output
+
+                if output:
+                    hyperedge = len(nodes) != 1
+                else:
+                    hyperedge = True
+
+                G.add_node(ix, ind=ix, hyperedge=hyperedge, output=output)
                 for nd in nodes:
-                    G.add_edge(ix, nd, ind=ix, hyperedge=True)
+                    G.add_edge(
+                        ix, nd, ind=ix, hyperedge=hyperedge, output=output
+                    )
+
+                if hyperedge and output:
+                    # attach extra dummy output node to hyperedge center
+                    G.add_node(
+                        f"__output__{ix}",
+                        ind=ix,
+                        hyperedge=False,
+                        output=output,
+                    )
+                    G.add_edge(
+                        ix,
+                        f"__output__{ix}",
+                        ind=ix,
+                        hyperedge=hyperedge,
+                        output=output,
+                    )
 
         for nd in G.nodes:
             G.nodes[nd].setdefault("hyperedge", False)

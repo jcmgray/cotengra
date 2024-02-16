@@ -1,34 +1,19 @@
 """Core contraction tree data structure and methods.
 """
+import collections
+import functools
+import itertools
 import math
+import operator
 import random
 import warnings
-import operator
-import itertools
-import functools
-import collections
-
 from dataclasses import dataclass
 from typing import Optional
 
 from autoray import do
 
-from .utils import (
-    compute_size_by_dict,
-    deprecated,
-    get_symbol,
-    groupby,
-    inputs_output_to_eq,
-    interleave,
-    is_valid_node,
-    MaxCounter,
-    node_from_seq,
-    node_from_single,
-    node_get_single_el,
-    node_supremum,
-    prod,
-    unique,
-)
+from .contract import make_contractor
+from .hypergraph import get_hypergraph
 from .parallel import (
     can_scatter,
     maybe_leave_pool,
@@ -37,21 +22,36 @@ from .parallel import (
     scatter,
     submit,
 )
-from .hypergraph import get_hypergraph
-from .scoring import (
-    DEFAULT_COMBO_FACTOR,
-    get_score_fn,
-    CompressedStatsTracker,
-)
-from .contract import make_contractor
 from .plot import (
-    plot_contractions_alt,
     plot_contractions,
+    plot_contractions_alt,
     plot_hypergraph,
+    plot_tree_flat,
     plot_tree_ring,
     plot_tree_rubberband,
     plot_tree_span,
     plot_tree_tent,
+)
+from .scoring import (
+    DEFAULT_COMBO_FACTOR,
+    CompressedStatsTracker,
+    get_score_fn,
+)
+from .utils import (
+    MaxCounter,
+    compute_size_by_dict,
+    deprecated,
+    get_symbol,
+    groupby,
+    inputs_output_to_eq,
+    interleave,
+    is_valid_node,
+    node_from_seq,
+    node_from_single,
+    node_get_single_el,
+    node_supremum,
+    prod,
+    unique,
 )
 
 
@@ -3006,6 +3006,7 @@ class ContractionTree:
     plot_ring = plot_tree_ring
     plot_tent = plot_tree_tent
     plot_span = plot_tree_span
+    plot_flat = plot_tree_flat
     plot_rubberband = plot_tree_rubberband
     plot_contractions = plot_contractions
     plot_contractions_alt = plot_contractions_alt
