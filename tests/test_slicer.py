@@ -19,11 +19,6 @@ def test_slicer():
     assert ccost.total_flops > info.opt_cost // 2
     assert len(inds) > 1
 
-    # expected = oe.contract(eq, *arrays, optimize=path)
-    # sc = sf.SlicedContractor(arrays)
-    # assert sc.total_flops == ccost.total_flops
-    # assert sc.contract_all() == pytest.approx(expected)
-
 
 def test_plot():
     pytest.importorskip("matplotlib")

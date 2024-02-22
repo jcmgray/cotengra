@@ -182,7 +182,7 @@ def test_remove_ind():
 
     tree_sliced = tree.remove_ind(ix, project=None)
     sliced_stats = tree_sliced.contract_stats()
-    assert sliced_stats['flops'] > orig_stats['flops']
+    assert sliced_stats["flops"] > orig_stats["flops"]
     # make sure we haven't mutated original tree
     assert tree.info == orig_info
     assert tree_sliced.info != orig_info
@@ -190,7 +190,7 @@ def test_remove_ind():
 
     tree_rem0 = tree.remove_ind(ix, project=0)
     rem_stats = tree_rem0.contract_stats()
-    assert rem_stats['flops'] < orig_stats['flops']
+    assert rem_stats["flops"] < orig_stats["flops"]
     # make sure we haven't mutated original tree
     assert tree.info == orig_info
     assert tree_rem0.info != orig_info
@@ -198,10 +198,9 @@ def test_remove_ind():
     assert y0 != pytest.approx(x)
 
     for j in range(1, tree.size_dict[ix]):
-
         tree_remj = tree.remove_ind(ix, project=j)
         rem_stats = tree_remj.contract_stats()
-        assert rem_stats['flops'] < orig_stats['flops']
+        assert rem_stats["flops"] < orig_stats["flops"]
         # make sure we haven't mutated original tree
         assert tree.info == orig_info
         assert tree_remj.info != orig_info
@@ -210,6 +209,21 @@ def test_remove_ind():
         y0 += yj
 
     assert y0 == pytest.approx(x)
+
+
+@pytest.mark.parametrize("ind", ["a", "b", "d", "g"])
+def test_restore_ind(ind):
+    from numpy.testing import assert_allclose
+
+    tree = ctg.utils.rand_tree(10, 3, 2, 1, 1, seed=42)
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    stree = tree.remove_ind(ind)
+    assert stree.contract_stats() != tree.contract_stats()
+    utree = stree.restore_ind(ind)
+    assert not utree.sliced_inds
+    assert utree.multiplicity == 1
+    assert_allclose(tree.contract(arrays), utree.contract(arrays))
+    assert utree.contract_stats() == tree.contract_stats()
 
 
 def test_tree_with_one_node():

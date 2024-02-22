@@ -560,7 +560,13 @@ class ContractionTree:
         in ``node``.
         """
         if len(node) == 1:
+            # leaf legs are inputs
             return self.inputs_legs[node_get_single_el(node)]
+
+        if len(node) == self.N:
+            # root legs are output
+            return self.output_legs
+
         try:
             involved = self.get_involved(node)
         except KeyError:
@@ -958,9 +964,40 @@ class ContractionTree:
         """
         return math.log2(self.max_size_compressed(chi, order, compress_late))
 
-    def contract_nodes_pair(self, x, y, check=False):
+    def contract_nodes_pair(
+        self,
+        x,
+        y,
+        legs=None,
+        cost=None,
+        size=None,
+        check=False,
+    ):
         """Contract node ``x`` with node ``y`` in the tree to create a new
-        parent node.
+        parent node, which is returned.
+
+        Parameters
+        ----------
+        x : frozenset[int]
+            The first node to contract.
+        y : frozenset[int]
+            The second node to contract.
+        legs : dict[str, int], optional
+            The effective 'legs' of the new node if already known. If not
+            given, this is computed from the inputs of ``x`` and ``y``.
+        cost : int, optional
+            The cost of the contraction if already known. If not given, this is
+            computed from the inputs of ``x`` and ``y``.
+        size : int, optional
+            The size of the new node if already known. If not given, this is
+            computed from the inputs of ``x`` and ``y``.
+        check : bool, optional
+            Whether to check the inputs are valid.
+
+        Returns
+        -------
+        parent : frozenset[int]
+            The new parent node of ``x`` and ``y``.
         """
         parent = x.union(y)
 
@@ -986,6 +1023,14 @@ class ContractionTree:
                 self.childless.add(x)
             if y not in self.children and ny > 1:
                 self.childless.add(y)
+
+        # pre-computed information
+        if legs is not None:
+            self.info[parent]["legs"] = legs
+        if cost is not None:
+            self.info[parent]["flops"] = cost
+        if size is not None:
+            self.info[parent]["size"] = size
 
         if self._track_flops:
             self._flops += self.get_flops(parent)
@@ -1337,6 +1382,63 @@ class ContractionTree:
         return tree
 
     remove_ind_ = functools.partialmethod(remove_ind, inplace=True)
+
+    def restore_ind(self, ind, inplace=False):
+        """Restore (unslice or un-project) index ``ind`` to this contraction
+        tree, taking care to update all relevant information about each node.
+
+        Parameters
+        ----------
+        ind : str
+            The index to restore.
+        inplace : bool, optional
+            Whether to perform the restoration inplace or not.
+
+        Returns
+        -------
+        ContractionTree
+        """
+        tree = self if inplace else self.copy()
+
+        # pop sliced index info
+        si = tree.sliced_inds.pop(ind)
+
+        # make sure all flops and size information has been populated
+        tree.contract_stats()
+        tree.multiplicity //= si.size
+
+        # handle inputs
+        for i in range(tree.N):
+            # this is the original term with all indices
+            term = tree.inputs[i]
+            if ind in term:
+                node = node_from_single(i)
+                tree.info[node] = {}
+                # have to be careful about ordering of dict
+                tree.inputs_legs[i] = {
+                    ix: 1 for ix in term if ix not in tree.sliced_inds
+                }
+
+        # handle output
+        if not si.inner:
+            # have to be careful about ordering of dict
+            tree.output_legs = {
+                ix: None for ix in tree.output if ix not in tree.sliced_inds
+            }
+
+        # delete and re-add dependent intermediates
+        for p, l, r in tree.traverse():
+            if ind in tree.get_legs(l) or ind in tree.get_legs(r) :
+                tree._remove_node(p)
+                tree.contract_nodes_pair(l, r)
+
+        # reset caches
+        tree.already_optimized.clear()
+        tree.contraction_cores.clear()
+
+        return tree
+
+    restore_ind_ = functools.partialmethod(restore_ind, inplace=True)
 
     def calc_subtree_candidates(self, pwr=2, what="flops"):
         candidates = list(self.children)

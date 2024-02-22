@@ -11,6 +11,8 @@
 - [`HyperGraph.plot`](cotengra.plot.plot_hypergraph): support showing hyper
   outer indices, multi-edges, and automatic unique coloring of nodes and
   indices (to match `plot_flat`).
+- add [`ContractionTree.restore_ind`](cotengra.ContractionTree.restore_ind)
+  for 'unslicing' or 'unprojecting' previously removed indices.
 
 
 ## v0.5.6 (2023-12-07)
