@@ -19,8 +19,8 @@ def test_contraction_tree_equivalency():
 
 
 @pytest.mark.parametrize("ssa", [False, True])
-@pytest.mark.parametrize("complete", [False, True, "auto"])
-def test_contraction_tree_from_path_incomplete(ssa, complete):
+@pytest.mark.parametrize("autocomplete", [False, True, "auto"])
+def test_contraction_tree_from_path_incomplete(ssa, autocomplete):
     inputs = ["a", "ab", "bc", "c"]
     output = ""
     size_dict = {"a": 4, "b": 2, "c": 5}
@@ -30,15 +30,19 @@ def test_contraction_tree_from_path_incomplete(ssa, complete):
             (2, 3),
         ]
         tree = ctg.ContractionTree.from_path(
-            inputs, output, size_dict, ssa_path=ssa_path, complete=complete
+            inputs,
+            output,
+            size_dict,
+            ssa_path=ssa_path,
+            autocomplete=autocomplete,
         )
     else:
         path = [(0, 1), (0, 1)]
         tree = ctg.ContractionTree.from_path(
-            inputs, output, size_dict, path=path, complete=complete
+            inputs, output, size_dict, path=path, autocomplete=autocomplete
         )
 
-    if not complete:
+    if not autocomplete:
         assert not tree.is_complete()
         assert tree.get_incomplete_nodes() == {
             frozenset([0, 1, 2, 3]): [

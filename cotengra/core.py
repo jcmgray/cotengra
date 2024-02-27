@@ -429,7 +429,7 @@ class ContractionTree:
         *,
         path=None,
         ssa_path=None,
-        complete="auto",
+        autocomplete="auto",
         check=False,
         **kwargs,
     ):
@@ -454,7 +454,7 @@ class ContractionTree:
             The indices are single use, as if the result of each contraction is
             appended to the end of the list of temporary tensors without
             popping. This or ``path`` must be supplied.
-        complete : "auto" or bool, optional
+        autocomplete : "auto" or bool, optional
             Whether to automatically complete the path, i.e. contract all
             remaining nodes. If "auto" then a warning is issued if the path is
             not complete.
@@ -492,9 +492,9 @@ class ContractionTree:
                 merge = [nodes.pop(i) for i in sorted(p, reverse=True)]
                 nodes.append(tree.contract_nodes(merge, check=check))
 
-        if len(nodes) > 1 and complete:
+        if len(nodes) > 1 and autocomplete:
 
-            if complete == "auto":
+            if autocomplete == "auto":
                 # warn that we are completing
                 warnings.warn(
                     "Path was not complete - contracting all remaining. "
