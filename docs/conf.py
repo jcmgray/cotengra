@@ -13,7 +13,7 @@ sys.path.append(os.path.abspath("./_pygments"))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "cotengra"
-copyright = "2020-2023, Johnnie Gray"
+copyright = "2020-2024, Johnnie Gray"
 author = "Johnnie Gray"
 
 try:
@@ -140,3 +140,9 @@ def linkcode_resolve(domain, info):
             f"https://github.com/jcmgray/cotengra/blob/"
             f"v{cotengra.__version__}/cotengra/{fn}{linespec}"
         )
+
+
+extlinks = {
+    'issue': ('https://github.com/jcmgray/cotengra/issues/%s', 'GH %s'),
+    'pull': ('https://github.com/jcmgray/cotengra/pull/%s', 'PR %s'),
+}

@@ -135,7 +135,7 @@ def trial_igraph_dendrogram(
 
     ssa_path = dendrogram.merges
     return ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
+        inputs, output, size_dict, ssa_path=ssa_path, complete=True
     )
 
 

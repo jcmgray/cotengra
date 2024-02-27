@@ -3,10 +3,6 @@ import cotengra as ctg
 
 
 def test_contraction_tree_equivalency():
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
     eq = "a,ab,bc,c->"
     shapes = [(4,), (4, 2), (2, 5), (5,)]
     # optimal contraction is like:
@@ -14,19 +10,72 @@ def test_contraction_tree_equivalency():
     #   / \
     #  o   o
     # / \ / \
-    _, info1 = oe.contract_path(
-        eq, *shapes, shapes=True, optimize=[(0, 1), (0, 1), (0, 1)]
-    )
-    _, info2 = oe.contract_path(
-        eq, *shapes, shapes=True, optimize=[(2, 3), (0, 1), (0, 1)]
-    )
-    assert info1.contraction_list != info2.contraction_list
-    ct1 = ctg.ContractionTree.from_info(info1, check=True)
-    ct2 = ctg.ContractionTree.from_info(info2, check=True)
+    ct1 = ctg.einsum_tree(eq, *shapes, optimize=[(0, 1), (0, 1), (0, 1)])
+    ct2 = ctg.einsum_tree(eq, *shapes, optimize=[(2, 3), (0, 1), (0, 1)])
     assert ct1.total_flops() == ct2.total_flops() == 20
     assert ct1.children == ct2.children
     assert ct1.is_complete()
     assert ct2.is_complete()
+
+
+@pytest.mark.parametrize("ssa", [False, True])
+@pytest.mark.parametrize("complete", [False, True, "auto"])
+def test_contraction_tree_from_path_incomplete(ssa, complete):
+    inputs = ["a", "ab", "bc", "c"]
+    output = ""
+    size_dict = {"a": 4, "b": 2, "c": 5}
+    if ssa:
+        ssa_path = [
+            (0, 1),
+            (2, 3),
+        ]
+        tree = ctg.ContractionTree.from_path(
+            inputs, output, size_dict, ssa_path=ssa_path, complete=complete
+        )
+    else:
+        path = [(0, 1), (0, 1)]
+        tree = ctg.ContractionTree.from_path(
+            inputs, output, size_dict, path=path, complete=complete
+        )
+
+    if not complete:
+        assert not tree.is_complete()
+        assert tree.get_incomplete_nodes() == {
+            frozenset([0, 1, 2, 3]): [
+                frozenset([0, 1]),
+                frozenset([2, 3]),
+            ],
+        }
+    else:
+        assert tree.is_complete()
+        assert tree.get_incomplete_nodes() == {}
+
+
+def test_tree_incomplete():
+    inputs, output, shapes, size_dict = ctg.utils.rand_equation(
+        n=10,
+        reg=3,
+        n_out=1,
+        n_hyper_in=1,
+        n_hyper_out=1,
+        seed=42,
+    )
+    tree = ctg.ContractionTree(inputs, output, size_dict)
+    assert len(tree.info) == 11
+    tree.contract_nodes(
+        [
+            frozenset([3, 6, 8]),
+            frozenset([4, 7]),
+        ]
+    )
+    assert len(tree.info) == 14
+    assert not tree.is_complete()
+    groups = tree.get_incomplete_nodes()
+    assert len(groups) == 3
+    tree.autocomplete()
+    assert tree.is_complete()
+    assert tree.get_incomplete_nodes() == {}
+    assert len(tree.info) == 19
 
 
 @pytest.mark.parametrize(
@@ -39,19 +88,25 @@ def test_contraction_tree_equivalency():
     ],
 )
 def test_reconfigure(forested, parallel, requires):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
     if requires:
         pytest.importorskip(requires)
 
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
 
-    info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
-    tree_gr = ctg.ContractionTree.from_info(info_gr)
+    path_gr = ctg.array_contract_path(
+        inputs, output, size_dict, optimize="greedy"
+    )
 
-    assert tree_gr.total_flops() == info_gr.opt_cost // 2
+    tree_gr = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize=path_gr,
+    )
+
+    initial_cost = tree_gr.total_flops()
 
     if forested:
         tree_gr.subtree_reconfigure_forest_(
@@ -60,23 +115,14 @@ def test_reconfigure(forested, parallel, requires):
     else:
         tree_gr.subtree_reconfigure_(progbar=True)
 
-    assert tree_gr.total_flops() < info_gr.opt_cost // 2
-
-    info_tsr = oe.contract_path(
-        eq, *shapes, shapes=True, optimize=tree_gr.get_path()
-    )[1]
-
-    assert tree_gr.total_flops() == info_tsr.opt_cost // 2
+    assert tree_gr.total_flops() < initial_cost
 
 
 def test_reconfigure_with_n_smaller_than_subtree_size():
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
-    eq, shapes = oe.helpers.rand_equation(10, 3)
-    _, info = oe.contract_path(eq, *shapes, shapes=True)
-    tree = ctg.ContractionTree.from_info(info)
+    inputs, output, _, size_dict = ctg.utils.rand_equation(10, 3)
+    tree = ctg.array_contract_tree(
+        inputs, output, size_dict, optimize="greedy"
+    )
     tree.subtree_reconfigure(12)
 
 
@@ -89,16 +135,16 @@ def test_reconfigure_with_n_smaller_than_subtree_size():
     ],
 )
 def test_slice_and_reconfigure(forested, parallel, requires):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
     if requires:
         pytest.importorskip(requires)
 
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info_gr = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
-    tree_gr = ctg.ContractionTree.from_info(info_gr)
+    tree_gr = ctg.utils.rand_tree(
+        30,
+        reg=5,
+        seed=42,
+        d_max=2,
+        optimize="greedy",
+    )
 
     target_size = tree_gr.max_size() // 32
 
@@ -113,45 +159,44 @@ def test_slice_and_reconfigure(forested, parallel, requires):
 
 
 def test_plot():
-    pytest.importorskip("opt_einsum")
     pytest.importorskip("matplotlib")
 
-    import opt_einsum as oe
     import matplotlib
 
     matplotlib.use("Template")
-
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
-    tree = ctg.ContractionTree.from_info(info)
-
+    tree = ctg.utils.rand_tree(
+        30,
+        reg=5,
+        seed=42,
+        d_max=2,
+        optimize="greedy",
+    )
     tree.plot_ring()
     tree.plot_tent()
     tree.plot_contractions()
 
 
 def test_plot_alt():
-    pytest.importorskip("opt_einsum")
     pytest.importorskip("altair")
-
-    import opt_einsum as oe
-
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info = oe.contract_path(eq, *shapes, shapes=True, optimize="greedy")[1]
-    tree = ctg.ContractionTree.from_info(info)
-
+    tree = ctg.utils.rand_tree(
+        30,
+        reg=5,
+        seed=42,
+        d_max=2,
+        optimize="greedy",
+    )
     tree.plot_contractions_alt()
 
 
 @pytest.mark.parametrize("optimize", ["greedy-compressed", "greedy-span"])
 def test_compressed_rank(optimize):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=2)
-    info = oe.contract_path(eq, *shapes, shapes=True, optimize=optimize)[1]
-    tree = ctg.ContractionTree.from_info(info)
+    tree = ctg.utils.rand_tree(
+        30,
+        reg=5,
+        seed=42,
+        d_max=2,
+        optimize=optimize,
+    )
     assert tree.max_size_compressed(1) < tree.max_size()
 
 

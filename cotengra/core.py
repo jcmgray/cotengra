@@ -239,8 +239,10 @@ class ContractionTree:
         # information about all the nodes
         self.info = {}
 
-        # ... which we can fill in already for final / top node i.e.
+        # ... which we can fill in already for leaves and final / top node i.e.
         # the collection of all nodes
+        for i, legs in enumerate(self.inputs_legs):
+            self.info[node_from_single(i)] = {"legs": legs}
         self.root = node_supremum(self.N)
         self.info[self.root] = {"legs": self.output_legs}
 
@@ -358,6 +360,66 @@ class ContractionTree:
         """
         return map(node_from_single, range(self.N))
 
+    def get_incomplete_nodes(self):
+        """Get the set of current nodes that have no children and the set of
+        nodes that have no parents. These are the 'childless' and 'parentless'
+        nodes respectively, that need to be contracted to complete the tree.
+        The parentless nodes are grouped into the childless nodes that contain
+        them as subgraphs.
+
+        Returns
+        -------
+        groups : dict[frozenet[int], list[frozenset[int]]]
+            A mapping of childless nodes to the list of parentless nodes are
+            beneath them.
+
+        See Also
+        --------
+        autocomplete
+        """
+        childless = dict.fromkeys(
+            node for node in self.info
+            # start wth all but leaves
+            if len(node) != 1
+        )
+        parentless = dict.fromkeys(
+            node for node in self.info
+            # start with all but root
+            if len(node) != self.N
+        )
+        for p, (l, r) in self.children.items():
+            parentless.pop(l)
+            parentless.pop(r)
+            childless.pop(p)
+
+        groups = {node: [] for node in childless}
+        for node in parentless:
+            # get the smallest node that contains this node
+            ancestor = min(
+                filter(node.issubset, childless),
+                key=len,
+            )
+            groups[ancestor].append(node)
+
+        return groups
+
+    def autocomplete(self, **contract_opts):
+        """Contract all remaining node groups (as computed by
+        ``tree.get_incomplete_nodes``) in the tree to complete it.
+
+        Parameters
+        ----------
+        contract_opts
+            Options to pass to ``tree.contract_nodes``.
+
+        See Also
+        --------
+        get_incomplete_nodes, contract_nodes
+        """
+        groups = self.get_incomplete_nodes()
+        for _, parentless_subnodes in groups.items():
+            self.contract_nodes(parentless_subnodes, **contract_opts)
+
     @classmethod
     def from_path(
         cls,
@@ -367,11 +429,42 @@ class ContractionTree:
         *,
         path=None,
         ssa_path=None,
+        complete="auto",
         check=False,
         **kwargs,
     ):
         """Create a (completed) ``ContractionTree`` from the usual inputs plus
         a standard contraction path or 'ssa_path' - you need to supply one.
+
+        Parameters
+        ----------
+        inputs : Sequence[Sequence[str]]
+            The input indices of each tensor, as single unicode characters.
+        output : Sequence[str]
+            The output indices.
+        size_dict : dict[str, int]
+            The size of each index.
+        path : Sequence[Sequence[int]], optional
+            The contraction path, a sequence of pairs of tensor ids to
+            contract. The ids are linear indices into the list of temporary
+            tensors, which are recycled as each contraction pops a pair and
+            appends the result. This or ``ssa_path`` must be supplied.
+        ssa_path : Sequence[Sequence[int]], optional
+            The contraction path, a sequence of pairs of indices to contract.
+            The indices are single use, as if the result of each contraction is
+            appended to the end of the list of temporary tensors without
+            popping. This or ``path`` must be supplied.
+        complete : "auto" or bool, optional
+            Whether to automatically complete the path, i.e. contract all
+            remaining nodes. If "auto" then a warning is issued if the path is
+            not complete.
+        check : bool, optional
+            Whether to perform some basic checks while creating the contraction
+            nodes.
+
+        Returns
+        -------
+        ContractionTree
         """
         if int(path is None) + int(ssa_path is None) != 1:
             raise ValueError(
@@ -382,14 +475,33 @@ class ContractionTree:
             path = ssa_path
 
         tree = cls(inputs, output, size_dict, **kwargs)
-        nodes = list(tree.gen_leaves())
 
-        for p in path:
-            if ssa_path is not None:
-                merge = [nodes[i] for i in p]
-            else:
+        if ssa_path is not None:
+            # ssa path (single use ids)
+            nodes = dict(enumerate(tree.gen_leaves()))
+            ssa = len(nodes)
+            for p in path:
+                merge = [nodes.pop(i) for i in p]
+                nodes[ssa] = tree.contract_nodes(merge, check=check)
+                ssa += 1
+            nodes = nodes.values()
+        else:
+            # regular path ('recycled' ids)
+            nodes = list(tree.gen_leaves())
+            for p in path:
                 merge = [nodes.pop(i) for i in sorted(p, reverse=True)]
-            nodes.append(tree.contract_nodes(merge, check=check))
+                nodes.append(tree.contract_nodes(merge, check=check))
+
+        if len(nodes) > 1 and complete:
+
+            if complete == "auto":
+                # warn that we are completing
+                warnings.warn(
+                    "Path was not complete - contracting all remaining. "
+                    "You can silence this warning with `complete=True`."
+                )
+
+            tree.contract_nodes(nodes, check=check)
 
         return tree
 
@@ -559,6 +671,9 @@ class ContractionTree:
         """Get the effective 'outer' indices for the collection of tensors
         in ``node``.
         """
+        # although we populate the leaf and root legs in the constructor, they
+        # may be removed and re-added, so keep dynamic recomputation
+
         if len(node) == 1:
             # leaf legs are inputs
             return self.inputs_legs[node_get_single_el(node)]
@@ -1428,7 +1543,7 @@ class ContractionTree:
 
         # delete and re-add dependent intermediates
         for p, l, r in tree.traverse():
-            if ind in tree.get_legs(l) or ind in tree.get_legs(r) :
+            if ind in tree.get_legs(l) or ind in tree.get_legs(r):
                 tree._remove_node(p)
                 tree.contract_nodes_pair(l, r)
 

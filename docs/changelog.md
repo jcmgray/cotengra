@@ -13,6 +13,13 @@
   indices (to match `plot_flat`).
 - add [`ContractionTree.restore_ind`](cotengra.ContractionTree.restore_ind)
   for 'unslicing' or 'unprojecting' previously removed indices.
+- [`ContractionTree.from_path`](cotengra.ContractionTree.from_path): add option
+  `complete` to automatically complete the tree given an incomplete path
+  (usually disconnected subgraphs - {issue}`29`).
+- add [`ContractionTree.get_incomplete_nodes`](cotengra.ContractionTree.get_incomplete_nodes)
+  for finding all uncontracted childless-parentless node groups.
+- add [`ContractionTree.autocomplete`](cotengra.ContractionTree.autocomplete)
+  for automatically completing a contraction tree, using above method.
 
 
 ## v0.5.6 (2023-12-07)
