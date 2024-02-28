@@ -2,11 +2,16 @@
 
 ## v0.5.7 (unreleased)
 
+**Bug fixes**
+
+- all input node legs and pre-processing steps are now calculated lazily,
+  allowing slicing of indices including those 'simplified' away {issue}`31`.
+
 **Enhancements**
 
-- add [`ContractionTree.plot_flat`](cotengra.plot.plot_flat): a new method for
-  plotting the contraction tree as a flat diagram showing all indices on every
-  intermediate (without requiring any graph layouts), which is useful for
+- add [`ContractionTree.plot_flat`](cotengra.plot.plot_tree_flat): a new method
+  for plotting the contraction tree as a flat diagram showing all indices on
+  every intermediate (without requiring any graph layouts), which is useful for
   visualizing and understanding small contractions.
 - [`HyperGraph.plot`](cotengra.plot.plot_hypergraph): support showing hyper
   outer indices, multi-edges, and automatic unique coloring of nodes and
@@ -20,6 +25,8 @@
   for finding all uncontracted childless-parentless node groups.
 - add [`ContractionTree.autocomplete`](cotengra.ContractionTree.autocomplete)
   for automatically completing a contraction tree, using above method.
+- [`tree.plot_flat`](cotengra.plot.plot_tree_flat): show any preprocessing
+  steps and optionally list sliced indices
 
 
 ## v0.5.6 (2023-12-07)
