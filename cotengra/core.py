@@ -185,53 +185,22 @@ class ContractionTree:
 
         self.N = len(self.inputs)
 
-        # create the index representation for each input: an ordered mapping of
+        # the index representation for each input is an ordered mapping of
         # each index to the number of times it has appeared on children. By
         # also tracking the total number of appearances one can efficiently
         # and locally compute which indices should be kept or contracted
-        self.inputs_legs = []
         self.appearances = {}
         for term in self.inputs:
-            legs = {}
             for ix in term:
-                legs[ix] = legs.get(ix, 0) + 1
                 self.appearances[ix] = self.appearances.get(ix, 0) + 1
-            self.inputs_legs.append(legs)
-        self.output_legs = dict.fromkeys(self.output)
         # adding output appearances ensures these are never contracted away,
         # N.B. if after this step every appearance count is exactly 2,
         # then there are no 'hyper' indices in the contraction
-        for ix in self.output_legs:
+        for ix in self.output:
             self.appearances[ix] = self.appearances.get(ix, 0) + 1
 
-        # check for single term simplifications, these are treated as a simple
-        # preprocessing step that only is taken into account during actual
-        # contraction, and are not represented in the binary tree
-        preprocessing = []
-        for i, (term, legs) in enumerate(zip(inputs, self.inputs_legs)):
-            is_simplifiable = (
-                # repeated indices (diag or traces)
-                (len(term) != len(legs))
-                or
-                # reduced indices (summed immediately)
-                any(
-                    ix_count == self.appearances[ix]
-                    for ix, ix_count in legs.items()
-                )
-            )
-            if is_simplifiable:
-                # compute the simplified legs
-                new_legs = {
-                    ix: ix_count
-                    for ix, ix_count in legs.items()
-                    if ix_count != self.appearances[ix]
-                }
-                # modify the input legs as if these were the inputs
-                self.inputs_legs[i] = new_legs
-                # add a preprocessing step to the list of contractions
-                eq = inputs_output_to_eq((term,), new_legs, canonicalize=True)
-                preprocessing.append((i, eq))
-        self.preprocessing = tuple(preprocessing)
+        #
+        self.preprocessing = {}
 
         # mapping of parents to children - the core binary tree object
         self.children = {}
@@ -239,12 +208,12 @@ class ContractionTree:
         # information about all the nodes
         self.info = {}
 
-        # ... which we can fill in already for leaves and final / top node i.e.
-        # the collection of all nodes
-        for i, legs in enumerate(self.inputs_legs):
-            self.info[node_from_single(i)] = {"legs": legs}
+        # add constant nodes: the leaves
+        for leaf in self.gen_leaves():
+            self._add_node(leaf)
+        # and the root or top node
         self.root = node_supremum(self.N)
-        self.info[self.root] = {"legs": self.output_legs}
+        self._add_node(self.root)
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -278,14 +247,13 @@ class ContractionTree:
 
     def set_state_from(self, other):
         """Set the internal state of this tree to that of ``other``."""
-        # immutable properties
+        # immutable or never mutated properties
         for attr in (
             "appearances",
             "inputs",
             "multiplicity",
             "N",
             "output",
-            "preprocessing",
             "root",
             "size_dict",
             "sliced_inputs",
@@ -296,9 +264,8 @@ class ContractionTree:
         for attr in (
             "children",
             "contraction_cores",
-            "inputs_legs",
-            "output_legs",
             "sliced_inds",
+            "preprocessing",
         ):
             setattr(self, attr, getattr(other, attr).copy())
 
@@ -352,7 +319,7 @@ class ContractionTree:
         """Turn a node -- a frozen set of ints -- into the corresponding terms
         -- a sequence of sets of str corresponding to input indices.
         """
-        return map(self.inputs_legs.__getitem__, node)
+        return (self.get_legs(node_from_single(i)) for i in node)
 
     def gen_leaves(self):
         """Generate the nodes representing leaves of the contraction tree, i.e.
@@ -378,12 +345,14 @@ class ContractionTree:
         autocomplete
         """
         childless = dict.fromkeys(
-            node for node in self.info
+            node
+            for node in self.info
             # start wth all but leaves
             if len(node) != 1
         )
         parentless = dict.fromkeys(
-            node for node in self.info
+            node
+            for node in self.info
             # start with all but root
             if len(node) != self.N
         )
@@ -493,7 +462,6 @@ class ContractionTree:
                 nodes.append(tree.contract_nodes(merge, check=check))
 
         if len(nodes) > 1 and autocomplete:
-
             if autocomplete == "auto":
                 # warn that we are completing
                 warnings.warn(
@@ -651,36 +619,98 @@ class ContractionTree:
 
     def _remove_node(self, node):
         """Remove ``node`` from this tree and update the flops and maximum size
-        if tracking them respectively. Inplace operation.
+        if tracking them respectively, as well as input pre-processing.
         """
-        if self._track_flops:
-            self._flops -= self.get_flops(node)
+        node_extent = len(node)
 
-        if self._track_write and len(node) > 1:
-            # only non-leaf nodes contribute to write
-            self._write -= self.get_size(node)
+        if node_extent == 1:
+            # leaf nodes should always exist
+            self.info[node].clear()
+            # input: remove any associated preprocessing
+            self.preprocessing.pop(node_get_single_el(node), None)
+        else:
+            # only non-leaf nodes contribute to size, flops and write
+            if self._track_size:
+                self._sizes.discard(self.get_size(node))
 
-        if self._track_size:
-            self._sizes.discard(self.get_size(node))
+            if self._track_flops:
+                self._flops -= self.get_flops(node)
 
-        del self.info[node]
-        del self.children[node]
+            if self._track_write:
+                self._write -= self.get_size(node)
+
+            del self.children[node]
+            if node_extent == self.N:
+                # root node should always exist
+                self.info[node].clear()
+            else:
+                del self.info[node]
+
+    def compute_leaf_legs(self, i):
+        """Compute the effective 'outer' indices for the ith input tensor. This
+        is not always simply the ith input indices, due to A) potential slicing
+        and B) potential preprocessing.
+        """
+        # indices of input tensor (after slicing which is done immediately)
+        if self.sliced_inds:
+            term = tuple(
+                ix for ix in self.inputs[i] if ix not in self.sliced_inds
+            )
+        else:
+            term = self.inputs[i]
+
+        legs = {}
+        for ix in term:
+            legs[ix] = legs.get(ix, 0) + 1
+
+        # check for single term simplifications, these are treated as a simple
+        # preprocessing step that only is taken into account during actual
+        # contraction, and are not represented in the binary tree
+        # N.B. need to compute simplifiability *after* slicing
+        is_simplifiable = (
+            # repeated indices (diag or traces)
+            (len(term) != len(legs))
+            or
+            # reduced indices (are summed immediately)
+            any(
+                ix_count == self.appearances[ix]
+                for ix, ix_count in legs.items()
+            )
+        )
+
+        if is_simplifiable:
+            # compute the simplified legs -> the new effective input legs
+            legs = {
+                ix: ix_count
+                for ix, ix_count in legs.items()
+                if ix_count != self.appearances[ix]
+            }
+            # add a preprocessing step to the list of contractions
+            eq = inputs_output_to_eq((term,), legs, canonicalize=True)
+            self.preprocessing[i] = eq
+
+        return legs
+
+    def has_preprocessing(self):
+        # touch all inputs legs, since preprocessing is lazily computed
+        for node in self.gen_leaves():
+            self.get_legs(node)
+        return bool(self.preprocessing)
 
     @cached_node_property("legs")
     def get_legs(self, node):
         """Get the effective 'outer' indices for the collection of tensors
         in ``node``.
         """
-        # although we populate the leaf and root legs in the constructor, they
-        # may be removed and re-added, so keep dynamic recomputation
+        node_extent = len(node)
 
-        if len(node) == 1:
+        if node_extent == 1:
             # leaf legs are inputs
-            return self.inputs_legs[node_get_single_el(node)]
-
-        if len(node) == self.N:
-            # root legs are output
-            return self.output_legs
+            return self.compute_leaf_legs(node_get_single_el(node))
+        elif node_extent == self.N:
+            # root legs are output, after slicing
+            # n.b. the index counts are irrelevant for the output
+            return {ix: 0 for ix in self.output if ix not in self.sliced_inds}
 
         try:
             involved = self.get_involved(node)
@@ -700,15 +730,6 @@ class ContractionTree:
             return {}
         sub_legs = map(self.get_legs, self.children[node])
         return legs_union(sub_legs)
-
-    @cached_node_property("removed")
-    def get_removed(self, node):
-        """Get the indices that will be removed by the creation of ``node``."""
-        involved = self.get_involved(node)
-        legs = self.get_legs(node)
-        return {
-            ix: ix_count for ix, ix_count in involved.items() if ix not in legs
-        }
 
     @cached_node_property("size")
     def get_size(self, node):
@@ -752,11 +773,8 @@ class ContractionTree:
         # NB: self.inputs and self.output contain the full (unsliced) indices
         #     thus we filter even the input legs and output legs
 
-        if len(node) == 1:
-            return "".join(self.inputs_legs[node_get_single_el(node)])
-
-        if len(node) == self.N:
-            return "".join(self.output_legs)
+        if len(node) in (1, self.N):
+            return "".join(self.get_legs(node))
 
         legs = self.get_legs(node)
         l_inds, r_inds = map(self.get_inds, self.children[node])
@@ -868,14 +886,12 @@ class ContractionTree:
         if self.N == 1:
             return self.get_size(self.root)
 
-        if self._track_size:
-            return self._sizes.max()
+        if not self._track_size:
+            self._sizes = MaxCounter()
+            for node, _, _ in self.traverse():
+                self._sizes.add(self.get_size(node))
+            self._track_size = True
 
-        self._sizes = MaxCounter()
-        for node, _, _ in self.traverse():
-            self._sizes.add(self.get_size(node))
-
-        self._track_size = True
         return self._sizes.max()
 
     def peak_size(self, order=None):
@@ -1122,10 +1138,12 @@ class ContractionTree:
 
         # enforce left ordering of 'heaviest' subtrees
         nx, ny = len(x), len(y)
-        hx, hy = hash(x), hash(y)
+        if nx == ny:
+            # deterministically break ties
+            nx = -min(x)
+            ny = -min(y)
 
-        # deterministically break ties
-        if (nx, hx) > (ny, hy):
+        if nx > ny:
             lr = (x, y)
         else:
             lr = (y, x)
@@ -1416,67 +1434,13 @@ class ContractionTree:
         """
         tree = self if inplace else self.copy()
 
+        if ind in tree.sliced_inds:
+            raise ValueError(f"Index {ind} already sliced.")
+
         # make sure all flops and size information has been populated
         tree.contract_stats()
 
         d = tree.size_dict[ind]
-
-        for node, node_info in tree.info.items():
-            # if ind doesn't feature in this node (contraction) nothing to do
-            involved = tree.get_involved(node)
-
-            # inputs can have leg indices that are not involved so
-            legs = tree.get_legs(node)
-
-            if (ind not in involved) and (ind not in legs):
-                continue
-
-            # else update all the relevant information about this node
-            node_info["involved"] = legs_without(involved, ind)
-            removed = tree.get_removed(node)
-
-            # update information regarding node indices sets
-            if ind in legs:
-                # removing indices changes both flops and size of node
-                node_info["legs"] = legs_without(legs, ind)
-
-                old_size = tree.get_size(node)
-                tree._sizes.discard(old_size)
-                new_size = old_size // d
-                tree._sizes.add(new_size)
-                node_info["size"] = new_size
-
-                if len(node) > 1:
-                    # only non-leaf nodes contribute to write
-                    tree._write += -old_size + new_size
-            else:
-                # removing indices only changes flops
-                node_info["removed"] = legs_without(removed, ind)
-
-            old_flops = tree.get_flops(node)
-            new_flops = old_flops // d
-            node_info["flops"] = new_flops
-            tree._flops += -old_flops + new_flops
-
-            if len(node) == 1:
-                # its a leaf - corresponding input will be sliced
-                i = node_get_single_el(node)
-                tree.sliced_inputs = tree.sliced_inputs | frozenset([i])
-                tree.inputs_legs[i] = legs_without(tree.inputs_legs[i], ind)
-            elif len(node) == tree.N:
-                # root node
-                tree.output_legs = legs_without(tree.output_legs, ind)
-
-            # delete info we can't change
-            for k in (
-                "inds",
-                "einsum_eq",
-                "can_dot",
-                "tensordot_axes",
-                "tensordot_perm",
-            ):
-                tree.info[node].pop(k, None)
-
         if project is None:
             # we are slicing the index
             si = SliceInfo(ind not in tree.output, ind, d, None)
@@ -1490,6 +1454,52 @@ class ContractionTree:
         tree.sliced_inds = {
             si.ind: si for si in sorted((*tree.sliced_inds.values(), si))
         }
+
+        for node, node_info in tree.info.items():
+            if len(node) == 1:
+                # handle leaves separately
+                i = node_get_single_el(node)
+                term = tree.inputs[i]
+                if ind in term:
+                    # n.b. leaves don't contribute to size, flops or write
+                    # simply recalculate all information, incl. preprocessing
+                    tree._remove_node(node)
+                    tree.sliced_inputs = tree.sliced_inputs | frozenset([i])
+            else:
+                involved = tree.get_involved(node)
+                if ind not in involved:
+                    # if ind doesn't feature in this node (contraction)
+                    # -> nothing to do
+                    continue
+
+                # else update all the relevant information about this node
+                # -> flops changes for all involved indices
+                node_info["involved"] = legs_without(involved, ind)
+                old_flops = tree.get_flops(node)
+                new_flops = old_flops // d
+                node_info["flops"] = new_flops
+                tree._flops += new_flops - old_flops
+
+                # -> size and write only changes for node legs (output) indices
+                legs = tree.get_legs(node)
+                if ind in legs:
+                    node_info["legs"] = legs_without(legs, ind)
+                    old_size = tree.get_size(node)
+                    tree._sizes.discard(old_size)
+                    new_size = old_size // d
+                    tree._sizes.add(new_size)
+                    node_info["size"] = new_size
+                    tree._write += new_size - old_size
+
+                # delete info we can't change
+                for k in (
+                    "inds",
+                    "einsum_eq",
+                    "can_dot",
+                    "tensordot_axes",
+                    "tensordot_perm",
+                ):
+                    tree.info[node].pop(k, None)
 
         tree.already_optimized.clear()
         tree.contraction_cores.clear()
@@ -1523,23 +1533,10 @@ class ContractionTree:
         tree.multiplicity //= si.size
 
         # handle inputs
-        for i in range(tree.N):
+        for i, term in enumerate(tree.inputs):
             # this is the original term with all indices
-            term = tree.inputs[i]
             if ind in term:
-                node = node_from_single(i)
-                tree.info[node] = {}
-                # have to be careful about ordering of dict
-                tree.inputs_legs[i] = {
-                    ix: 1 for ix in term if ix not in tree.sliced_inds
-                }
-
-        # handle output
-        if not si.inner:
-            # have to be careful about ordering of dict
-            tree.output_legs = {
-                ix: None for ix in tree.output if ix not in tree.sliced_inds
-            }
+                tree._remove_node(node_from_single(i))
 
         # delete and re-add dependent intermediates
         for p, l, r in tree.traverse():
@@ -2506,7 +2503,10 @@ class ContractionTree:
             ``node``.
             """
             pairs = set()
-            for ix in self.get_removed(node):
+            involved = self.get_involved(node)
+            legs = self.get_legs(node)
+            removed = [ix for ix in involved if ix not in legs]
+            for ix in removed:
                 # for every index across the contraction
                 l1, l2 = ind_to_term[ix]
 

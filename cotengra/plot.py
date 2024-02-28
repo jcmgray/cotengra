@@ -1450,6 +1450,7 @@ def plot_tree_flat(
     edge_labels_font_family="monospace",
     node_labels_font_size=8,
     node_labels_font_family="monospace",
+    show_sliced=True,
     figsize=None,
 ):
     """Plot a ``ContractionTree`` as a flat, 2D diagram, including all indices
@@ -1491,6 +1492,8 @@ def plot_tree_flat(
         The font size to use for node labels.
     node_labels_font_family : str, optional
         The font family to use for node labels.
+    show_sliced : bool, optional
+        Whether to list sliced indices at the top left.
     figsize : tuple, optional
         The size of the figure to create, if not specified will be based on the
         number of nodes in the tree.
@@ -1546,7 +1549,7 @@ def plot_tree_flat(
     for i, (p, l, r) in enumerate(tree.traverse(), 1):
         if len(l) == 1:
             # left is a leaf
-            xyl = (leaf_order[l], i - 1)
+            xyl = pos[l] = (leaf_order[l], i - 1)
             (tid,) = l
             d.circle(xyl, color=node_colors[l])
             d.text(xyl, str(tid), **node_label_opts)
@@ -1555,7 +1558,7 @@ def plot_tree_flat(
 
         if len(r) == 1:
             # right is a leaf
-            xyr = (leaf_order[r], i - 1)
+            xyr = pos[r] = (leaf_order[r], i - 1)
             (tid,) = r
             d.circle(xyr, color=node_colors[r])
             d.text(xyr, str(tid), **node_label_opts)
@@ -1604,13 +1607,13 @@ def plot_tree_flat(
         # draw intermediate node
         d.circle(xyp, color=node_colors[p])
 
-    ne = len(tree.output_legs)
+    ne = len(tree.get_legs(tree.root))
     if ne:
         xyp = pos[tree.root]
         offsets = np.linspace(
             -multiedge_spread * ne, multiedge_spread * ne, ne
         )
-        for ix, offset in zip(tree.output_legs, offsets):
+        for ix, offset in zip(tree.get_legs(tree.root), offsets):
             xym = (xyp[0] + offset, tree.N - 0.5)
             xyo = (xyp[0] + offset, tree.N)
             d.curve(
@@ -1621,5 +1624,51 @@ def plot_tree_flat(
                 linestyle=hyperedge_style if ix in hyperedges else "-",
             )
             d.text(xyo, f"{ix}\n", **edge_label_opts)
+
+    if tree.has_preprocessing():
+        from .utils import node_from_single
+
+        for i in tree.preprocessing:
+            node = node_from_single(i)
+            x, y = pos[node]
+            d.circle(
+                (x, y - 1),
+                color=node_colors[node],
+            )
+            edges = [
+                ix for ix in tree.inputs[i][::-1] if ix not in tree.sliced_inds
+            ]
+            ne = len(edges)
+
+            if ne == 1:
+                offsets = [0.0]
+                text_centers = [0.5]
+            else:
+                offsets = np.linspace(
+                    -multiedge_spread * ne, multiedge_spread * ne, ne
+                )
+                text_centers = np.linspace(3 / 4, 1 / 4, ne)
+
+            for ix, offset, text_center in zip(edges, offsets, text_centers):
+                d.line_offset(
+                    (x, y - 1),
+                    (x, y),
+                    offset,
+                    relative=False,
+                    color=edge_colors[ix],
+                    linewidth=math.log2(tree.size_dict.get(ix, 2)),
+                    linestyle=hyperedge_style if ix in hyperedges else "-",
+                    smoothing=multiedge_smoothing,
+                    midlength=multiedge_midlength,
+                    text=dict(text=ix, center=text_center, **edge_label_opts),
+                )
+
+    if tree.sliced_inds and show_sliced:
+        d.label_ax(
+            x=0.1,
+            y=0.8,
+            text=f"$\\sum_{{{','.join(tree.sliced_inds)}}}$",
+            color=fontcolor,
+        )
 
     return d.fig, d.ax

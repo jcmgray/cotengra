@@ -282,3 +282,37 @@ def test_tree_with_one_node():
     assert tree.get_path() == ()
     assert tree.contraction_cost() == 0
     assert tree.contraction_width(None) == 2 * 3 * 4
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_slice_and_restore_preprocessed_inds(seed):
+    import numpy as np
+
+    eq = "abc,bde,dfg,fah->"
+    inputs, output = ctg.utils.eq_to_inputs_output(eq)
+    size_dict = ctg.utils.make_rand_size_dict_from_inputs(inputs, seed=seed)
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
+    tree = ctg.ContractionTree(inputs, output, size_dict)
+    tree.autocomplete()
+    stats0 = tree.contract_stats()
+    xe = np.einsum(eq, *arrays)
+    assert tree.contract(arrays) == pytest.approx(xe)
+    assert len(tree.preprocessing) == 4
+    tree.remove_ind_("a")
+    assert tree.has_preprocessing()
+    assert len(tree.preprocessing) == 4
+    assert tree.contract(arrays) == pytest.approx(xe)
+    # preprocessed ind, slicing it prevents the preprocessing
+    tree.remove_ind_("c")
+    assert tree.has_preprocessing()
+    assert len(tree.preprocessing) == 3
+    assert tree.contract(arrays) == pytest.approx(xe)
+    tree.restore_ind_("a")
+    assert tree.has_preprocessing()
+    assert len(tree.preprocessing) == 3
+    assert tree.contract(arrays) == pytest.approx(xe)
+    tree.restore_ind_("c")
+    assert tree.has_preprocessing()
+    assert len(tree.preprocessing) == 4
+    assert tree.contract(arrays) == pytest.approx(xe)
+    assert tree.contract_stats() == stats0

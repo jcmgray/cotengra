@@ -166,7 +166,7 @@ def test_contraction_tree_rand_equation(
     assert_allclose(x, y3)
 
     # contract after slicing some output indices
-    remaining_out = list(tree.output_legs)
+    remaining_out = list(tree.get_legs(tree.root))
     nsout = np.random.randint(low=0, high=len(remaining_out) + 1)
     so_ix = np.random.choice(remaining_out, replace=False, size=nsout)
     for ind in so_ix:

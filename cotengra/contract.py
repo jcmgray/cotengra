@@ -593,13 +593,6 @@ def extract_contractions(
     """
     contractions = []
 
-    if tree.preprocessing:
-        # inplace single term simplifications
-        contractions.extend(
-            (node_from_single(i), None, None, False, eq, None)
-            for i, eq in tree.preprocessing
-        )
-
     # pairwise contractions
     contractions.extend(
         (p, l, r, False, tree.get_einsum_eq(p), None)
@@ -614,6 +607,16 @@ def extract_contractions(
         )
         for p, l, r in tree.traverse(order=order)
     )
+
+    if tree.preprocessing:
+        # inplace single term simplifications
+        # n.b. these are populated lazily when the other information is
+        # computed above, so we do it after
+        pre_contractions = (
+            (node_from_single(i), None, None, False, eq, None)
+            for i, eq in tree.preprocessing.items()
+        )
+        return (*pre_contractions, *contractions)
 
     return tuple(contractions)
 
@@ -906,7 +909,7 @@ def make_contractor(
                 "strip_exponent=True not supported with cuQuantum"
             )
 
-        if tree.preprocessing:
+        if tree.has_preprocessing():
             raise ValueError(
                 "Preprocessing not supported with cuQuantum yet."
             )

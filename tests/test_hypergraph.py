@@ -1,3 +1,4 @@
+import pytest
 import cotengra as ctg
 
 def test_shortest_distances():
@@ -14,7 +15,7 @@ def test_resistance_centrality():
     inputs, output, _, size_dict = ctg.utils.lattice_equation([3, 3])
     hg = ctg.HyperGraph(inputs, output, size_dict)
     cents = hg.resistance_centrality()
-    assert cents[0] == 0.0
+    assert cents[0] == pytest.approx(0.0)
     assert 0.0 < cents[3] < 1.0
     assert cents[4] == 1.0
 
