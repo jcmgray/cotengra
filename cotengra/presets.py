@@ -17,7 +17,7 @@ from .hyperoptimizers.hyper import get_default_hq_methods
 
 
 def estimate_optimal_hardness(inputs):
-    """Provides a very rough estimate of how long it would take to find the
+    r"""Provides a very rough estimate of how long it would take to find the
     optimal contraction order for a given set of inputs. The runtime is
     *very* approximately exponential in this number:
 

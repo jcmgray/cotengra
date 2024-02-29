@@ -27,6 +27,8 @@
   for automatically completing a contraction tree, using above method.
 - [`tree.plot_flat`](cotengra.plot.plot_tree_flat): show any preprocessing
   steps and optionally list sliced indices
+- add [get_rng](cotengra.utils.get_rng) as a single entry point for getting or
+  propagating a random number generator, to help determinism.
 
 
 ## v0.5.6 (2023-12-07)

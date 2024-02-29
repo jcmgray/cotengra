@@ -1688,7 +1688,7 @@ class ContractionTree:
             while candidates and r < maxiter:
 
                 if rng is not None:
-                    i = rng.choices(range(len(candidates)), weights=weights)
+                    (i,) = rng.choices(range(len(candidates)), weights=weights)
 
                 weights.pop(i)
                 sub_root = candidates.pop(i)
