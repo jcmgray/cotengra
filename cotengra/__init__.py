@@ -18,6 +18,7 @@ except ImportError:
 
 import functools
 
+from . import utils
 from .core import (
     ContractionTree,
     ContractionTreeCompressed,
@@ -27,58 +28,50 @@ from .hypergraph import (
     HyperGraph,
     get_hypergraph,
 )
+from .hyperoptimizers import (
+    hyper_baytune,
+    hyper_choco,
+    hyper_nevergrad,
+    hyper_optuna,
+    hyper_random,
+    hyper_skopt,
+)
+from .hyperoptimizers.hyper import (
+    HyperCompressedOptimizer,
+    HyperMultiOptimizer,
+    HyperOptimizer,
+    ReusableHyperCompressedOptimizer,
+    ReusableHyperOptimizer,
+    get_hyper_space,
+    hash_contraction,
+    list_hyper_functions,
+)
 from .interface import (
+    array_contract,
     array_contract_expression,
     array_contract_path,
     array_contract_tree,
-    array_contract,
+    einsum,
     einsum_expression,
     einsum_tree,
-    einsum,
     register_preset,
 )
-
-from .slicer import SliceFinder
-
-from .pathfinders import path_basic
-from .pathfinders import path_greedy
-from .pathfinders import path_igraph
-from .pathfinders import path_kahypar
-from .pathfinders import path_labels
-from .pathfinders.path_quickbb import QuickBBOptimizer, optimize_quickbb
+from .pathfinders import (
+    path_basic,
+    path_greedy,
+    path_igraph,
+    path_kahypar,
+    path_labels,
+)
+from .pathfinders.path_basic import (
+    GreedyOptimizer,
+    OptimalOptimizer,
+)
 from .pathfinders.path_flowcutter import (
     FlowCutterOptimizer,
     optimize_flowcutter,
 )
-
-from .hyperoptimizers import hyper_baytune
-from .hyperoptimizers import hyper_choco
-from .hyperoptimizers import hyper_nevergrad
-from .hyperoptimizers import hyper_skopt
-from .hyperoptimizers import hyper_optuna
-from .hyperoptimizers import hyper_random
-
-from .hyperoptimizers.hyper import (
-    get_hyper_space,
-    hash_contraction,
-    HyperCompressedOptimizer,
-    HyperMultiOptimizer,
-    HyperOptimizer,
-    list_hyper_functions,
-    ReusableHyperCompressedOptimizer,
-    ReusableHyperOptimizer,
-)
-
-from .presets import (
-    auto_hq_optimize,
-    auto_optimize,
-    AutoHQOptimizer,
-    AutoOptimizer,
-    greedy_optimize,
-    optimal_optimize,
-    optimal_outer_optimize,
-)
-
+from .pathfinders.path_quickbb import QuickBBOptimizer, optimize_quickbb
 from .plot import (
     plot_contractions,
     plot_contractions_alt,
@@ -88,13 +81,21 @@ from .plot import (
     plot_slicings_alt,
     plot_tree,
     plot_tree_ring,
-    plot_tree_tent,
     plot_tree_span,
+    plot_tree_tent,
     plot_trials,
     plot_trials_alt,
 )
-
-from . import utils
+from .presets import (
+    AutoHQOptimizer,
+    AutoOptimizer,
+    auto_hq_optimize,
+    auto_optimize,
+    greedy_optimize,
+    optimal_optimize,
+    optimal_outer_optimize,
+)
+from .slicer import SliceFinder
 from .utils import (
     get_symbol,
     get_symbol_map,
@@ -139,9 +140,10 @@ __all__ = (
     "FlowCutterOptimizer",
     "get_hyper_space",
     "get_hypergraph",
-    "get_symbol",
     "get_symbol_map",
+    "get_symbol",
     "greedy_optimize",
+    "GreedyOptimizer",
     "hash_contraction",
     "hyper_baytune",
     "hyper_choco",
@@ -157,6 +159,7 @@ __all__ = (
     "list_hyper_functions",
     "optimal_optimize",
     "optimal_outer_optimize",
+    "OptimalOptimizer",
     "optimize_flowcutter",
     "optimize_quickbb",
     "path_basic",
