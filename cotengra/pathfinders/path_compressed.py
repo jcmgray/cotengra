@@ -1,13 +1,12 @@
 """Compressed contraction tree finding routines.
 """
 import heapq
-import random
 import itertools
 
-from ..scoring import get_score_fn
 from ..core import get_hypergraph
-from ..plot import use_neutral_style, show_and_close
-from ..utils import GumbelBatchedGenerator
+from ..plot import show_and_close, use_neutral_style
+from ..scoring import get_score_fn
+from ..utils import GumbelBatchedGenerator, get_rng
 
 
 class MiniTree:
@@ -264,7 +263,7 @@ class WindowedOptimizer:
         self.nodes = {0: Node.first(inputs, output, size_dict, minimize)}
         for c, (nij, ni, nj) in enumerate(bitpath):
             self.nodes[c + 1] = self.nodes[c].next(nij, ni, nj)
-        self.rng = random.Random(seed)
+        self.rng = get_rng(seed)
         self.gumbel = GumbelBatchedGenerator(self.rng)
 
     @property

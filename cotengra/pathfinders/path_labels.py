@@ -1,13 +1,12 @@
-"""Contraction tree finders using pure python 'labels' hypergraph partitioning.
-"""
-import math
-import random
-import collections
+"""Contraction tree finders using pure python 'labels' hypergraph partitioning."""
 
+import collections
+import math
 
 from ..core import PartitionTreeBuilder
 from ..hypergraph import HyperGraph
 from ..hyperoptimizers.hyper import register_hyper_function
+from ..utils import get_rng
 
 
 def pop_fact(p, parts, n, pop_small_bias, pop_big_bias):
@@ -32,6 +31,7 @@ def labels_partition(
     pop_decay=1,
     con_pow=1,
     final_sweep=True,
+    seed=None,
 ):
     """
     Parameters
@@ -79,11 +79,13 @@ def labels_partition(
     labels = sites.copy()
     pops = collections.Counter(labels)
 
+    rng = get_rng(seed)
+
     if maxiter is None:
         maxiter = n
 
     for r in range(maxiter):
-        random.shuffle(sites)
+        rng.shuffle(sites)
         all_static = True
 
         for i in sites:
@@ -117,7 +119,7 @@ def labels_partition(
             break
 
     if final_sweep:
-        random.shuffle(sites)
+        rng.shuffle(sites)
         for i in sites:
             old_label = labels[i]
             scores = collections.Counter()

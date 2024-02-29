@@ -660,14 +660,33 @@ class DiskDict:
             raise KeyError
 
 
+def get_rng(seed=None):
+    """Get a source of random numbers.
+
+    Parameters
+    ----------
+    seed : None or int or random.Random, optional
+        The seed for the random number generator. If None, use the default
+        random number generator. If an integer, use a new random number
+        generator with the given seed. If a random.Random instance, use that
+        instance.
+    """
+    if seed is None:
+        # use the default random number generator
+        return random
+    elif isinstance(seed, random.Random) or (seed is random):
+        # use the given random number generator
+        return seed
+    else:
+        # use a new random number generator with the given seed
+        return random.Random(seed)
+
+
 class GumbelBatchedGenerator:
     """Non numpy version of gumbel number generator."""
 
     def __init__(self, seed=None):
-        if isinstance(seed, random.Random):
-            self.rng = seed
-        else:
-            self.rng = random.Random(seed)
+        self.rng = get_rng(seed)
 
     def __call__(self):
         return -math.log(-math.log(self.rng.random()))
@@ -793,7 +812,7 @@ def rand_equation(
     shapes : list[tuple[int]]
     size_dict : dict[str, int]
     """
-    rng = random.Random(seed)
+    rng = get_rng(seed)
 
     num_inds = max((n * reg) // 2, n_hyper_out + n_hyper_in + n_out)
     size_dict = {
@@ -859,7 +878,7 @@ def tree_equation(
     n_outer : int, optional
         The number of outer indices.
     """
-    rng = random.Random(seed)
+    rng = get_rng(seed)
 
     inputs = [[]]
     size_dict = {}
@@ -915,7 +934,7 @@ def randreg_equation(
         inputs[na].append(ix)
         inputs[nb].append(ix)
 
-    rng = random.Random(seed)
+    rng = get_rng(seed)
     size_dict = {
         get_symbol(i): rng.randint(d_min, d_max) for i in range(len(G.edges))
     }
@@ -958,7 +977,7 @@ def perverse_equation(
     seed : None or int, optional
         Seed for ``random.Random`` for repeatibility.
     """
-    rng = random.Random(seed)
+    rng = get_rng(seed)
     indices = [get_symbol(i) for i in range(num_indices)]
 
     size_dict = {ix: rng.randint(d_min, d_max) for ix in indices}
@@ -1060,7 +1079,7 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
 
     output = []
 
-    rng = random.Random(seed)
+    rng = get_rng(seed)
     size_dict = {
         # avoid overflow issues by converting back to python int
         ix: int(rng.randint(d_min, d_max))
@@ -1193,7 +1212,7 @@ def make_rand_size_dict_from_inputs(inputs, d_min=2, d_max=3, seed=None):
     size_dict : dict[str, int]
         The index size dictionary.
     """
-    rng = random.Random(seed)
+    rng = get_rng(seed)
 
     size_dict = {}
     for term in inputs:

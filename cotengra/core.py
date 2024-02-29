@@ -5,7 +5,6 @@ import functools
 import itertools
 import math
 import operator
-import random
 import warnings
 from dataclasses import dataclass
 from typing import Optional
@@ -41,6 +40,7 @@ from .utils import (
     MaxCounter,
     compute_size_by_dict,
     deprecated,
+    get_rng,
     get_symbol,
     groupby,
     inputs_output_to_eq,
@@ -1369,7 +1369,7 @@ class ContractionTree:
             if len(r) > 1:
                 queue.append(r)
 
-    def get_subtree(self, node, size, search="bfs"):
+    def get_subtree(self, node, size, search="bfs", seed=None):
         """Get a subtree spanning down from ``node`` which will have ``size``
         leaves (themselves not necessarily leaves of the actual tree).
 
@@ -1385,6 +1385,9 @@ class ContractionTree:
                 - 'bfs': breadth first expansion
                 - 'dfs': depth first expansion (largest nodes first)
                 - 'random': random expansion
+
+        seed : None, int or random.Random, optional
+            Random number generator seed, if ``search`` is 'random'.
 
         Returns
         -------
@@ -1402,14 +1405,21 @@ class ContractionTree:
         # nodes to expand
         queue = [node]
 
-        while (len(queue) + len(real_leaves) < size) and queue:
+        if search == "random":
+            rng = get_rng(seed)
+        else:
+            rng = None
             if search == "bfs":
-                p = queue.pop(0)
+                i = 0
             elif search == "dfs":
-                p = queue.pop(-1)
-            elif search == "random":
-                p = queue.pop(random.randint(0, len(queue) - 1))
+                i = -1
 
+        while (len(queue) + len(real_leaves) < size) and queue:
+
+            if rng is not None:
+                i = rng.randint(0, len(queue) - 1)
+
+            p = queue.pop(i)
             if len(p) == 1:
                 real_leaves.append(p)
                 continue
@@ -1654,8 +1664,14 @@ class ContractionTree:
         tree.already_optimized.setdefault(minimize, set())
         already_optimized = tree.already_optimized[minimize]
 
-        if seed is not None:
-            random.seed(seed)
+        if select == "random":
+            rng = get_rng(seed)
+        else:
+            if select == "max":
+                i = 0
+            elif select == "min":
+                i = -1
+            rng = None
 
         candidates, weights = tree.calc_subtree_candidates(
             pwr=weight_pwr, what=weight_what
@@ -1670,14 +1686,9 @@ class ContractionTree:
         r = 0
         try:
             while candidates and r < maxiter:
-                if select == "max":
-                    i = 0
-                elif select == "min":
-                    i = -1
-                elif select == "random":
-                    (i,) = random.choices(
-                        range(len(candidates)), weights=weights
-                    )
+
+                if rng is not None:
+                    i = rng.choices(range(len(candidates)), weights=weights)
 
                 weights.pop(i)
                 sub_root = candidates.pop(i)
@@ -1746,6 +1757,7 @@ class ContractionTree:
         parallel="auto",
         parallel_maxiter_steps=4,
         minimize="flops",
+        seed=None,
         progbar=False,
         inplace=False,
     ):
@@ -1790,6 +1802,8 @@ class ContractionTree:
         minimize : {'flops', 'size', ..., Objective}, optional
             Whether to minimize the total flops or maximum size of the
             contraction tree.
+        seed : None, int or random.Random, optional
+            A random seed to use.
         progbar : bool, optional
             Whether to show live progress.
         inplace : bool, optional
@@ -1806,6 +1820,8 @@ class ContractionTree:
 
         # how to rank the trees
         score = get_score_fn(minimize)
+
+        rng = get_rng(seed)
 
         # set up the initial 'forest' and parallel machinery
         pool = parse_parallel_arg(parallel)
@@ -1837,10 +1853,10 @@ class ContractionTree:
                         "maxiter": maxiter,
                         "minimize": minimize,
                         "subtree_size": subtree_size,
-                        "subtree_search": random.choice(subtree_search),
-                        "select": random.choice(subtree_select),
-                        "weight_pwr": random.choice(subtree_weight_pwr),
-                        "weight_what": random.choice(subtree_weight_what),
+                        "subtree_search": rng.choice(subtree_search),
+                        "select": rng.choice(subtree_select),
+                        "weight_pwr": rng.choice(subtree_weight_pwr),
+                        "weight_what": rng.choice(subtree_weight_what),
                     }
                     for _ in range(num_trees)
                 ]
@@ -1909,6 +1925,7 @@ class ContractionTree:
         minimize="flops",
         allow_outer=True,
         max_repeats=16,
+        seed=None,
         inplace=False,
     ):
         """Slice this tree (turn some indices into indices which are explicitly
@@ -1940,6 +1957,8 @@ class ContractionTree:
             Whether to allow slicing of outer indices.
         max_repeats : int, optional
             How many times to repeat the search with a slight randomization.
+        seed : None, int or random.Random, optional
+            A random seed or generator to use for the search.
         inplace : bool, optional
             Whether the remove the indices from this tree inplace or not.
 
@@ -1963,6 +1982,7 @@ class ContractionTree:
             temperature=temperature,
             minimize=minimize,
             allow_outer=allow_outer,
+            seed=seed,
         )
 
         ix_sl, _ = sf.search(max_repeats)
@@ -2708,6 +2728,11 @@ class ContractionTree:
 
         entries = []
 
+        if self.has_preprocessing():
+            for pi, eq in self.preprocessing.items():
+                print(f"{GREY}preprocessing {pi}: {RESET}{eq}")
+            print()
+
         for i, (p, l, r) in enumerate(self.traverse()):
             p_legs, l_legs, r_legs = map(self.get_legs, [p, l, r])
             p_inds, l_inds, r_inds = map(self.get_inds, [p, l, r])
@@ -3379,10 +3404,11 @@ class PartitionTreeBuilder:
         sub_optimize="auto",
         super_optimize="auto-hq",
         check=False,
+        seed=None,
         **partition_opts,
     ):
         tree = ContractionTree(inputs, output, size_dict, track_childless=True)
-        rand_size_dict = jitter_dict(size_dict, random_strength)
+        rand_size_dict = jitter_dict(size_dict, random_strength, seed)
 
         dynamic_imbalance = ("imbalance" in partition_opts) and (
             "imbalance_decay" in partition_opts
@@ -3476,10 +3502,11 @@ class PartitionTreeBuilder:
         groupsize=4,
         check=False,
         sub_optimize="greedy",
+        seed=None,
         **partition_opts,
     ):
         tree = ContractionTree(inputs, output, size_dict, track_childless=True)
-        rand_size_dict = jitter_dict(size_dict, random_strength)
+        rand_size_dict = jitter_dict(size_dict, random_strength, seed)
         leaves = tuple(tree.gen_leaves())
         for node in leaves:
             tree._add_node(node, check=check)
@@ -3516,12 +3543,13 @@ class PartitionTreeBuilder:
         return self.build_agglom(inputs, output, size_dict, **partition_opts)
 
 
-def jitter(x, strength):
-    return x * (1 + strength * random.expovariate(1.0))
+def jitter(x, strength, rng):
+    return x * (1 + strength * rng.expovariate(1.0))
 
 
-def jitter_dict(d, strength):
-    return {k: jitter(v, strength) for k, v in d.items()}
+def jitter_dict(d, strength, seed=None):
+    rng = get_rng(seed)
+    return {k: jitter(v, strength, rng) for k, v in d.items()}
 
 
 def separate(xs, blocks):

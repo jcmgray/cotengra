@@ -1,21 +1,20 @@
 """Greedy contraction tree finders.
 """
-import math
-import heapq
-import random
-import functools
-import itertools
 import collections
+import functools
+import heapq
+import itertools
+import math
 
 from ..core import (
-    ContractionTreeCompressed,
-    jitter_dict,
     ContractionTree,
+    ContractionTreeCompressed,
     get_hypergraph,
+    jitter_dict,
 )
-from ..utils import oset, GumbelBatchedGenerator, BadTrial
 from ..hyperoptimizers.hyper import register_hyper_function
-from .path_basic import ssa_to_linear, get_optimize_greedy
+from ..utils import BadTrial, GumbelBatchedGenerator, get_rng, oset
+from .path_basic import get_optimize_greedy, ssa_to_linear
 
 ssa_greedy_optimize = functools.partial(get_optimize_greedy(), use_ssa=True)
 
@@ -376,7 +375,7 @@ class GreedySpan:
         self.score_perm = score_perm
         self.distance_p = distance_p
         self.distance_steal = distance_steal
-        self.rng = random.Random(seed)
+        self.rng = get_rng(seed)
         self.gumbel = GumbelBatchedGenerator(self.rng)
 
     def get_ssa_path(self, inputs, output, size_dict):

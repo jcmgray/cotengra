@@ -1,13 +1,12 @@
 """Functionality for identifying indices to sliced.
 """
-import random
 import collections
 from math import log
 
 from .core import ContractionTree
-from .utils import compute_size_by_dict, MaxCounter, oset
-from .scoring import get_score_fn
 from .plot import plot_slicings, plot_slicings_alt
+from .scoring import get_score_fn
+from .utils import MaxCounter, compute_size_by_dict, get_rng, oset
 
 
 class ContractionCosts:
@@ -246,6 +245,7 @@ class SliceFinder:
         temperature=0.01,
         minimize="flops",
         allow_outer=True,
+        seed=None,
     ):
         if all(
             t is None for t in (target_size, target_overhead, target_slices)
@@ -279,11 +279,12 @@ class SliceFinder:
         # algorithmic parameters
         self.temperature = temperature
 
+        self.rng = get_rng(seed)
+
         # search criteria
         self.target_size = target_size
         self.target_overhead = target_overhead
         self.target_slices = target_slices
-
         self.minimize = get_score_fn(minimize)
 
     def _maybe_default(self, attr, value):
@@ -376,7 +377,7 @@ class SliceFinder:
                 # the base score
                 self.minimize.score_slice_index(cost, ix) -
                 # a smudge that replicates boltzmann sampling
-                temperature * log(-log(random.random())) -
+                temperature * log(-log(self.rng.random())) -
                 # penalize forbidden (outer) indices
                 (0 if ix not in self.forbidden else float("inf")),
             )

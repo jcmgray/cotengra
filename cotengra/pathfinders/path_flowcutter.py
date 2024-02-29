@@ -2,7 +2,6 @@
 """
 import re
 import time
-import random
 import signal
 import warnings
 import tempfile
@@ -13,6 +12,7 @@ from .treedecomp import td_str_to_tree_decomposition, td_to_eo
 from ..core import ContractionTree
 from ..hypergraph import LineGraph
 from ..hyperoptimizers.hyper import register_hyper_function
+from ..utils import get_rng
 
 
 class FlowCutterOptimizer(PathOptimizer):
@@ -20,18 +20,13 @@ class FlowCutterOptimizer(PathOptimizer):
         self, max_time=10, seed=None, executable="flow_cutter_pace17"
     ):
         self.max_time = max_time
-        self.seed = seed
+        self.rng = get_rng(seed)
         self.executable = executable
 
     def run_flowcutter(self, file, max_time=None):
         if max_time is None:
             max_time = self.max_time
-
-        if self.seed is None:
-            seed = random.randint(0, 2**32 - 1)
-        else:
-            seed = self.seed
-
+        seed = self.rng.randint(0, 2**32 - 1)
         args = [self.executable, "-s", str(seed)]
         process = subprocess.Popen(args, stdout=subprocess.PIPE, stdin=file)
 

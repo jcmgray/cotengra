@@ -1,10 +1,10 @@
-"""Compressed contraction tree search using monte carlo tree search.
-"""
+"""Compressed contraction tree search using monte carlo tree search."""
+
 import math
-import random
 
 from ..pathfinders.path_basic import ssa_to_linear
 from ..core import ContractionTreeCompressed, get_hypergraph
+from ..utils import GumbelBatchedGenerator
 
 
 class Node:
@@ -71,29 +71,7 @@ class Node:
         )
 
 
-def gumbel():
-    return -math.log(-math.log(random.random()))
-
-
 class MCTS:
-    __slots__ = (
-        "chi",
-        "T",
-        "prune",
-        "optimize",
-        "optimize_factory",
-        "best_score",
-        "best_nid_path",
-        "children",
-        "parents",
-        "seen",
-        "leaves",
-        "root",
-        "N",
-        "pbar",
-        "to_delete",
-    )
-
     def __init__(
         self,
         chi,
@@ -101,6 +79,7 @@ class MCTS:
         prune=True,
         optimize=None,
         optimize_factory=False,
+        seed=None,
     ):
         self.chi = chi
         self.T = T
@@ -116,6 +95,7 @@ class MCTS:
         self.leaves = None
         self.root = None
         self.N = None
+        self.gmblgen = GumbelBatchedGenerator(seed)
 
     def __repr__(self):
         return (
@@ -285,7 +265,7 @@ class MCTS:
                 continue
             node = min(
                 self.children[node],
-                key=lambda node: node.local_score - self.T * gumbel(),
+                key=lambda node: node.local_score - self.T * self.gmblgen(),
             )
         self.backprop(node)
 

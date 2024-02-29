@@ -1,19 +1,19 @@
-"""igraph based pathfinders.
-"""
-import random
+"""igraph based pathfinders."""
+
 import functools
 from collections import defaultdict
 
 from ..core import (
-    jitter_dict,
     ContractionTree,
     PartitionTreeBuilder,
+    jitter_dict,
 )
 from ..hypergraph import (
     calc_edge_weight_float,
     calc_node_weight_float,
 )
 from ..hyperoptimizers.hyper import register_hyper_function
+from ..utils import get_rng
 
 
 def oe_to_igraph(
@@ -51,6 +51,7 @@ def igraph_subgraph_find_membership(
     weight_edges="log",
     method="spinglass",
     parts=2,
+    seed=None,
     **igraph_opts,
 ):
     G = oe_to_igraph(inputs, output, size_dict, weight_nodes, weight_edges)
@@ -73,7 +74,9 @@ def igraph_subgraph_find_membership(
         )
 
     elif method == "label_propagation":
-        initial = [random.choice(range(parts)) for _ in range(len(G.vs))]
+        rng = get_rng(seed)
+
+        initial = [rng.choice(range(parts)) for _ in range(len(G.vs))]
         clustering = G.community_label_propagation(
             weight_lbl, initial=initial, **igraph_opts
         )

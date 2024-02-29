@@ -5,23 +5,22 @@ import functools
 import hashlib
 import importlib
 import pickle
-import random
 import re
 import threading
 import time
 import warnings
 from math import log2, log10
 
-from ..oe import PathOptimizer
-from ..scoring import get_score_fn
 from ..core import (
     ContractionTree,
     ContractionTreeCompressed,
     ContractionTreeMulti,
 )
-from ..utils import DiskDict, BadTrial
-from ..parallel import parse_parallel_arg, get_n_workers, submit, should_nest
-from ..plot import plot_trials, plot_trials_alt, plot_scatter, plot_scatter_alt
+from ..oe import PathOptimizer
+from ..parallel import get_n_workers, parse_parallel_arg, should_nest, submit
+from ..plot import plot_scatter, plot_scatter_alt, plot_trials, plot_trials_alt
+from ..scoring import get_score_fn
+from ..utils import BadTrial, DiskDict, get_rng
 
 
 @functools.lru_cache(maxsize=None)
@@ -257,7 +256,7 @@ class ComputeScore:
             "warn": "warn",
             "ignore": "ignore",
         }[on_trial_error]
-        self.rng = random.Random(seed)
+        self.rng = get_rng(seed)
 
     def __call__(self, *args, **kwargs):
         ti = time.time()

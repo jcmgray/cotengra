@@ -1,34 +1,35 @@
 """Fake hyper optimization using random sampling.
 """
 import math
-import random
 import functools
 
 from .hyper import register_hyper_optlib
+from ..utils import get_rng
 
 
-def sample_bool():
-    return random.choice([False, True])
+def sample_bool(rng):
+    return rng.choice([False, True])
 
 
-def sample_int(low, high):
-    return random.randint(low, high)
+def sample_int(rng, low, high):
+    return rng.randint(low, high)
 
 
-def sample_option(options):
-    return random.choice(options)
+def sample_option(rng, options):
+    return rng.choice(options)
 
 
-def sample_uniform(low, high):
-    return random.uniform(low, high)
+def sample_uniform(rng, low, high):
+    return rng.uniform(low, high)
 
 
-def sample_loguniform(low, high):
-    return 2 ** random.uniform(math.log2(low), math.log2(high))
+def sample_loguniform(rng, low, high):
+    return 2 ** rng.uniform(math.log2(low), math.log2(high))
 
 
 class RandomSpace:
-    def __init__(self, space):
+    def __init__(self, space, seed=None):
+        self.rng = get_rng(seed)
         self._samplers = {}
 
         for k, param in space.items():
@@ -59,16 +60,17 @@ class RandomSpace:
                 raise ValueError("Didn't understand space {}.".format(param))
 
     def sample(self):
-        return {k: fn() for k, fn in self._samplers.items()}
+        return {k: fn(self.rng) for k, fn in self._samplers.items()}
 
 
 class RandomSampler:
-    def __init__(self, methods, spaces):
+    def __init__(self, methods, spaces, seed=None):
+        self.rng = get_rng(seed)
         self._rmethods = tuple(methods)
-        self._rspaces = {m: RandomSpace(spaces[m]) for m in methods}
+        self._rspaces = {m: RandomSpace(spaces[m], self.rng) for m in methods}
 
     def ask(self):
-        method = random.choice(self._rmethods)
+        method = self.rng.choice(self._rmethods)
         rspace = self._rspaces[method]
         params = rspace.sample()
         return method, params
@@ -78,6 +80,7 @@ def random_init_optimizers(
     self,
     methods,
     space,
+    seed=None,
 ):
     """Initialize a completely random sampling optimizer.
 
@@ -86,7 +89,7 @@ def random_init_optimizers(
     space : dict[str, dict[str, dict]]
         The search space.
     """
-    self.sampler = RandomSampler(methods, space)
+    self.sampler = RandomSampler(methods, space, seed=seed)
 
 
 def random_get_setting(self):

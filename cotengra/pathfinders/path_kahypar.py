@@ -1,24 +1,25 @@
-"""Contraction tree finders using kahypar hypergraph partitioning.
-"""
-import random
+"""Contraction tree finders using kahypar hypergraph partitioning."""
+
 import functools
 import itertools
-from os.path import join, abspath, dirname
+from os.path import abspath, dirname, join
 
 from ..core import PartitionTreeBuilder, get_hypergraph
 from ..hyperoptimizers.hyper import register_hyper_function
+from ..utils import get_rng
 
 
 @functools.lru_cache(1)
 def get_kahypar_profile_dir():
     # needed to supply kahypar profile files
-    import kahypar
-
     # if kahypar is built from source, the version number may not match the
     # <major>.<minor>.<patch> format; rather than assuming the format, add
     # a fallback option for unrecognized versions
     import re
-    m = re.compile(r'(\d+)\.(\d+)\.(\d+)').match(kahypar.__version__)
+
+    import kahypar
+
+    m = re.compile(r"(\d+)\.(\d+)\.(\d+)").match(kahypar.__version__)
     path_components = [abspath(dirname(__file__)), "kahypar_profiles"]
 
     if m is not None:
@@ -64,8 +65,8 @@ def kahypar_subgraph_find_membership(
 ):
     import kahypar as kahypar
 
-    if seed is None:
-        seed = random.randint(0, 2**31 - 1)
+    rng = get_rng(seed)
+    seed = rng.randint(0, 2**31 - 1)
 
     nv = len(inputs)
     if parts >= nv:
