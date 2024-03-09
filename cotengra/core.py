@@ -1,5 +1,5 @@
-"""Core contraction tree data structure and methods.
-"""
+"""Core contraction tree data structure and methods."""
+
 import collections
 import functools
 import itertools
@@ -881,15 +881,21 @@ class ContractionTree:
 
         return self.multiplicity * self._write
 
-    def total_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum):
+    def total_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum, log=None):
         t = 0
         for p in self.children:
             f = self.get_flops(p)
             w = self.get_size(p)
             t += combine((f, factor * w))
-        return self.multiplicity * t
 
-    def max_size(self):
+        t *= self.multiplicity
+
+        if log is not None:
+            t = math.log(t, log)
+
+        return t
+
+    def max_size(self, log=None):
         """The size of the largest intermediate tensor."""
         if self.N == 1:
             return self.get_size(self.root)
@@ -900,9 +906,14 @@ class ContractionTree:
                 self._sizes.add(self.get_size(node))
             self._track_size = True
 
-        return self._sizes.max()
+        size = self._sizes.max()
 
-    def peak_size(self, order=None):
+        if log is not None:
+            size = math.log(size, log)
+
+        return size
+
+    def peak_size(self, order=None, log=None):
         """Get the peak concurrent size of tensors needed - this depends on the
         traversal order, i.e. the exact contraction path, not just the
         contraction tree.
@@ -910,10 +921,15 @@ class ContractionTree:
         tot_size = sum(self.get_size(node) for node in self.gen_leaves())
         peak = tot_size
         for p, l, r in self.traverse(order=order):
+            tot_size += self.get_size(p)
+            # measure peak assuming we need both inputs and output
+            peak = max(peak, tot_size)
             tot_size -= self.get_size(l)
             tot_size -= self.get_size(r)
-            tot_size += self.get_size(p)
-            peak = max(peak, tot_size)
+
+        if log is not None:
+            peak = math.log(peak, log)
+
         return peak
 
     def contract_stats(self, force=False):
@@ -969,10 +985,7 @@ class ContractionTree:
 
     def contraction_width(self, log=2):
         """Get log2 of the size of the largest tensor."""
-        W = self.max_size()
-        if log is not None:
-            W = math.log(W, log)
-        return W
+        return self.max_size(log=log)
 
     def compressed_contract_stats(
         self,
@@ -1426,7 +1439,6 @@ class ContractionTree:
                 i = -1
 
         while (len(queue) + len(real_leaves) < size) and queue:
-
             if rng is not None:
                 i = rng.randint(0, len(queue) - 1)
 
@@ -3286,14 +3298,57 @@ class ContractionTree:
         hg = self.get_hypergraph(accel=False)
         hg.plot(**kwargs)
 
+    def describe(self, info="normal", join=" "):
+        """Return a string describing the contraction tree."""
+        stats = self.contract_stats()
+        if info == "normal":
+            return join.join(
+                (
+                    f"log2[SIZE]={math.log2(stats['size']):.4g} ",
+                    f"log10[FLOPs]={math.log10(stats['flops']):.4g}",
+                )
+            )
+
+        elif info == "full":
+            s = [
+                f"log10[FLOPS]={self.contraction_cost(log=10):.4g}",
+                f"log10[COMBO]={self.total_cost(log=10):.4g}",
+                f"log2[SIZE]={self.contraction_width(log=2):.4g}",
+                f"log2[PEAK]={self.peak_size(log=2):.4g}",
+            ]
+            if self.sliced_inds:
+                s.append(f"NSLICES={self.multiplicity:.4g}")
+            return join.join(s)
+
+        elif info == "concise":
+            s = [
+                f"F={self.contraction_cost(log=10):.4g}",
+                f"C={self.total_cost(log=10):.4g}",
+                f"S={self.contraction_width(log=2):.4g}",
+                f"P={self.peak_size(log=2):.4g}",
+            ]
+            if self.sliced_inds:
+                s.append(f"$={self.multiplicity:.4g}")
+            return join.join(s)
+
     def __repr__(self):
-        s = "<{}(N={}, branches={}, complete={})>"
-        return s.format(
-            self.__class__.__name__,
-            self.N,
-            len(self.children),
-            self.is_complete(),
-        )
+        if self.is_complete():
+            return f"<{self.__class__.__name__}(N={self.N})>"
+        else:
+            s = "<{}(N={}, branches={}, complete={})>"
+            return s.format(
+                self.__class__.__name__,
+                self.N,
+                len(self.children),
+                self.is_complete(),
+            )
+
+    def __str__(self):
+        if not self.is_complete():
+            return self.__repr__()
+        else:
+            d = self.describe("concise", join=", ")
+            return f"<{self.__class__.__name__}(N={self.N}, {d})>"
 
 
 def _reconfigure_tree(tree, *args, **kwargs):
@@ -3310,12 +3365,8 @@ def _get_tree_info(tree):
     return stats
 
 
-def _describe_tree(tree):
-    stats = tree.contract_stats()
-    return (
-        f"log2[SIZE]: {math.log2(stats['size']):.2f} "
-        f"log10[FLOPs]: {math.log10(stats['flops']):.2f}"
-    )
+def _describe_tree(tree, info="normal"):
+    return tree.describe(info=info)
 
 
 class ContractionTreeCompressed(ContractionTree):

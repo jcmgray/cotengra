@@ -1,5 +1,5 @@
-"""Base hyper optimization functionality.
-"""
+"""Base hyper optimization functionality."""
+
 import collections
 import functools
 import hashlib
@@ -295,8 +295,8 @@ class ComputeScore:
 
 def progress_description(best):
     return (
-        f"log2[SIZE]: {log2(best['size']):.2f} "
-        f"log10[FLOPs]: {log10(best['flops']):.2f}"
+        f"log2[SIZE]={log2(best['size']):.4g} "
+        f"log10[FLOPs]={log10(best['flops']):.4g}"
     )
 
 
