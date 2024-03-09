@@ -34,6 +34,7 @@ class Objective:
 
 # ------------------------ exact contraction scoring ------------------------ #
 
+
 def ensure_basic_quantities_are_computed(trial):
     if not all(q in trial for q in ("flops", "write", "size")):
         stats = trial["tree"].contract_stats()
@@ -293,9 +294,8 @@ class CompressedStatsTracker:
     )
 
     def __init__(self, hg, chi):
-
         if chi == "auto":
-            self.chi = max(hg.size_dict.values())**2
+            self.chi = max(hg.size_dict.values()) ** 2
         else:
             self.chi = chi
 
@@ -391,7 +391,6 @@ class CompressedStatsTracker:
 
 
 class CompressedStatsTrackerSize(CompressedStatsTracker):
-
     __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
 
     def __init__(self, hg, chi, secondary_weight=1e-3):
@@ -407,7 +406,6 @@ class CompressedStatsTrackerSize(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerPeak(CompressedStatsTracker):
-
     __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
 
     def __init__(self, hg, chi, secondary_weight=1e-3):
@@ -423,7 +421,6 @@ class CompressedStatsTrackerPeak(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerWrite(CompressedStatsTracker):
-
     __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
 
     def __init__(self, hg, chi, secondary_weight=1e-3):
@@ -439,7 +436,6 @@ class CompressedStatsTrackerWrite(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerFlops(CompressedStatsTracker):
-
     __slots__ = CompressedStatsTracker.__slots__ + ("secondary_weight",)
 
     def __init__(self, hg, chi, secondary_weight=1e-3):
@@ -455,7 +451,6 @@ class CompressedStatsTrackerFlops(CompressedStatsTracker):
 
 
 class CompressedStatsTrackerCombo(CompressedStatsTracker):
-
     __slots__ = CompressedStatsTracker.__slots__ + ("factor",)
 
     def __init__(self, hg, chi, factor=DEFAULT_COMBO_FACTOR):

@@ -175,8 +175,10 @@ def test_plot():
         d_max=2,
         optimize="greedy",
     )
+    tree.plot_flat()
     tree.plot_ring()
     tree.plot_tent()
+    tree.plot_circuit()
     tree.plot_contractions()
 
 

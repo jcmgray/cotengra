@@ -1,5 +1,5 @@
-"""Hypergraph, optimizer, and contraction tree visualization tools.
-"""
+"""Hypergraph, optimizer, and contraction tree visualization tools."""
+
 import collections
 import functools
 import importlib
@@ -124,6 +124,7 @@ def plot_scatter(
     import matplotlib.pyplot as plt
 
     import cotengra as ctg
+    from cotengra.schematic import hash_to_color
 
     factor = None
     if x not in ("trial", "score"):
@@ -172,6 +173,7 @@ def plot_scatter(
         ax.scatter(
             datum[x],
             datum[y],
+            color=hash_to_color(method),
             marker=next(markers),
             label=method,
             edgecolor="white",
@@ -960,11 +962,11 @@ def plot_contractions(
     peaks = []
     costs = []
     for p, l, r in tree.traverse(order):
+        sz += tree.get_size(p)
+        peaks.append(math.log2(sz))
         sz -= tree.get_size(l)
         sz -= tree.get_size(r)
-        sz += tree.get_size(p)
         sizes.append(math.log2(tree.get_size(p)))
-        peaks.append(math.log2(sz))
         costs.append(math.log10(tree.get_flops(p)))
 
     cons = list(range(len(peaks)))
@@ -1669,6 +1671,111 @@ def plot_tree_flat(
             y=0.8,
             text=f"$\\sum_{{{','.join(tree.sliced_inds)}}}$",
             color=fontcolor,
+        )
+
+    return d.fig, d.ax
+
+
+@show_and_close
+def plot_tree_circuit(
+    tree,
+    edge_colormap="GnBu",
+    edge_max_width=None,
+    node_colormap="YlOrRd",
+    node_max_size=None,
+    figsize=None,
+):
+    import matplotlib as mpl
+
+    from cotengra.schematic import Drawing
+
+    if figsize is None:
+        figsize = (tree.N**0.75, tree.N**0.75)
+
+    d = Drawing(figsize=figsize)
+
+    # edge coloring -> node size
+    if edge_max_width is None:
+        edge_max_width = math.log2(tree.max_size())
+
+    ew_range = 0, edge_max_width
+    enorm = mpl.colors.Normalize(*ew_range, clip=True)
+    if not isinstance(edge_colormap, mpl.colors.Colormap):
+        edge_colormap = getattr(mpl.cm, edge_colormap)
+    emapper = mpl.cm.ScalarMappable(norm=enorm, cmap=edge_colormap)
+
+    # edge coloring -> node flops
+    if node_max_size is None:
+        node_max_size = math.log2(max(map(tree.get_flops, tree.children)))
+
+    nw_range = 0, node_max_size
+    nnorm = mpl.colors.Normalize(*nw_range, clip=True)
+    if not isinstance(node_colormap, mpl.colors.Colormap):
+        node_colormap = getattr(mpl.cm, node_colormap)
+    nmapper = mpl.cm.ScalarMappable(norm=nnorm, cmap=node_colormap)
+
+    pos = {tree.root: (0, 0)}
+    queue = [tree.root]
+    while queue:
+        # process tree in reverse depth first order
+        p = queue.pop(0)
+        px, py = pos[p]
+        l, r = tree.children[p]
+
+        # we do all of right contractions first
+        pos[r] = (px - 1, py - 1)
+        pos[l] = (px - len(r), py)
+
+        if len(l) > 1:
+            queue.append(l)
+        else:
+            (i,) = l
+            d.text(
+                pos[l],
+                f"{i}",
+                color=(0.5, 0.5, 0.5, 0.5),
+                fontsize=20 * tree.N**-0.25,
+                rotation=-90,
+                ha="right",
+                va="center",
+                family="monospace",
+            )
+        if len(r) > 1:
+            queue.append(r)
+        else:
+            (i,) = r
+            d.text(
+                pos[r],
+                f"{i}",
+                color=(0.5, 0.5, 0.5, 0.5),
+                fontsize=20 * tree.N**-0.25,
+                rotation=-45,
+                ha="right",
+                va="top",
+                family="monospace",
+            )
+
+        lW = math.log2(tree.get_size(l))
+        rW = math.log2(tree.get_size(r))
+        pC = math.log2(tree.get_flops(p))
+
+        d.line(
+            pos[l],
+            pos[p],
+            color=emapper.to_rgba(lW),
+            linewidth=5 * lW / edge_max_width,
+        )
+        d.line(
+            pos[r],
+            pos[p],
+            color=emapper.to_rgba(rW),
+            linewidth=5 * rW / edge_max_width,
+        )
+        d.circle(
+            pos[p],
+            color=nmapper.to_rgba(pC),
+            radius=0.3 * pC / node_max_size,
+            linewidth=0,
         )
 
     return d.fig, d.ax
