@@ -1,5 +1,5 @@
-"""Functionality relating to actually contracting.
-"""
+"""Functionality relating to actually contracting."""
+
 import functools
 import itertools
 import operator
@@ -24,8 +24,7 @@ def get_default_implementation():
 
 @contextlib.contextmanager
 def default_implementation(impl):
-    """Context manager for temporarily setting the default implementation.
-    """
+    """Context manager for temporarily setting the default implementation."""
     global DEFAULT_IMPLEMENTATION
     old_impl = DEFAULT_IMPLEMENTATION
     DEFAULT_IMPLEMENTATION = impl
@@ -666,6 +665,7 @@ class Contractor:
         "implementation",
         "backend",
         "progbar",
+        "__weakref__",
     )
 
     def __init__(
@@ -763,7 +763,9 @@ class Contractor:
                 p_array = _einsum(arg, l_array, r_array)
 
             if exponent is not None:
-                factor = do("max", do("abs", p_array, like=backend), like=backend)
+                factor = do(
+                    "max", do("abs", p_array, like=backend), like=backend
+                )
                 if check_zero and float(factor) == 0.0:
                     return 0.0, 0.0
                 exponent = exponent + do("log10", factor, like=backend)
@@ -786,6 +788,19 @@ class CuQuantumContractor:
         autotune=False,
         **kwargs,
     ):
+        if kwargs.pop("strip_exponent", None):
+            raise ValueError(
+                "strip_exponent=True not supported with cuQuantum"
+            )
+
+        if tree.has_preprocessing():
+            raise ValueError("Preprocessing not supported with cuQuantum yet.")
+
+        if kwargs.pop("progbar", None):
+            import warnings
+
+            warnings.warn("Progress bar not supported with cuQuantum yet.")
+
         if handle_slicing:
             self.eq = tree.get_eq()
             self.shapes = tree.get_shapes()
@@ -855,11 +870,14 @@ def make_contractor(
     order=None,
     prefer_einsum=False,
     strip_exponent=False,
+    check_zero=False,
     implementation=None,
     autojit=False,
+    progbar=False,
 ):
     """Get a reusable function which performs the contraction corresponding
-    to ``tree``.
+    to ``tree``. The various options provide defaults that can also be overrode
+    when calling the standard contractor.
 
     Parameters
     ----------
@@ -874,6 +892,11 @@ def make_contractor(
     strip_exponent : bool, optional
         If ``True``, the function will strip the exponent from the output
         array and return it separately.
+    check_zero : bool, optional
+        If ``True``, when ``strip_exponent=True``, explicitly check for
+        zero-valued intermediates that would otherwise produce ``nan``,
+        instead terminating early if encountered and returning
+        ``(0.0, 0.0)``.
     implementation : str or tuple[callable, callable], optional
         What library to use to actually perform the contractions. Options are
 
@@ -892,6 +915,8 @@ def make_contractor(
     autojit : bool, optional
         If ``True``, use :func:`autoray.autojit` to compile the contraction
         function.
+    progbar : bool, optional
+            Whether to show progress through the contraction by default.
 
     Returns
     -------
@@ -902,25 +927,19 @@ def make_contractor(
         implementation = get_default_implementation()
 
     if implementation == "cuquantum":
-        from .contract import CuQuantumContractor
-
-        if strip_exponent:
-            raise ValueError(
-                "strip_exponent=True not supported with cuQuantum"
-            )
-
-        if tree.has_preprocessing():
-            raise ValueError(
-                "Preprocessing not supported with cuQuantum yet."
-            )
-
-        fn = CuQuantumContractor(tree)
-
+        fn = CuQuantumContractor(
+            tree,
+            strip_exponent=strip_exponent,
+            check_zero=check_zero,
+            progbar=progbar,
+        )
     else:
         fn = Contractor(
             contractions=extract_contractions(tree, order, prefer_einsum),
             strip_exponent=strip_exponent,
+            check_zero=check_zero,
             implementation=implementation,
+            progbar=progbar,
         )
         if autojit:
             from autoray import autojit as _autojit

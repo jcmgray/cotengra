@@ -52,6 +52,7 @@ from .utils import (
     node_supremum,
     prod,
     unique,
+    oset,
 )
 
 
@@ -176,6 +177,13 @@ class ContractionTree:
         self.inputs = inputs
         self.output = output
 
+        if isinstance(self.inputs[0], set) or isinstance(self.output, set):
+            warnings.warn(
+                "The inputs or output of this tree are not ordered."
+                "Costs will be accurate but actually contracting requires "
+                "ordered indices corresponding to array axes."
+            )
+
         if not isinstance(next(iter(size_dict.values()), 1), int):
             # make sure we are working with python integers to avoid overflow
             # comparison errors with inf etc.
@@ -219,7 +227,7 @@ class ContractionTree:
         self.track_childless = track_childless
         if self.track_childless:
             # the set of dangling nodes
-            self.childless = {self.root}
+            self.childless = oset([self.root])
 
         # running largest_intermediate and total flops
         self._track_flops = track_flops
@@ -1140,10 +1148,13 @@ class ContractionTree:
         nx, ny = len(x), len(y)
         if nx == ny:
             # deterministically break ties
-            nx = -min(x)
-            ny = -min(y)
+            sortx = -min(x)
+            sorty = -min(y)
+        else:
+            sortx = nx
+            sorty = ny
 
-        if nx > ny:
+        if sortx > sorty:
             lr = (x, y)
         else:
             lr = (y, x)
@@ -1686,7 +1697,6 @@ class ContractionTree:
         r = 0
         try:
             while candidates and r < maxiter:
-
                 if rng is not None:
                     (i,) = rng.choices(range(len(candidates)), weights=weights)
 
@@ -1814,6 +1824,9 @@ class ContractionTree:
         ContractionTree
         """
         tree = self if inplace else self.copy()
+
+        # some of these might be unpicklable
+        tree.contraction_cores.clear()
 
         # candidate trees
         num_keep = max(1, int(num_trees * restart_fraction))
@@ -2127,6 +2140,9 @@ class ContractionTree:
         ContractionTree
         """
         tree = self if inplace else self.copy()
+
+        # some of these might be unpicklable
+        tree.contraction_cores.clear()
 
         # candidate trees
         num_keep = max(1, int(num_trees * restart_fraction))
@@ -2805,8 +2821,10 @@ class ContractionTree:
         order=None,
         prefer_einsum=False,
         strip_exponent=False,
+        check_zero=False,
         implementation=None,
         autojit=False,
+        progbar=False,
     ):
         """Get a reusable function which performs the contraction corresponding
         to this tree, cached.
@@ -2824,6 +2842,11 @@ class ContractionTree:
         strip_exponent : bool, optional
             If ``True``, the function will strip the exponent from the output
             array and return it separately.
+        check_zero : bool, optional
+            If ``True``, when ``strip_exponent=True``, explicitly check for
+            zero-valued intermediates that would otherwise produce ``nan``,
+            instead terminating early if encountered and returning
+            ``(0.0, 0.0)``.
         implementation : str or tuple[callable, callable], optional
             What library to use to actually perform the contractions. Options
             are:
@@ -2844,6 +2867,8 @@ class ContractionTree:
         autojit : bool, optional
             If ``True``, use :func:`autoray.autojit` to compile the contraction
             function.
+        progbar : bool, optional
+            Whether to show progress through the contraction by default.
 
         Returns
         -------
@@ -2855,7 +2880,9 @@ class ContractionTree:
             order,
             prefer_einsum,
             strip_exponent,
+            check_zero,
             implementation,
+            progbar,
         )
         try:
             fn = self.contraction_cores[key]
@@ -2865,8 +2892,10 @@ class ContractionTree:
                 order=order,
                 prefer_einsum=prefer_einsum,
                 strip_exponent=strip_exponent,
+                check_zero=check_zero,
                 implementation=implementation,
                 autojit=autojit,
+                progbar=progbar,
             )
 
         return fn
@@ -2880,7 +2909,7 @@ class ContractionTree:
         check_zero=False,
         backend=None,
         implementation=None,
-        autojit=False,
+        autojit="auto",
         progbar=False,
     ):
         """Contract ``arrays`` with this tree. The order of the axes and
@@ -2901,24 +2930,26 @@ class ContractionTree:
         backend : str, optional
             What library to use for ``einsum`` and ``transpose``, will be
             automatically inferred from the arrays if not given.
-        autojit : bool, optional
+        autojit : "auto" or bool, optional
             Whether to use ``autoray.autojit`` to jit compile the expression.
+            If "auto", then let ``cotengra`` choose.
         progbar : bool, optional
             Show progress through the contraction.
         """
+        if autojit == "auto":
+            # choose for the user
+            autojit = backend == "jax"
+
         fn = self.get_contractor(
             order=order,
             prefer_einsum=prefer_einsum,
             strip_exponent=strip_exponent is not False,
             implementation=implementation,
             autojit=autojit,
-        )
-        result = fn(
-            *arrays,
             check_zero=check_zero,
-            backend=backend,
             progbar=progbar,
         )
+        result = fn(*arrays, backend=backend)
 
         # handle exponent outside of potential jit
         if isinstance(strip_exponent, dict):
@@ -3092,8 +3123,8 @@ class ContractionTree:
         strip_exponent=False,
         check_zero=False,
         backend=None,
-        implementation="auto",
-        autojit=False,
+        implementation=None,
+        autojit="auto",
         progbar=False,
     ):
         """Contract ``arrays`` with this tree. This function takes *unsliced*
@@ -3118,7 +3149,7 @@ class ContractionTree:
         check_zero : bool, optional
             If ``True``, when ``strip_exponent=True``, explicitly check for
             zero-valued intermediates that would otherwise produce ``nan``,
-            instead terminating early if encounteredand returning
+            instead terminating early if encountered and returning
             ``(0.0, 0.0)``.
         backend : str, optional
             What library to use for ``tensordot``, ``einsum`` and
@@ -3143,9 +3174,6 @@ class ContractionTree:
         --------
         contract_core, contract_slice, slice_arrays, gather_slices
         """
-        if isinstance(self.inputs[0], set) or isinstance(self.output, set):
-            warnings.warn("The inputs or output of this tree are not ordered.")
-
         if not self.sliced_inds:
             return self.contract_core(
                 arrays,
@@ -3408,7 +3436,9 @@ class PartitionTreeBuilder:
         **partition_opts,
     ):
         tree = ContractionTree(inputs, output, size_dict, track_childless=True)
-        rand_size_dict = jitter_dict(size_dict, random_strength, seed)
+
+        rng = get_rng(seed)
+        rand_size_dict = jitter_dict(size_dict, random_strength, rng)
 
         dynamic_imbalance = ("imbalance" in partition_opts) and (
             "imbalance_decay" in partition_opts
@@ -3464,6 +3494,7 @@ class PartitionTreeBuilder:
                 output,
                 rand_size_dict,
                 parts=parts_s,
+                seed=rng,
                 **partition_opts,
             )
 
