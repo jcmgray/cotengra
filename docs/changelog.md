@@ -6,6 +6,9 @@
 
 - all input node legs and pre-processing steps are now calculated lazily,
   allowing slicing of indices including those 'simplified' away {issue}`31`.
+- make [`tree.peak_size`](cotengra.ContractionTree.peak_size) more accurate,
+  by taking max assuming left, right and parent intermediate tensors are all
+  present at the same time.
 
 **Enhancements**
 
@@ -16,6 +19,9 @@
 - [`HyperGraph.plot`](cotengra.plot.plot_hypergraph): support showing hyper
   outer indices, multi-edges, and automatic unique coloring of nodes and
   indices (to match `plot_flat`).
+- add [`ContractionTree.plot_circuit](cotengra.plot.plot_tree_circuit) for
+  plotting the contraction tree as a circuit diagram, which is fast and useful
+  for visualizing the traversal ordering for larger trees.
 - add [`ContractionTree.restore_ind`](cotengra.ContractionTree.restore_ind)
   for 'unslicing' or 'unprojecting' previously removed indices.
 - [`ContractionTree.from_path`](cotengra.ContractionTree.from_path): add option
@@ -29,6 +35,14 @@
   steps and optionally list sliced indices
 - add [get_rng](cotengra.utils.get_rng) as a single entry point for getting or
   propagating a random number generator, to help determinism.
+- set ``autojit="auto"`` for contractions, which by default turns on jit for
+  `backend="jax"` only.
+- add [`tree.describe`](cotengra.ContractionTree.describe) for a various levels
+  of information about a tree, e.g. `tree.describe("full")` and
+  `tree.describe("concise")`.
+- add [ctg.GreedyOptimizer](cotengra.pathfinders.path_basic.GreedyOptimizer)
+  and [ctg.OptimalOptimizer](cotengra.pathfinders.path_optimal.OptimalOptimizer)
+  to the top namespace.
 
 
 ## v0.5.6 (2023-12-07)
