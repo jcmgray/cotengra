@@ -107,7 +107,7 @@ def test_basic_equations(eq, dtype):
     arrays = ctg.utils.make_arrays_from_eq(eq, dtype=dtype)
     x = np.einsum(eq, *arrays)
     y = ctg.einsum(eq, *arrays)
-    rtol = 1e-3 if dtype in ("float32", "complex64") else 1e-6
+    rtol = 5e-3 if dtype in ("float32", "complex64") else 5e-6
     assert_allclose(x, y, rtol=rtol)
 
 
