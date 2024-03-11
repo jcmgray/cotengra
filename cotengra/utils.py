@@ -1,5 +1,5 @@
-"""Various utilities for cotengra.
-"""
+"""Various utilities for cotengra."""
+
 import collections
 import functools
 import itertools
@@ -1240,7 +1240,7 @@ def make_shapes_from_inputs(inputs, size_dict):
     return [tuple(size_dict[ix] for ix in term) for term in inputs]
 
 
-def make_arrays_from_inputs(inputs, size_dict, seed=None):
+def make_arrays_from_inputs(inputs, size_dict, seed=None, dtype="float64"):
     """Make example arrays to match inputs and index sizes.
 
     Parameters
@@ -1251,6 +1251,8 @@ def make_arrays_from_inputs(inputs, size_dict, seed=None):
         The index size dictionary.
     seed : int, optional
         The random seed, by default None.
+    dtype : {'float32', 'float64', 'complex64', 'complex128'}, optional
+        The dtype of the arrays, by default 'float64'.
 
     Returns
     -------
@@ -1261,10 +1263,28 @@ def make_arrays_from_inputs(inputs, size_dict, seed=None):
 
     shapes = make_shapes_from_inputs(inputs, size_dict)
     rng = np.random.default_rng(seed)
-    return [rng.normal(size=shape) for shape in shapes]
+
+    arrays = []
+    for shape in shapes:
+        array = rng.normal(size=shape)
+
+        if dtype == "float32":
+            array = array.astype(np.float32)
+        elif dtype == "complex64":
+            array = (array + 1j * rng.normal(size=shape)).astype(np.complex64)
+        elif dtype == "complex128":
+            array = (array + 1j * rng.normal(size=shape))
+        elif dtype != "float64":
+            raise ValueError(f"unsupported dtype {dtype}")
+
+        array /= np.linalg.norm(array)
+
+        arrays.append(array)
+
+    return arrays
 
 
-def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None):
+def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None, dtype="float64"):
     """Create a set of example arrays to match an einsum equation directly.
 
     Parameters
@@ -1277,6 +1297,8 @@ def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None):
         The maximum dimension, by default 3.
     seed : int, optional
         The random seed, by default None.
+    dtype : {'float32', 'float64', 'complex64', 'complex128'}, optional
+        The dtype of the arrays, by default 'float64'.
 
     Returns
     -------
@@ -1287,7 +1309,7 @@ def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None):
     size_dict = make_rand_size_dict_from_inputs(
         inputs, d_min=d_min, d_max=d_max, seed=seed
     )
-    return make_arrays_from_inputs(inputs, size_dict, seed=seed)
+    return make_arrays_from_inputs(inputs, size_dict, seed=seed, dtype=dtype)
 
 
 def find_output_from_inputs(inputs):
@@ -1455,7 +1477,9 @@ def parse_equation_ellipses(eq, shapes, tuples=False):
 
         # make replacements
         for i, ne in replacements.items():
-            inputs[i] = inputs[i].replace("...", "".join(ellipses_inds[req_ellipsis_inds - ne:]))
+            inputs[i] = inputs[i].replace(
+                "...", "".join(ellipses_inds[req_ellipsis_inds - ne :])
+            )
 
         # check for output
         out_ellipses_indices = "".join(ellipses_inds)

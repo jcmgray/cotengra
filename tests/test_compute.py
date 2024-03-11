@@ -1,10 +1,8 @@
-import pytest
-
-import cotengra as ctg
-
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
+import cotengra as ctg
 
 # these are taken from opt_einsum
 test_case_eqs = [
@@ -102,11 +100,14 @@ test_case_eqs = [
 
 
 @pytest.mark.parametrize("eq", test_case_eqs)
-def test_basic_equations(eq):
-    arrays = ctg.utils.make_arrays_from_eq(eq)
+@pytest.mark.parametrize(
+    "dtype", ("float32", "float64", "complex64", "complex128")
+)
+def test_basic_equations(eq, dtype):
+    arrays = ctg.utils.make_arrays_from_eq(eq, dtype=dtype)
     x = np.einsum(eq, *arrays)
     y = ctg.einsum(eq, *arrays)
-    assert_allclose(x, y)
+    assert_allclose(x, y, rtol=1e-4)
 
 
 @pytest.mark.parametrize("n", [10])
@@ -209,17 +210,18 @@ def test_lazy_sliced_output_reduce():
 
 
 @pytest.mark.parametrize("autojit", [False, True])
-def test_exponent_stripping(autojit):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
+@pytest.mark.parametrize(
+    "dtype", ["float32", "float64", "complex64", "complex128"]
+)
+def test_exponent_stripping(autojit, dtype):
     inputs, output, shapes, size_dict = ctg.utils.lattice_equation([8, 8])
-    rng = np.random.default_rng(42)
-    arrays = [rng.uniform(size=s) for s in shapes]
+
+    arrays = ctg.utils.make_arrays_from_inputs(
+        inputs, size_dict, seed=42, dtype=dtype
+    )
 
     eq = ctg.utils.inputs_output_to_eq(inputs, output)
-    ex = oe.contract(eq, *arrays, optimize="greedy")
+    ex = ctg.einsum(eq, *arrays)
 
     tree = ctg.array_contract_tree(inputs, output, size_dict)
 

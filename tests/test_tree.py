@@ -277,6 +277,42 @@ def test_restore_ind(ind):
     assert utree.contract_stats() == tree.contract_stats()
 
 
+def test_unslice_rand():
+    tree = ctg.utils.rand_tree(10, 3, 2, 1, 1, seed=42)
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    x = tree.contract(arrays)
+    tree.remove_ind_("a")
+    tree.remove_ind_("b")
+    tree.unslice_rand_()
+    assert len(tree.sliced_inds) == 1
+    assert tree.contract(arrays) == pytest.approx(x)
+    tree.unslice_rand_()
+    assert len(tree.sliced_inds) == 0
+    assert tree.contract(arrays) == pytest.approx(x)
+
+
+def test_unslice_all():
+    tree = ctg.utils.rand_tree(10, 3, 2, 1, 1, seed=42)
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    x = tree.contract(arrays)
+    tree.remove_ind_("a")
+    tree.remove_ind_("b")
+    tree.unslice_all_()
+    assert len(tree.sliced_inds) == 0
+    assert tree.contract(arrays) == pytest.approx(x)
+
+
+def test_reslice_and_reconfigure():
+    tree = ctg.utils.rand_tree(10, 3, 2, 1, 1, seed=42)
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    x = tree.contract(arrays)
+    W = tree.max_size()
+    target_size = W // 10
+    tree.slice_and_reconfigure_(target_size, reslice=True)
+    assert tree.max_size() <= target_size
+    assert tree.contract(arrays) == pytest.approx(x)
+
+
 def test_tree_with_one_node():
     eq = "abc->abc"
     size_dict = {"a": 2, "b": 3, "c": 4}

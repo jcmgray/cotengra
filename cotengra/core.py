@@ -25,12 +25,12 @@ from .plot import (
     plot_contractions,
     plot_contractions_alt,
     plot_hypergraph,
+    plot_tree_circuit,
     plot_tree_flat,
     plot_tree_ring,
     plot_tree_rubberband,
     plot_tree_span,
     plot_tree_tent,
-    plot_tree_circuit,
 )
 from .scoring import (
     DEFAULT_COMBO_FACTOR,
@@ -51,9 +51,9 @@ from .utils import (
     node_from_single,
     node_get_single_el,
     node_supremum,
+    oset,
     prod,
     unique,
-    oset,
 )
 
 
@@ -1586,6 +1586,47 @@ class ContractionTree:
 
     restore_ind_ = functools.partialmethod(restore_ind, inplace=True)
 
+    def unslice_rand(self, seed=None, inplace=False):
+        """Unslice (restore) a random index from this contraction tree.
+
+        Parameters
+        ----------
+        seed : None, int or random.Random, optional
+            Random number generator seed.
+        inplace : bool, optional
+            Whether to perform the unslicing inplace or not.
+
+        Returns
+        -------
+        ContractionTree
+        """
+        rng = get_rng(seed)
+        ix = rng.choice(tuple(self.sliced_inds))
+        return self.restore_ind(ix, inplace=inplace)
+
+    unslice_rand_ = functools.partialmethod(unslice_rand, inplace=True)
+
+    def unslice_all(self, inplace=False):
+        """Unslice (restore) all sliced indices from this contraction tree.
+
+        Parameters
+        ----------
+        inplace : bool, optional
+            Whether to perform the unslicing inplace or not.
+
+        Returns
+        -------
+        ContractionTree
+        """
+        tree = self if inplace else self.copy()
+
+        for ind in tuple(tree.sliced_inds):
+            tree.restore_ind_(ind)
+
+        return tree
+
+    unslice_all_ = functools.partialmethod(unslice_all, inplace=True)
+
     def calc_subtree_candidates(self, pwr=2, what="flops"):
         candidates = list(self.children)
 
@@ -1951,6 +1992,7 @@ class ContractionTree:
         minimize="flops",
         allow_outer=True,
         max_repeats=16,
+        reslice=False,
         seed=None,
         inplace=False,
     ):
@@ -1969,7 +2011,8 @@ class ContractionTree:
         target_slices : int, optional
             The target or minimum number of 'slices' to consider - individual
             contractions after slicing indices. The search algorithm will
-            terminate after this is breached.
+            terminate after this is breached. This is on top of the current
+            number of slices.
         target_overhead : float, optional
             The target increase in total number of floating point operations.
             For example, a value of ``2.0`` will terminate the search just
@@ -1983,6 +2026,10 @@ class ContractionTree:
             Whether to allow slicing of outer indices.
         max_repeats : int, optional
             How many times to repeat the search with a slight randomization.
+        reslice : bool, optional
+            Whether to reslice the tree, i.e. first remove all currently
+            sliced indices and start the search again. Generally any 'good'
+            sliced indices will be easily found again.
         seed : None, int or random.Random, optional
             A random seed or generator to use for the search.
         inplace : bool, optional
@@ -1999,6 +2046,11 @@ class ContractionTree:
         from .slicer import SliceFinder
 
         tree = self if inplace else self.copy()
+
+        if reslice:
+            if target_slices is not None:
+                target_slices *= tree.nslices
+            tree.unslice_all_()
 
         sf = SliceFinder(
             tree,
@@ -2027,6 +2079,7 @@ class ContractionTree:
         minimize="flops",
         allow_outer=True,
         max_repeats=16,
+        reslice=False,
         reconf_opts=None,
         progbar=False,
         inplace=False,
@@ -2081,6 +2134,7 @@ class ContractionTree:
                     minimize=minimize,
                     allow_outer=allow_outer,
                     max_repeats=max_repeats,
+                    reslice=reslice,
                 )
                 if forested_reconf:
                     tree.subtree_reconfigure_forest_(**reconf_opts)
@@ -2108,6 +2162,7 @@ class ContractionTree:
         restart_fraction=0.5,
         temperature=0.02,
         max_repeats=32,
+        reslice=False,
         minimize="flops",
         allow_outer=True,
         parallel="auto",
@@ -2197,6 +2252,7 @@ class ContractionTree:
                         "max_repeats": max_repeats,
                         "reconf_opts": reconf_opts,
                         "allow_outer": allow_outer,
+                        "reslice": reslice,
                     }
                     for _ in range(num_trees)
                 ]

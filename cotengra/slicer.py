@@ -224,8 +224,9 @@ class SliceFinder:
         contraction. The search algorithm will terminate after this is reached.
     target_slices : int, optional
         The target or minimum number of 'slices' to consider - individual
-        contractions after slicing indices. The search algorithm will terminate
-        after this is breached.
+        contractions after slicing indices. The search algorithm will
+        terminate after this is breached. This is on top of the current
+        number of slices.
     target_overhead : float, optional
         The target increase in total number of floating point operations.
         For example, a value of  ``2.0`` will terminate the search
