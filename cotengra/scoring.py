@@ -56,6 +56,12 @@ class ExactObjective(Objective):
         """
         raise NotImplementedError
 
+    def score_local(self, **kwargs):
+        """The score to give a single contraction, according to the given
+        ``kwargs``. Used in ``simulated_anneal``.
+        """
+        raise NotImplementedError
+
     def score_slice_index(self, costs, ix):
         """The score to give possibly slicing ``ix``, according to
         the given ``costs``. Used in the ``SliceFinder`` optimization.
@@ -87,6 +93,15 @@ class FlopsObjective(ExactObjective):
 
     def cost_local_tree_node(self, tree, node):
         return tree.get_flops(node)
+
+    def score_local(self, **kwargs):
+        f = kwargs["flops"]
+        try:
+            # accept iterables
+            f = sum(f)
+        except TypeError:
+            pass
+        return math.log2(f)
 
     def score_slice_index(self, costs, ix):
         return math.log(
@@ -128,6 +143,15 @@ class WriteObjective(ExactObjective):
     def cost_local_tree_node(self, tree, node):
         return tree.get_size(node)
 
+    def score_local(self, **kwargs):
+        s = kwargs["size"]
+        try:
+            # accept iterables
+            s = sum(s)
+        except TypeError:
+            pass
+        return math.log2(s)
+
     def score_slice_index(self, costs, ix):
         return math.log(
             costs._flop_reductions[ix] * self.secondary_weight
@@ -165,6 +189,15 @@ class SizeObjective(ExactObjective):
 
     def cost_local_tree_node(self, tree, node):
         return tree.get_size(node)
+
+    def score_local(self, **kwargs):
+        s = kwargs["size"]
+        try:
+            # accept iterables
+            s = max(s)
+        except TypeError:
+            pass
+        return math.log2(s)
 
     def score_slice_index(self, costs, ix):
         return math.log(
@@ -214,6 +247,25 @@ class ComboObjective(ExactObjective):
     def cost_local_tree_node(self, tree, node):
         return tree.get_flops(node) + self.factor * tree.get_size(node)
 
+    def score_local(self, **kwargs):
+        f = kwargs["flops"]
+        try:
+            f = sum(f)
+        except TypeError:
+            f = ()
+        try:
+            # accept iterables
+            f = sum(f)
+        except TypeError:
+            pass
+        w = kwargs["size"]
+        try:
+            # accept iterables
+            w = sum(w)
+        except TypeError:
+            pass
+        return math.log2(f + self.factor * w)
+
     def score_slice_index(self, costs, ix):
         return math.log(
             costs._flop_reductions[ix]
@@ -227,7 +279,6 @@ class ComboObjective(ExactObjective):
     def __call__(self, trial):
         ensure_basic_quantities_are_computed(trial)
         return (
-            # use ops
             math.log2(trial["flops"] + self.factor * trial["write"])
         )
 
@@ -257,9 +308,17 @@ class LimitObjective(ExactObjective):
         super().__init__()
 
     def cost_local_tree_node(self, tree, node):
-        return max(
-            tree.get_flops(node), self.factor * tree.get_size(node)
-        )
+        return max(tree.get_flops(node), self.factor * tree.get_size(node))
+
+    def score_local(self, **kwargs):
+        f = kwargs["flops"]
+        w = kwargs["size"]
+        try:
+            return math.log2(
+                sum(max(fi, self.factor * wi) for fi, wi in zip(f, w))
+            )
+        except TypeError:
+            return math.log2(max(f, self.factor * w))
 
     def score_slice_index(self, costs, ix):
         return math.log(

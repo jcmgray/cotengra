@@ -162,6 +162,23 @@ class SlicedTrialFn:
         return trial
 
 
+class SimulatedAnnealingTrialFn:
+    def __init__(self, trial_fn, **opts):
+        self.trial_fn = trial_fn
+        self.opts = opts
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+        tree = trial["tree"]
+        stats = tree.contract_stats()
+        trial.setdefault("original_flops", stats["flops"])
+        trial.setdefault("original_write", stats["write"])
+        trial.setdefault("original_size", stats["size"])
+        tree.simulated_anneal_(**self.opts)
+        trial.update(tree.contract_stats())
+        return trial
+
+
 class ReconfTrialFn:
     def __init__(self, trial_fn, forested=False, parallel=False, **opts):
         self.trial_fn = trial_fn
@@ -294,10 +311,13 @@ class ComputeScore:
 
 
 def progress_description(best):
-    return (
-        f"log2[SIZE]={log2(best['size']):.4g} "
-        f"log10[FLOPs]={log10(best['flops']):.4g}"
-    )
+    try:
+        return best["tree"].describe("full")
+    except KeyError:
+        return (
+            f"log2[SIZE]={log2(best['size']):.4g} "
+            f"log10[FLOPs]={log10(best['flops']):.4g}"
+        )
 
 
 class HyperOptimizer(PathOptimizer):
@@ -369,6 +389,7 @@ class HyperOptimizer(PathOptimizer):
         max_repeats=128,
         max_time=None,
         parallel="auto",
+        simulated_annealing_opts=None,
         slicing_opts=None,
         slicing_reconf_opts=None,
         reconf_opts=None,
@@ -414,6 +435,11 @@ class HyperOptimizer(PathOptimizer):
         self.best = {"score": inf, "size": inf, "flops": inf}
         self.trials_since_best = 0
 
+        self.simulated_annealing_opts = (
+            None
+            if simulated_annealing_opts is None
+            else dict(simulated_annealing_opts)
+        )
         self.slicing_opts = (
             None if slicing_opts is None else dict(slicing_opts)
         )
@@ -478,6 +504,12 @@ class HyperOptimizer(PathOptimizer):
             trial_fn = TrialTreeMulti(trial_fn, self.varmults, self.numconfigs)
 
         nested_parallel = should_nest(self._pool)
+
+        if self.simulated_annealing_opts is not None:
+            self.simulated_annealing_opts.setdefault("minimize", self.minimize)
+            trial_fn = SimulatedAnnealingTrialFn(
+                trial_fn, **self.simulated_annealing_opts
+            )
 
         if self.slicing_opts is not None:
             self.slicing_opts.setdefault("minimize", self.minimize)
@@ -1162,6 +1194,11 @@ class ReusableHyperCompressedOptimizer(ReusableHyperOptimizer):
         if kwargs.pop("slicing_reconf_opts", None) is not None:
             raise ValueError(
                 "Cannot use slicing_reconf_opts with compressed contraction."
+            )
+        if kwargs.pop("simulated_annealing_opts", None) is not None:
+            raise ValueError(
+                "Cannot use simulated_annealing_opts "
+                "with compressed contraction."
             )
 
         super().__init__(**kwargs)

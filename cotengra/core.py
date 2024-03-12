@@ -21,6 +21,10 @@ from .parallel import (
     scatter,
     submit,
 )
+from .pathfinders.path_simulated_annealing import (
+    parallel_temper_tree,
+    simulated_anneal_tree,
+)
 from .plot import (
     plot_contractions,
     plot_contractions_alt,
@@ -1983,6 +1987,11 @@ class ContractionTree:
         subtree_reconfigure_forest, inplace=True
     )
 
+    simulated_anneal = simulated_anneal_tree
+    simulated_anneal_ = functools.partialmethod(simulated_anneal, inplace=True)
+    parallel_temper = parallel_temper_tree
+    parallel_temper_ = functools.partialmethod(parallel_temper, inplace=True)
+
     def slice(
         self,
         target_size=None,
@@ -3362,7 +3371,7 @@ class ContractionTree:
         if info == "normal":
             return join.join(
                 (
-                    f"log2[SIZE]={math.log2(stats['size']):.4g} ",
+                    f"log2[SIZE]={math.log2(stats['size']):.4g}",
                     f"log10[FLOPs]={math.log10(stats['flops']):.4g}",
                 )
             )
