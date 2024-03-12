@@ -3351,6 +3351,80 @@ class ContractionTree:
         comm.Reduce(result_i, result, root=root)
         return result
 
+    def benchmark(
+        self,
+        dtype,
+        max_time=60,
+        min_reps=3,
+        max_reps=100,
+        warmup=True,
+        **contract_opts,
+    ):
+        """Benchmark the contraction of this tree.
+
+        Parameters
+        ----------
+        dtype : {"float32", "float64", "complex64", "complex128"}
+            The datatype to use.
+        max_time : float, optional
+            The maximum time to spend benchmarking in seconds.
+        min_reps : int, optional
+            The minimum number of repetitions to perform, regardless of time.
+        max_reps : int, optional
+            The maximum number of repetitions to perform, regardless of time.
+        warmup : bool or int, optional
+            Whether to perform a warmup run before the benchmark. If an int,
+            the number of warmup runs to perform.
+        contract_opts
+            Supplied to :meth:`~cotengra.ContractionTree.contract_slice`.
+
+        Returns
+        -------
+        dict
+            A dictionary of benchmarking results. The keys are:
+
+            - "time_per_slice" : float
+                The average time to contract a single slice.
+            - "est_time_total" : float
+                The estimated total time to contract all slices.
+            - "est_gigaflops" : float
+                The estimated gigaflops of the contraction.
+
+        See Also
+        --------
+        contract_slice
+        """
+        import time
+
+        from .utils import make_arrays_from_inputs
+
+        arrays = make_arrays_from_inputs(
+            self.inputs, self.size_dict, dtype=dtype
+        )
+
+        for i in range(int(warmup)):
+            self.contract_slice(arrays, i % self.nslices, **contract_opts)
+
+        t0 = time.time()
+        ti = t0
+        i = 0
+        while (ti - t0 < max_time) or (i < min_reps):
+            self.contract_slice(arrays, i % self.nslices, **contract_opts)
+            ti = time.time()
+            i += 1
+            if i >= max_reps:
+                break
+
+        time_per_slice = (ti - t0) / i
+        est_time_total = time_per_slice * self.nslices
+        est_gigaflops = self.total_flops(dtype=dtype) / (1e9 * est_time_total)
+
+        return {
+            "time_per_slice": time_per_slice,
+            "est_time_total": est_time_total,
+            "est_gigaflops": est_gigaflops,
+        }
+
     plot_ring = plot_tree_ring
     plot_tent = plot_tree_tent
     plot_span = plot_tree_span
