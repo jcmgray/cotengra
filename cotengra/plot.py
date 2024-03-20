@@ -119,6 +119,8 @@ def plot_scatter(
     self,
     x="size",
     y="flops",
+    cumulative_time=False,
+    plot_best=False,
     figsize=(5, 5),
 ):
     import matplotlib.pyplot as plt
@@ -127,7 +129,7 @@ def plot_scatter(
     from cotengra.schematic import hash_to_color
 
     factor = None
-    if x not in ("trial", "score"):
+    if x not in ("trial", "score", "time"):
         xminimize = ctg.scoring.get_score_fn(x)
         x = getattr(xminimize, "name", x)
         factor = getattr(xminimize, "factor", 64)
@@ -142,16 +144,45 @@ def plot_scatter(
     N = len(self.scores)
     data = collections.defaultdict(lambda: collections.defaultdict(list))
 
+    ttotal = 0
+    best = float("inf")
+    bestx = []
+    besty = []
+
     for i in range(N):
         method = self.method_choices[i]
-        data[method]["trial"].append(i)
-        data[method]["score"].append(self.scores[i])
-        data[method]["size"].append(math.log2(self.costs_size[i]))
+        data_method = data[method]
+
+        data_method["trial"].append(i)
+        if cumulative_time:
+            ttotal += self.times[i]
+            data_method["time"].append(ttotal)
+        else:
+            data_method["time"].append(self.times[i])
+
+        scorei = self.scores[i]
+        sizei = math.log2(self.costs_size[i])
         f = self.costs_flops[i]
         w = self.costs_write[i]
-        data[method]["flops"].append(math.log10(f))
-        data[method]["write"].append(math.log10(w))
-        data[method]["combo"].append(math.log10(f + factor * w))
+        flopsi = math.log10(f)
+        writei = math.log10(w)
+        comboi = math.log10(f + factor * w)
+
+        data_method["score"].append(scorei)
+        data_method["size"].append(sizei)
+        data_method["flops"].append(flopsi)
+        data_method["write"].append(writei)
+        data_method["combo"].append(comboi)
+
+        if data_method[y][-1] < best:
+            bestx.append(data_method[x][-1])
+            besty.append(best)
+            best = data_method[y][-1]
+            bestx.append(data_method[x][-1])
+            besty.append(best)
+
+    bestx.append(data_method[x][-1])
+    besty.append(best)
 
     def parse_label(z):
         if z == "size":
@@ -179,6 +210,14 @@ def plot_scatter(
             edgecolor="white",
         )
 
+    if plot_best:
+        ax.plot(
+            bestx,
+            besty,
+            color=(0, 0.7, 0.3, 0.5),
+            zorder=10,
+        )
+
     ax.grid(True, color=(0.5, 0.5, 0.5), which="major", alpha=0.1)
     ax.set_axisbelow(True)
 
@@ -198,15 +237,21 @@ def plot_scatter(
 
 def plot_trials(
     self,
+    *,
+    x="trial",
     y="score",
     figsize=(8, 3),
+    cumulative_time=True,
+    plot_best=True,
     **kwargs,
 ):
     return plot_scatter(
         self,
-        x="trial",
+        x=x,
         y=y,
         figsize=figsize,
+        cumulative_time=cumulative_time,
+        plot_best=plot_best,
         **kwargs,
     )
 

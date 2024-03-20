@@ -962,6 +962,7 @@ class ReusableHyperOptimizer(PathOptimizer):
                 ("max_time", None),
                 ("slicing_opts", None),
                 ("slicing_reconf_opts", None),
+                ("simulated_annealing_opts", None),
                 ("reconf_opts", None),
                 ("compressed", False),
                 ("multicontraction", False),
