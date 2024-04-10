@@ -55,6 +55,9 @@
 - contraction trees now have a `get_default_objective` method to return the
   objective function they were optimized with, for simpler further refinement
   or scoring, where it is now picked up automatically.
+- change the default 'sub' optimizer on divisive partition building algorithms
+  to be `'greedy'` rather than `'auto'`. This might make individual trials
+  slightly worse but makes each cheaper, see discussion: ({issue}`27`).
 
 
 ## v0.5.6 (2023-12-07)

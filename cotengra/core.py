@@ -3723,7 +3723,7 @@ class PartitionTreeBuilder:
         cutoff=10,
         parts=2,
         parts_decay=0.5,
-        sub_optimize="auto",
+        sub_optimize="greedy",
         super_optimize="auto-hq",
         check=False,
         seed=None,
