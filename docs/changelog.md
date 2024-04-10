@@ -12,6 +12,13 @@
 
 **Enhancements**
 
+- add simulated annealing tree refinement (in `path_simulated_annealing.py`),
+  based on "Multi-Tensor Contraction for XEB Verification of
+  Quantum Circuits" by Gleb Kalachev, Pavel Panteleev, Man-Hong Yung
+  (arXiv:2108.05665), and the "treesa" implementation in
+  OMEinsumContractionOrders.jl by Jin-Guo Liu and Pan Zhang. This can be
+  accessed most easily by supplying
+  `opt = HyperOptimizer(simulated_annealing_opts={})`.
 - add [`ContractionTree.plot_flat`](cotengra.plot.plot_tree_flat): a new method
   for plotting the contraction tree as a flat diagram showing all indices on
   every intermediate (without requiring any graph layouts), which is useful for
@@ -43,6 +50,11 @@
 - add [ctg.GreedyOptimizer](cotengra.pathfinders.path_basic.GreedyOptimizer)
   and [ctg.OptimalOptimizer](cotengra.pathfinders.path_optimal.OptimalOptimizer)
   to the top namespace.
+- add [ContractionTree.benchmark](cotengra.ContractionTree.benchmark) for
+  for automatically assessing hardware performance vs theoretical cost.
+- contraction trees now have a `get_default_objective` method to return the
+  objective function they were optimized with, for simpler further refinement
+  or scoring, where it is now picked up automatically.
 
 
 ## v0.5.6 (2023-12-07)

@@ -1008,7 +1008,7 @@ def rand_tree(
     seed=None,
     optimize="greedy",
 ):
-    from .core import ContractionTree
+    from .interface import array_contract_tree
 
     inputs, output, _, size_dict = rand_equation(
         n,
@@ -1020,8 +1020,10 @@ def rand_tree(
         d_max=d_max,
         seed=seed,
     )
-    tree = ContractionTree(inputs, output, size_dict)
-    tree.contract_nodes(tuple(tree.gen_leaves()), optimize=optimize)
+
+    tree = array_contract_tree(
+        inputs, output, size_dict, optimize=optimize
+    )
     return tree
 
 

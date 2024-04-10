@@ -157,6 +157,10 @@ class ContractionTree:
     track_size : bool, optional
         Whether to dynamically keep track of the largest tensor so far. If
         ``False`` You can still compute this once the tree is complete.
+    objective : str or Objective, optional
+        An default objective function to use for further optimization and
+        scoring, for example reconfiguring or computing the combo cost. If not
+        supplied the default is to create a flops objective when needed.
 
     Attributes
     ----------
@@ -178,6 +182,7 @@ class ContractionTree:
         track_flops=False,
         track_write=False,
         track_size=False,
+        objective=None,
     ):
         self.inputs = inputs
         self.output = output
@@ -258,6 +263,10 @@ class ContractionTree:
         # cache for compiled contraction cores
         self.contraction_cores = {}
 
+        # a default objective function useful for
+        # further optimization and scoring
+        self._default_objective = objective
+
     def set_state_from(self, other):
         """Set the internal state of this tree to that of ``other``."""
         # immutable or never mutated properties
@@ -270,6 +279,7 @@ class ContractionTree:
             "root",
             "size_dict",
             "sliced_inputs",
+            "_default_objective",
         ):
             setattr(self, attr, getattr(other, attr))
 
@@ -311,6 +321,24 @@ class ContractionTree:
         tree = object.__new__(self.__class__)
         tree.set_state_from(self)
         return tree
+
+    def set_default_objective(self, objective):
+        """Set the objective function for this tree."""
+        self._default_objective = get_score_fn(objective)
+
+    def get_default_objective(self):
+        """Get the objective function for this tree."""
+        if self._default_objective is None:
+            self._default_objective = get_score_fn("flops")
+        return self._default_objective
+
+    def get_default_combo_factor(self):
+        """Get the default combo factor for this tree."""
+        objective = self.get_default_objective()
+        try:
+            return objective.factor
+        except AttributeError:
+            return DEFAULT_COMBO_FACTOR
 
     @property
     def nslices(self):
@@ -994,10 +1022,16 @@ class ContractionTree:
 
     def compressed_contract_stats(
         self,
-        chi,
+        chi=None,
         order="surface_order",
-        compress_late=False,
+        compress_late=None,
     ):
+        if chi is None:
+            chi = self.get_default_chi()
+
+        if compress_late is None:
+            compress_late = self.get_default_compress_late()
+
         hg = self.get_hypergraph(accel="auto")
 
         # conversion between tree nodes <-> hypergraph nodes during contraction
@@ -1034,9 +1068,9 @@ class ContractionTree:
 
     def total_flops_compressed(
         self,
-        chi,
+        chi=None,
         order="surface_order",
-        compress_late=False,
+        compress_late=None,
         dtype=None,
     ):
         """Estimate the total flops for a compressed contraction of this tree
@@ -1056,7 +1090,11 @@ class ContractionTree:
         ).flops
 
     def total_write_compressed(
-        self, chi, order="surface_order", compress_late=False, accel="auto"
+        self,
+        chi=None,
+        order="surface_order",
+        compress_late=None,
+        accel="auto",
     ):
         """Compute the total size of all intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
@@ -1071,55 +1109,73 @@ class ContractionTree:
 
     def total_cost_compressed(
         self,
-        chi,
+        chi=None,
         order="surface_order",
-        compress_late=False,
-        factor=DEFAULT_COMBO_FACTOR,
+        compress_late=None,
+        factor=None,
+        log=None,
     ):
-        return self.total_flops_compressed(
+        if factor is None:
+            factor = self.get_default_combo_factor()
+
+        C = self.total_flops_compressed(
             chi=chi, order=order, compress_late=compress_late
         ) + factor * self.total_write_compressed(
             chi=chi, order=order, compress_late=compress_late
         )
+        if log is not None:
+            C = math.log(C, log)
+        return C
 
     def max_size_compressed(
-        self, chi, order="surface_order", compress_late=False
+        self, chi=None, order="surface_order", compress_late=None, log=None
     ):
         """Compute the maximum sized tensor produced when a compressed
         contraction is performed with maximum bond size ``chi``, ordered by
         ``order``. This is close to the ideal space complexity if only
         tensors that are being directly operated on are kept in memory.
         """
-        return self.compressed_contract_stats(
+        S = self.compressed_contract_stats(
             chi=chi,
             order=order,
             compress_late=compress_late,
         ).max_size
+        if log is not None:
+            S = math.log(S, log)
+        return S
 
     def peak_size_compressed(
-        self, chi, order="surface_order", compress_late=False, accel="auto"
+        self,
+        chi=None,
+        order="surface_order",
+        compress_late=None,
+        accel="auto",
+        log=None,
     ):
         """Compute the peak size of combined intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``. This is the practical space complexity if one is
         not swapping intermediates in and out of memory.
         """
-        return self.compressed_contract_stats(
+        P = self.compressed_contract_stats(
             chi=chi,
             order=order,
             compress_late=compress_late,
         ).peak_size
+        if log is not None:
+            P = math.log(P, log)
+        return P
 
     contraction_cost_compressed = total_cost_compressed
 
     def contraction_width_compressed(
-        self, chi, order="surface_order", compress_late=False
+        self, chi=None, order="surface_order", compress_late=None, log=2
     ):
         """Compute log2 of the maximum sized tensor produced when a compressed
         contraction is performed with maximum bond size ``chi``, ordered by
         ``order``.
         """
-        return math.log2(self.max_size_compressed(chi, order, compress_late))
+        return self.max_size_compressed(chi, order, compress_late, log=log)
 
     def contract_nodes_pair(
         self,
@@ -1575,6 +1631,9 @@ class ContractionTree:
             # this is the original term with all indices
             if ind in term:
                 tree._remove_node(node_from_single(i))
+                if all(ix not in tree.sliced_inds for ix in term):
+                    # mark this input as not sliced
+                    tree.sliced_inputs = tree.sliced_inputs - frozenset([i])
 
         # delete and re-add dependent intermediates
         for p, l, r in tree.traverse():
@@ -1661,7 +1720,7 @@ class ContractionTree:
         select="max",
         maxiter=500,
         seed=None,
-        minimize="flops",
+        minimize=None,
         optimize=None,
         inplace=False,
         progbar=False,
@@ -1716,6 +1775,8 @@ class ContractionTree:
         # ensure these have been computed and thus are being tracked
         tree.contract_stats()
 
+        if minimize is None:
+            minimize = self.get_default_objective()
         scorer = get_score_fn(minimize)
 
         if optimize is None:
@@ -1824,7 +1885,7 @@ class ContractionTree:
         subtree_weight_pwr=(2,),
         parallel="auto",
         parallel_maxiter_steps=4,
-        minimize="flops",
+        minimize=None,
         seed=None,
         progbar=False,
         inplace=False,
@@ -1890,6 +1951,8 @@ class ContractionTree:
         num_keep = max(1, int(num_trees * restart_fraction))
 
         # how to rank the trees
+        if minimize is None:
+            minimize = self.get_default_objective()
         score = get_score_fn(minimize)
 
         rng = get_rng(seed)
@@ -1998,7 +2061,7 @@ class ContractionTree:
         target_overhead=None,
         target_slices=None,
         temperature=0.01,
-        minimize="flops",
+        minimize=None,
         allow_outer=True,
         max_repeats=16,
         reslice=False,
@@ -2054,6 +2117,9 @@ class ContractionTree:
         """
         from .slicer import SliceFinder
 
+        if minimize is None:
+            minimize = self.get_default_objective()
+
         tree = self if inplace else self.copy()
 
         if reslice:
@@ -2085,7 +2151,7 @@ class ContractionTree:
         target_size,
         step_size=2,
         temperature=0.01,
-        minimize="flops",
+        minimize=None,
         allow_outer=True,
         max_repeats=16,
         reslice=False,
@@ -2125,7 +2191,11 @@ class ContractionTree:
         tree = self if inplace else self.copy()
 
         reconf_opts = {} if reconf_opts is None else dict(reconf_opts)
+
+        if minimize is None:
+            minimize = self.get_default_objective()
         minimize = get_score_fn(minimize)
+
         reconf_opts.setdefault("minimize", minimize)
         forested_reconf = reconf_opts.pop("forested", False)
 
@@ -2172,7 +2242,7 @@ class ContractionTree:
         temperature=0.02,
         max_repeats=32,
         reslice=False,
-        minimize="flops",
+        minimize=None,
         allow_outer=True,
         parallel="auto",
         progbar=False,
@@ -2225,6 +2295,8 @@ class ContractionTree:
         num_keep = max(1, int(num_trees * restart_fraction))
 
         # how to rank the trees
+        if minimize is None:
+            minimize = self.get_default_objective()
         score = get_score_fn(minimize)
 
         # set up the initial 'forest' and parallel machinery
@@ -2340,7 +2412,7 @@ class ContractionTree:
 
     def compressed_reconfigure(
         self,
-        minimize,
+        minimize=None,
         order_only=False,
         max_nodes="auto",
         max_time=None,
@@ -2395,6 +2467,9 @@ class ContractionTree:
             CompressedExhaustive,
         )
 
+        if minimize is None:
+            minimize = self.get_default_objective()
+
         if max_nodes == "auto":
             if max_time is None:
                 max_nodes = max(10_000, self.N**2)
@@ -2437,7 +2512,7 @@ class ContractionTree:
 
     def windowed_reconfigure(
         self,
-        minimize,
+        minimize=None,
         order_only=False,
         window_size=20,
         max_iterations=100,
@@ -2452,6 +2527,9 @@ class ContractionTree:
         **kwargs,
     ):
         from .pathfinders.path_compressed import WindowedOptimizer
+
+        if minimize is None:
+            minimize = self.get_default_objective()
 
         wo = WindowedOptimizer(
             self.inputs,
@@ -3445,8 +3523,8 @@ class ContractionTree:
         if info == "normal":
             return join.join(
                 (
-                    f"log2[SIZE]={math.log2(stats['size']):.4g}",
                     f"log10[FLOPs]={math.log10(stats['flops']):.4g}",
+                    f"log2[SIZE]={math.log2(stats['size']):.4g}",
                 )
             )
 
@@ -3555,6 +3633,30 @@ class ContractionTreeCompressed(ContractionTree):
 
     def get_default_order(self):
         return "surface_order"
+
+    def get_default_objective(self):
+        if self._default_objective is None:
+            self._default_objective = get_score_fn("peak-compressed")
+        return self._default_objective
+
+    def get_default_chi(self):
+        objective = self.get_default_objective()
+        try:
+            chi = objective.chi
+        except AttributeError:
+            chi = "auto"
+
+        if chi == "auto":
+            chi = max(self.size_dict.values())**2
+
+        return chi
+
+    def get_default_compress_late(self):
+        objective = self.get_default_objective()
+        try:
+            return objective.compress_late
+        except AttributeError:
+            return False
 
     total_flops = ContractionTree.total_flops_compressed
     total_write = ContractionTree.total_write_compressed

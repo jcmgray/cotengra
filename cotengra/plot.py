@@ -217,6 +217,15 @@ def plot_scatter(
             color=(0, 0.7, 0.3, 0.5),
             zorder=10,
         )
+        ax.text(
+            bestx[-1],
+            besty[-1],
+            f"{besty[-1]:.4g}",
+            ha="left",
+            va="center",
+            color=(0, 0.7, 0.3),
+            fontsize=8,
+        )
 
     ax.grid(True, color=(0.5, 0.5, 0.5), which="major", alpha=0.1)
     ax.set_axisbelow(True)

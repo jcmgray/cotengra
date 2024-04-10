@@ -441,10 +441,10 @@ class CompressedStatsTracker:
     def __repr__(self):
         return (
             f"<{self.__class__.__name__}("
-            f"max_size={math.log2(max(1, self.max_size)):.2f}, "
-            f"peak_size={math.log2(max(1, self.peak_size)):.2f}, "
-            f"write={math.log2(max(1, self.write)):.2f}, "
-            f"flops={math.log10(max(1, self.flops)):.2f}"
+            f"F={math.log10(max(1, self.flops)):.4g}, "
+            f"W={math.log10(max(1, self.write)):.4g}, "
+            f"S={math.log2(max(1, self.max_size)):.4g}, "
+            f"P={math.log2(max(1, self.peak_size)):.4g}"
             f")>"
         )
 

@@ -1,10 +1,10 @@
-"""High-level interface functions to cotengra.
-"""
+"""High-level interface functions to cotengra."""
+
 import functools
 
 import autoray as ar
 
-from .core import ContractionTree
+from .core import ContractionTree, ContractionTreeCompressed
 from .utils import (
     canonicalize_inputs,
     find_output_from_inputs,
@@ -19,9 +19,12 @@ from .oe import (
 )
 
 _PRESETS = {}
+_COMPRESSED_PRESETS = set()
 
 
-def register_preset(preset, optimizer, register_opt_einsum="auto"):
+def register_preset(
+    preset, optimizer, register_opt_einsum="auto", compressed=False
+):
     """Register a preset optimizer."""
     _PRESETS[preset] = optimizer
 
@@ -33,6 +36,9 @@ def register_preset(preset, optimizer, register_opt_einsum="auto"):
             register_path_fn(preset, optimizer)
         except KeyError:
             pass
+
+    if compressed:
+        _COMPRESSED_PRESETS.add(preset)
 
 
 @functools.lru_cache(None)
@@ -271,8 +277,12 @@ def _find_tree_optimizer_basic(inputs, output, size_dict, optimize, **kwargs):
 
 
 def _find_tree_preset(inputs, output, size_dict, optimize, **kwargs):
+    compressed = optimize in _COMPRESSED_PRESETS
     optimize = preset_to_optimizer(optimize)
-    return find_tree(inputs, output, size_dict, optimize, **kwargs)
+    tree = find_tree(inputs, output, size_dict, optimize, **kwargs)
+    if compressed:
+        tree.__class__ = ContractionTreeCompressed
+    return tree
 
 
 def _find_tree_tree(inputs, output, size_dict, optimize, **kwargs):

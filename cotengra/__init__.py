@@ -232,6 +232,7 @@ try:
             minimize="peak-compressed",
             methods=("greedy-span", "greedy-compressed", "kahypar-agglom"),
         ),
+        compressed=True,
     )
     register_preset(
         "hyper-spinglass",
@@ -268,10 +269,12 @@ try:
     register_preset(
         "greedy-compressed",
         path_greedy.greedy_compressed,
+        compressed=True,
     )
     register_preset(
         "greedy-span",
         path_greedy.greedy_span,
+        compressed=True,
     )
 except KeyError:
     # KeyError: if reloading cotengra e.g. library entries already registered

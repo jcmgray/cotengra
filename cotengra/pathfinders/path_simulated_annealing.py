@@ -1,6 +1,7 @@
 import collections.abc
 import itertools
 import math
+import time
 
 from ..parallel import (
     can_scatter,
@@ -104,7 +105,7 @@ def linspace_generator(start, stop, num, log=False):
                 yield 2 ** (log_start + i * step)
 
 
-def _describe_tree(tree, info="normal"):
+def _describe_tree(tree, info="concise"):
     return tree.describe(info=info)
 
 
@@ -148,7 +149,7 @@ def simulated_anneal_tree(
     tstart=2,
     tsteps=50,
     numiter=50,
-    minimize="flops",
+    minimize=None,
     target_size=None,
     target_size_initial=None,
     slice_mode="basic",
@@ -204,6 +205,9 @@ def simulated_anneal_tree(
     tree = tree if inplace else tree.copy()
     # ensure stats tracking is on
     tree.contract_stats()
+
+    if minimize is None:
+        minimize = tree.get_default_objective()
     scorer = get_score_fn(minimize)
     rng = get_rng(seed)
 
@@ -368,6 +372,7 @@ def parallel_temper_tree(
     slice_mode="drift",
     parallel_slice_mode="temperature",
     swappiness=1.0,
+    max_time=None,
     seed=None,
     parallel="auto",
     progbar=False,
@@ -486,6 +491,10 @@ def parallel_temper_tree(
     best_score = float("inf")
     best_tree = None
 
+    if max_time is not None:
+        # convert to absolute time
+        max_time = time.time() + max_time
+
     for _ in range(tsteps):
         # perform annealing moves
 
@@ -571,6 +580,9 @@ def parallel_temper_tree(
 
         if progbar:
             pbar.update()
+
+        if (max_time is not None) and (time.time() > max_time):
+            break
 
     if is_scatter_pool:
         best_tree = best_tree.result()

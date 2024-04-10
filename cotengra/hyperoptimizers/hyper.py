@@ -108,6 +108,17 @@ def base_trial_fn(inputs, output, size_dict, method, **kwargs):
     return {"tree": tree}
 
 
+class TrialSetObjective:
+    def __init__(self, trial_fn, objective):
+        self.trial_fn = trial_fn
+        self.objective = objective
+
+    def __call__(self, *args, **kwargs):
+        trial = self.trial_fn(*args, **kwargs)
+        trial["tree"].set_default_objective(self.objective)
+        return trial
+
+
 class TrialConvertTree:
     def __init__(self, trial_fn, cls):
         self.trial_fn = trial_fn
@@ -310,13 +321,13 @@ class ComputeScore:
         return trial
 
 
-def progress_description(best):
+def progress_description(best, info="concise"):
     try:
-        return best["tree"].describe("full")
+        return best["tree"].describe(info=info)
     except KeyError:
         return (
-            f"log2[SIZE]={log2(best['size']):.4g} "
-            f"log10[FLOPs]={log10(best['flops']):.4g}"
+            f"log10[FLOPs]={log10(best['flops']):.4g} "
+            f"log2[SIZE]={log2(best['size']):.4g}"
         )
 
 
@@ -466,9 +477,9 @@ class HyperOptimizer(PathOptimizer):
     def minimize(self, minimize):
         self._minimize = minimize
         if callable(minimize):
-            self._minimize_score_fn = minimize
+            self.objective = minimize
         else:
-            self._minimize_score_fn = get_score_fn(minimize)
+            self.objective = get_score_fn(minimize)
 
     @property
     def parallel(self):
@@ -493,7 +504,7 @@ class HyperOptimizer(PathOptimizer):
         return self.tree.get_path()
 
     def setup(self, inputs, output, size_dict):
-        trial_fn = base_trial_fn
+        trial_fn = TrialSetObjective(base_trial_fn, self.objective)
 
         if self.compressed:
             assert not self.multicontraction
@@ -506,17 +517,14 @@ class HyperOptimizer(PathOptimizer):
         nested_parallel = should_nest(self._pool)
 
         if self.simulated_annealing_opts is not None:
-            self.simulated_annealing_opts.setdefault("minimize", self.minimize)
             trial_fn = SimulatedAnnealingTrialFn(
                 trial_fn, **self.simulated_annealing_opts
             )
 
         if self.slicing_opts is not None:
-            self.slicing_opts.setdefault("minimize", self.minimize)
             trial_fn = SlicedTrialFn(trial_fn, **self.slicing_opts)
 
         if self.slicing_reconf_opts is not None:
-            self.slicing_reconf_opts.setdefault("minimize", self.minimize)
             self.slicing_reconf_opts.setdefault("parallel", nested_parallel)
             trial_fn = SlicedReconfTrialFn(
                 trial_fn, **self.slicing_reconf_opts
@@ -524,17 +532,15 @@ class HyperOptimizer(PathOptimizer):
 
         if self.reconf_opts is not None:
             if self.compressed:
-                self.reconf_opts.setdefault("minimize", self.minimize)
                 trial_fn = CompressedReconfTrial(trial_fn, **self.reconf_opts)
             else:
-                self.reconf_opts.setdefault("minimize", self.minimize)
                 self.reconf_opts.setdefault("parallel", nested_parallel)
                 trial_fn = ReconfTrialFn(trial_fn, **self.reconf_opts)
 
         # make sure score computation is performed worker side
         trial_fn = ComputeScore(
             trial_fn,
-            score_fn=self._minimize_score_fn,
+            score_fn=self.objective,
             score_compression=self.score_compression,
             on_trial_error=self.on_trial_error,
         )
