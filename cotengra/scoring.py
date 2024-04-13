@@ -1,5 +1,5 @@
-"""Objects for defining and customizing the target cost of a contraction.
-"""
+"""Objects for defining and customizing the target cost of a contraction."""
+
 import re
 import math
 import functools
@@ -278,9 +278,7 @@ class ComboObjective(ExactObjective):
 
     def __call__(self, trial):
         ensure_basic_quantities_are_computed(trial)
-        return (
-            math.log2(trial["flops"] + self.factor * trial["write"])
-        )
+        return math.log2(trial["flops"] + self.factor * trial["write"])
 
 
 class LimitObjective(ExactObjective):
@@ -438,14 +436,24 @@ class CompressedStatsTracker:
     def score(self):
         raise NotImplementedError
 
-    def __repr__(self):
+    def describe(self, join=" "):
+        F = math.log10(max(1, self.flops))
+        C = math.log10(
+            max(
+                1,
+                self.flops
+                + getattr(self, "factor", DEFAULT_COMBO_FACTOR) * self.write,
+            )
+        )
+        S = math.log2(max(1, self.max_size))
+        P = math.log2(max(1, self.peak_size))
+        return join.join((
+            f"F={F:.4g}", f"C={C:.4g}", f"S={S:.4g}", f"P={P:.4g}"
+        ))
+
+    def __repr__(self):\
         return (
-            f"<{self.__class__.__name__}("
-            f"F={math.log10(max(1, self.flops)):.4g}, "
-            f"W={math.log10(max(1, self.write)):.4g}, "
-            f"S={math.log2(max(1, self.max_size)):.4g}, "
-            f"P={math.log2(max(1, self.peak_size)):.4g}"
-            f")>"
+            f"<{self.__class__.__name__}({self.describe(join=', ')})>"
         )
 
 
@@ -867,3 +875,76 @@ def get_score_fn(minimize):
         # custom objective function
         return minimize
     raise TypeError("minimize must be a string or callable.")
+# ----------------------- multi-contraction scoring ------------------------- #
+
+
+class MultiObjective(Objective):
+
+    __slots__ = ("num_configs",)
+
+    def __init__(self, num_configs):
+        self.num_configs = num_configs
+
+    def compute_mult(self, dims):
+        raise NotImplementedError
+
+    def estimate_node_mult(self, tree, node):
+        return self.compute_mult([
+            tree.size_dict[ix] for ix in tree.get_node_var_inds(node)
+        ])
+
+    def estimate_node_cache_mult(self, tree, node, sliced_ind_ordering):
+        node_var_inds = tree.get_node_var_inds(node)
+
+        # indices which are the first 'k' in the sliced ordering
+        non_heavy_inds = [
+            ix
+            for ix in tree.get_node_var_inds(node)
+            if ix not in sliced_ind_ordering[: len(node_var_inds)]
+        ]
+
+        # each of these cycles 'out of sync' and thus must be kept
+        return self.compute_mult([tree.size_dict[ix] for ix in non_heavy_inds])
+
+
+class MultiObjectiveDense(MultiObjective):
+    """Number of intermediate configurations is expected to scale as if all
+    configurations are present.
+    """
+    __slots__ = ("num_configs",)
+
+    def compute_mult(self, dims):
+        return math.prod(dims)
+
+
+def expected_coupons(num_sub, num_total):
+    """If we draw a random 'coupon` which can take `num_sub` different values
+    `num_total` times, how many unique coupons will we expect?
+    """
+    return num_sub * (1 - (1 - 1 / num_sub) ** num_total)
+
+
+class MultiObjectiveUniform(MultiObjective):
+    """Number of intermediate configurations is expected to scale as if all
+    configurations are randomly draw from a uniform distribution.
+    """
+    __slots__ = ("num_configs",)
+
+    def compute_mult(self, dims):
+        return expected_coupons(math.prod(dims), self.num_configs)
+
+
+class MultiObjectiveLinear(MultiObjective):
+    """Number of intermediate configurations is expected to scale linearly with
+    respect to number of variable indices (e.g. VMC like 'locally connected'
+    configurations).
+    """
+    __slots__ = ("num_configs", "coeff")
+
+    def __init__(self, num_configs, coeff=1):
+        self.coeff = coeff
+        super().__init__(num_configs=num_configs)
+
+    def compute_mult(self, dims):
+        return min(self.coeff * len(dims), self.num_configs)
+

@@ -14,8 +14,8 @@ from math import log2, log10
 from ..core import (
     ContractionTree,
     ContractionTreeCompressed,
-    ContractionTreeMulti,
 )
+from ..core_multi import ContractionTreeMulti
 from ..oe import PathOptimizer
 from ..parallel import get_n_workers, parse_parallel_arg, should_nest, submit
 from ..plot import plot_scatter, plot_scatter_alt, plot_trials, plot_trials_alt

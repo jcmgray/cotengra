@@ -321,7 +321,7 @@ def simulated_anneal_tree(
                 )
 
                 dE = proposed_score - current_score
-                accept = (dE < 0) or (math.log(rng.random()) < -dE / temp)
+                accept = (dE <= 0) or (math.log(rng.random()) < -dE / temp)
 
                 if accept:
                     tree._remove_node(p)
@@ -360,6 +360,10 @@ def simulated_anneal_tree(
     return tree
 
 
+def _do_anneal(tree, *args, **kwargs):
+    return tree.simulated_anneal(*args, **kwargs)
+
+
 def parallel_temper_tree(
     tree_or_trees,
     tfinal=0.01,
@@ -367,7 +371,7 @@ def parallel_temper_tree(
     tsteps=50,
     num_trees=8,
     numiter=50,
-    minimize="flops",
+    minimize=None,
     target_size=None,
     slice_mode="drift",
     parallel_slice_mode="temperature",
@@ -375,6 +379,7 @@ def parallel_temper_tree(
     max_time=None,
     seed=None,
     parallel="auto",
+    info=None,
     progbar=False,
     inplace=False,
 ):
@@ -435,7 +440,11 @@ def parallel_temper_tree(
         initial_trees = itertools.repeat(tree_or_trees)
         tree_or_trees = (tree_or_trees,)
 
-    scorer = get_score_fn(minimize)
+    if minimize is None:
+        scorer = tree_or_trees[0].get_default_objective()
+    else:
+        scorer = get_score_fn(minimize)
+
     rng = get_rng(seed)
 
     if progbar:
@@ -516,8 +525,8 @@ def parallel_temper_tree(
 
         if pool is None:
             trees = [
-                t.simulated_anneal(
-                    tfinal=temp, tstart=temp, target_size=tsz, **sa_opts
+                _do_anneal(
+                    t, tfinal=temp, tstart=temp, target_size=tsz, **sa_opts
                 )
                 for t, temp, tsz in args
             ]
@@ -528,7 +537,7 @@ def parallel_temper_tree(
             trees = [
                 submit(
                     pool,
-                    simulated_anneal_tree,
+                    _do_anneal,
                     t,
                     tfinal=temp,
                     tstart=temp,
@@ -580,6 +589,9 @@ def parallel_temper_tree(
 
         if progbar:
             pbar.update()
+
+        if info is not None:
+            info.setdefault("scores", []).append(scores)
 
         if (max_time is not None) and (time.time() > max_time):
             break

@@ -1177,6 +1177,14 @@ class ContractionTree:
         """
         return self.max_size_compressed(chi, order, compress_late, log=log)
 
+    def _update_tracked(self, node):
+        if self._track_flops:
+            self._flops += self.get_flops(node)
+        if self._track_write:
+            self._write += self.get_size(node)
+        if self._track_size:
+            self._sizes.add(self.get_size(node))
+
     def contract_nodes_pair(
         self,
         x,
@@ -1250,12 +1258,7 @@ class ContractionTree:
         if size is not None:
             self.info[parent]["size"] = size
 
-        if self._track_flops:
-            self._flops += self.get_flops(parent)
-        if self._track_write:
-            self._write += self.get_size(parent)
-        if self._track_size:
-            self._sizes.add(self.get_size(parent))
+        self._update_tracked(parent)
 
         return parent
 
@@ -3519,12 +3522,12 @@ class ContractionTree:
 
     def describe(self, info="normal", join=" "):
         """Return a string describing the contraction tree."""
-        stats = self.contract_stats()
+        self.contract_stats()
         if info == "normal":
             return join.join(
                 (
-                    f"log10[FLOPs]={math.log10(stats['flops']):.4g}",
-                    f"log2[SIZE]={math.log2(stats['size']):.4g}",
+                    f"log10[FLOPs]={self.contraction_cost(log=10):.4g}",
+                    f"log2[SIZE]={self.contraction_width(log=2):.4g}",
                 )
             )
 
@@ -3647,7 +3650,7 @@ class ContractionTreeCompressed(ContractionTree):
             chi = "auto"
 
         if chi == "auto":
-            chi = max(self.size_dict.values())**2
+            chi = max(self.size_dict.values()) ** 2
 
         return chi
 

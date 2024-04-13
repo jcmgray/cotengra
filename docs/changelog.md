@@ -48,7 +48,7 @@
   of information about a tree, e.g. `tree.describe("full")` and
   `tree.describe("concise")`.
 - add [ctg.GreedyOptimizer](cotengra.pathfinders.path_basic.GreedyOptimizer)
-  and [ctg.OptimalOptimizer](cotengra.pathfinders.path_optimal.OptimalOptimizer)
+  and [ctg.OptimalOptimizer](cotengra.pathfinders.path_basic.OptimalOptimizer)
   to the top namespace.
 - add [ContractionTree.benchmark](cotengra.ContractionTree.benchmark) for
   for automatically assessing hardware performance vs theoretical cost.
