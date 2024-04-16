@@ -26,6 +26,9 @@ def get_pool(n_workers=None, maybe_create=False, backend=None):
     if backend == "concurrent.futures":
         return _get_pool_cf(n_workers=n_workers)
 
+    if backend == "threads":
+        return _get_threads_cf(n_workers=n_workers)
+
     if backend == "dask":
         return _get_pool_dask(n_workers=n_workers, maybe_create=maybe_create)
 
@@ -117,6 +120,9 @@ def parse_parallel_arg(parallel):
 
     if parallel == "concurrent.futures":
         return get_pool(maybe_create=True, backend="concurrent.futures")
+
+    if parallel == "threads":
+        return get_pool(maybe_create=True, backend="threads")
 
     if parallel == "dask":
         _AUTO_BACKEND = "dask"
@@ -219,16 +225,54 @@ class CachedProcessPoolExecutor:
         self.shutdown()
 
 
-PoolHandler = CachedProcessPoolExecutor()
+ProcessPoolHandler = CachedProcessPoolExecutor()
 
 
 @atexit.register
 def _shutdown_cached_process_pool():
-    PoolHandler.shutdown()
+    ProcessPoolHandler.shutdown()
 
 
 def _get_pool_cf(n_workers=None):
-    return PoolHandler(n_workers)
+    return ProcessPoolHandler(n_workers)
+
+
+class CachedThreadPoolExecutor:
+    def __init__(self):
+        self._pool = None
+        self._n_workers = -1
+
+    def __call__(self, n_workers=None):
+        if n_workers != self._n_workers:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self.shutdown()
+            self._pool = ThreadPoolExecutor(n_workers)
+            self._n_workers = n_workers
+        return self._pool
+
+    def is_initialized(self):
+        return self._pool is not None
+
+    def shutdown(self):
+        if self._pool is not None:
+            self._pool.shutdown()
+            self._pool = None
+
+    def __del__(self):
+        self.shutdown()
+
+
+ThreadPoolHandler = CachedThreadPoolExecutor()
+
+
+@atexit.register
+def _shutdown_cached_thread_pool():
+    ThreadPoolHandler.shutdown()
+
+
+def _get_threads_cf(n_workers=None):
+    return ThreadPoolHandler(n_workers)
 
 
 # ---------------------------------- DASK ----------------------------------- #

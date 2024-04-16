@@ -1,5 +1,5 @@
-"""Basic optimization routines.
-"""
+"""Basic optimization routines."""
+
 import math
 import heapq
 import bisect
@@ -7,7 +7,9 @@ import functools
 import itertools
 
 from ..oe import PathOptimizer
-from ..utils import GumbelBatchedGenerator
+from ..utils import get_rng, GumbelBatchedGenerator
+from ..parallel import parse_parallel_arg, get_n_workers
+
 
 def is_simplifiable(legs, appearances):
     """Check if ``legs`` contains any diag (repeated) or reduced (appears
@@ -94,6 +96,19 @@ def compute_size(legs, sizes):
     for ix, _ in legs:
         size *= sizes[ix]
     return size
+
+
+def compute_flops(ilegs, jlegs, sizes):
+    """Compute the flops cost of contracting two terms."""
+    seen = set()
+    flops = 1
+    for ix, _ in ilegs:
+        seen.add(ix)
+        flops *= sizes[ix]
+    for ix, _ in jlegs:
+        if ix not in seen:
+            flops *= sizes[ix]
+    return flops
 
 
 def compute_con_cost_flops(
@@ -272,7 +287,19 @@ class ContractionProcessor:
     optimal contraction path optimization.
     """
 
-    def __init__(self, inputs, output, size_dict):
+    __slots__ = (
+        "nodes",
+        "edges",
+        "indmap",
+        "appearances",
+        "sizes",
+        "ssa",
+        "ssa_path",
+        "track_flops",
+        "flops",
+    )
+
+    def __init__(self, inputs, output, size_dict, track_flops=False):
         self.nodes = {}
         self.edges = {}
         self.indmap = {}
@@ -305,6 +332,21 @@ class ContractionProcessor:
 
         self.ssa = len(self.nodes)
         self.ssa_path = []
+        self.track_flops = track_flops
+        self.flops = 0
+
+    def copy(self):
+        new = ContractionProcessor.__new__(ContractionProcessor)
+        new.nodes = self.nodes.copy()
+        new.edges = {k: v.copy() for k, v in self.edges.items()}
+        new.indmap = self.indmap  # never mutated
+        new.appearances = self.appearances  # never mutated
+        new.sizes = self.sizes  # never mutated
+        new.ssa = self.ssa
+        new.ssa_path = self.ssa_path.copy()
+        new.track_flops = self.track_flops
+        new.flops = self.flops
+        return new
 
     def neighbors(self, i):
         """Get all neighbors of node ``i``."""
@@ -364,13 +406,19 @@ class ContractionProcessor:
             for node in ix_nodes:
                 assert ix in {jx for jx, _ in self.nodes[node]}
 
-    def contract_nodes(self, i, j):
+    def contract_nodes(self, i, j, new_legs=None):
         """Contract the nodes ``i`` and ``j``, adding a new node to the graph
         and returning its index.
         """
         ilegs = self.pop_node(i)
         jlegs = self.pop_node(j)
-        new_legs = compute_contracted(ilegs, jlegs, self.appearances)
+
+        if self.track_flops:
+            self.flops += compute_flops(ilegs, jlegs, self.sizes)
+
+        if new_legs is None:
+            new_legs = compute_contracted(ilegs, jlegs, self.appearances)
+
         k = self.add_node(new_legs)
         self.ssa_path.append((i, j))
         return k
@@ -495,7 +543,7 @@ class ContractionProcessor:
                 elif score < 0:
                     return -math.log(-score) - temperature * gmblgen()
                 else:
-                    return - temperature * gmblgen()
+                    return -temperature * gmblgen()
 
                 # return sab - costmod * (sa + sb) - temperature * gmblgen()
 
@@ -526,10 +574,7 @@ class ContractionProcessor:
                 # one of nodes already contracted
                 continue
 
-            self.pop_node(i)
-            self.pop_node(j)
-            k = self.add_node(klegs)
-            self.ssa_path.append((i, j))
+            k = self.contract_nodes(i, j, new_legs=klegs)
             node_sizes[k] = ksize
 
             for l in self.neighbors(k):
@@ -747,8 +792,7 @@ def ssa_to_linear(ssa_path, N=None):
 
 
 def is_ssa_path(path, nterms):
-    """Check if an explicitly given path is in 'static single assignment' form.
-    """
+    """Check if an explicitly given path is in 'static single assignment' form."""
     seen = set()
     # we reverse as more likely to see high id and shortcut
     for con in reversed(path):
@@ -863,6 +907,102 @@ def optimize_greedy(
     return ssa_to_linear(cp.ssa_path, len(inputs))
 
 
+def optimize_random_greedy_track_flops(
+    inputs,
+    output,
+    size_dict,
+    ntrials=1,
+    costmod=1.0,
+    temperature=0.01,
+    seed=None,
+    simplify=True,
+    use_ssa=False,
+):
+    """Perform a batch of random greedy optimizations, simulteneously tracking
+    the best contraction path in terms of flops, so as to avoid constructing a
+    separate contraction tree.
+
+    Parameters
+    ----------
+    inputs : tuple[tuple[str]]
+        The indices of each input tensor.
+    output : tuple[str]
+        The indices of the output tensor.
+    size_dict : dict[str, int]
+        A dictionary mapping indices to their dimension.
+    ntrials : int, optional
+        The number of random greedy trials to perform. The default is 1.
+    costmod : float, optional
+        When assessing local greedy scores how much to weight the size of the
+        tensors removed compared to the size of the tensor added::
+
+            score = size_ab - costmod * (size_a + size_b)
+
+        This can be a useful hyper-parameter to tune.
+    temperature : float, optional
+        When asessing local greedy scores, how much to randomly perturb the
+        score. This is implemented as::
+
+            score -> sign(score) * log(|score|) - temperature * gumbel()
+
+        which implements boltzmann sampling.
+    seed : int, optional
+        The seed for the random number generator.
+    simplify : bool, optional
+        Whether to perform simplifications before optimizing. These are:
+
+            - ignore any indices that appear in all terms
+            - combine any repeated indices within a single term
+            - reduce any non-output indices that only appear on a single term
+            - combine any scalar terms
+            - combine any tensors with matching indices (hadamard products)
+
+        Such simpifications may be required in the general case for the proper
+        functioning of the core optimization, but may be skipped if the input
+        indices are already in a simplified form.
+    use_ssa : bool, optional
+        Whether to return the contraction path in 'single static assignment'
+        (SSA) format (i.e. as if each intermediate is appended to the list of
+        inputs, without removals). This can be quicker and easier to work with
+        than the 'linear recycled' format that `numpy` and `opt_einsum` use.
+
+    Returns
+    -------
+    path : list[list[int]]
+        The best contraction path, given as a sequence of pairs of node
+        indices.
+    flops : float
+        The flops (/ contraction cost / number of multiplications), of the best
+        contraction path, given log10.
+    """
+    rng = get_rng(seed)
+    best_path = None
+    best_flops = float("inf")
+
+    # create initial processor and simplify only once
+    cp0 = ContractionProcessor(inputs, output, size_dict, track_flops=True)
+    if simplify:
+        cp0.simplify()
+
+    for _ in range(ntrials):
+        cp = cp0.copy()
+        cp.optimize_greedy(costmod=costmod, temperature=temperature, seed=rng)
+        # handle disconnected subgraphs
+        cp.optimize_remaining_by_size()
+
+        if cp.flops < best_flops:
+            best_path = cp.ssa_path
+            best_flops = cp.flops
+
+    # for consistency with cotengrust / easier comparison
+    best_flops = math.log10(best_flops)
+
+    if not use_ssa:
+        best_path = ssa_to_linear(best_path, len(inputs))
+
+    return best_path, best_flops
+
+
 def optimize_optimal(
     inputs,
     output,
@@ -950,18 +1090,16 @@ def optimize_optimal(
     return ssa_to_linear(cp.ssa_path, len(inputs))
 
 
+class EnsureInputsOutputAreSequence:
+    def __init__(self, f):
+        self.f = f
 
-def ensure_inputs_output_are_sequence(f):
-
-    def wrapped(inputs, output, *args, **kwargs):
+    def __call__(self, inputs, output, *args, **kwargs):
         if not isinstance(inputs[0], (tuple, list)):
             inputs = tuple(map(tuple, inputs))
         if not isinstance(output, (tuple, list)):
             output = tuple(output)
-        return f(inputs, output, *args, **kwargs)
-
-    return wrapped
-
+        return self.f(inputs, output, *args, **kwargs)
 
 
 @functools.lru_cache()
@@ -974,10 +1112,28 @@ def get_optimize_greedy(accel="auto"):
     if accel is True:
         from cotengrust import optimize_greedy as f
 
-        return ensure_inputs_output_are_sequence(f)
+        return EnsureInputsOutputAreSequence(f)
 
     if accel is False:
         return optimize_greedy
+
+    raise ValueError(f"Unrecognized value for `accel`: {accel}.")
+
+
+@functools.lru_cache()
+def get_optimize_random_greedy_track_flops(accel="auto"):
+    if accel == "auto":
+        import importlib.util
+
+        accel = importlib.util.find_spec("cotengrust") is not None
+
+    if accel is True:
+        from cotengrust import optimize_random_greedy_track_flops as f
+
+        return EnsureInputsOutputAreSequence(f)
+
+    if accel is False:
+        return optimize_random_greedy_track_flops
 
     raise ValueError(f"Unrecognized value for `accel`: {accel}.")
 
@@ -1043,6 +1199,169 @@ class GreedyOptimizer(PathOptimizer):
         )
 
 
+class RandomGreedyOptimizer(PathOptimizer):
+    """Lightweight random greedy optimizer, that eschews hyper parameter
+    tuning and contraction tree construction. This is a stateful optimizer
+    that should not be re-used on different contractions.
+
+    Parameters
+    ----------
+    max_repeats : int, optional
+        The number of random greedy trials to perform.
+    costmod : float, optional
+        When assessing local greedy scores how much to weight the size of the
+        tensors removed compared to the size of the tensor added::
+
+            score = size_ab - costmod * (size_a + size_b)
+
+        This can be a useful hyper-parameter to tune.
+    temperature : float, optional
+        When asessing local greedy scores, how much to randomly perturb the
+        score. This is implemented as::
+
+            score -> sign(score) * log(|score|) - temperature * gumbel()
+
+        which implements boltzmann sampling.
+    seed : int, optional
+        The seed for the random number generator. Note that deterministic
+        behavior is only guaranteed within the python or rust backend
+        (the `accel` parameter) and parallel settings.
+    simplify : bool, optional
+        Whether to perform simplifications before optimizing. These are:
+
+            - ignore any indices that appear in all terms
+            - combine any repeated indices within a single term
+            - reduce any non-output indices that only appear on a single term
+            - combine any scalar terms
+            - combine any tensors with matching indices (hadamard products)
+
+        Such simpifications may be required in the general case for the proper
+        functioning of the core optimization, but may be skipped if the input
+        indices are already in a simplified form.
+    accel : bool or str, optional
+        Whether to use the accelerated `cotengrust` backend. If "auto" the
+        backend is used if available.
+    parallel : bool or str, optional
+        Whether to use parallel processing. If "auto" the default is to use
+        threads if the accelerated backend is not used, and processes if it is.
+
+    Attributes
+    ----------
+    best_ssa_path : list[list[int]]
+        The best contraction path found so far.
+    best_flops : float
+        The flops (/ contraction cost / number of multiplications) of the best
+        contraction path found so far.
+    """
+
+    def __init__(
+        self,
+        max_repeats=32,
+        costmod=1.0,
+        temperature=0.01,
+        seed=None,
+        simplify=True,
+        accel="auto",
+        parallel="auto",
+    ):
+        self.max_repeats = max_repeats
+        self.costmod = costmod
+        self.temperature = temperature
+        self.simplify = simplify
+        self.rng = get_rng(seed)
+        self.best_ssa_path = None
+        self.best_flops = float("inf")
+        self._optimize_fn = get_optimize_random_greedy_track_flops(accel)
+
+        if (parallel == "auto") and (
+            self._optimize_fn is not optimize_random_greedy_track_flops
+        ):
+            # using accelerated fn, so default to threads
+            parallel = "threads"
+        self._pool = parse_parallel_arg(parallel)
+        if self._pool is not None:
+            self._nworkers = get_n_workers(self._pool)
+        else:
+            self._nworkers = 1
+
+    def maybe_update_defaults(self, **kwargs):
+        # allow overriding of defaults
+        opts = {
+            "costmod": self.costmod,
+            "temperature": self.temperature,
+            "simplify": self.simplify,
+        }
+        opts.update(kwargs)
+        return opts
+
+    def ssa_path(self, inputs, output, size_dict, **kwargs):
+        if self._pool is None:
+            ssa_path, flops = self._optimize_fn(
+                inputs,
+                output,
+                size_dict,
+                use_ssa=True,
+                ntrials=self.max_repeats,
+                seed=self.rng.randint(0, 2**32 - 1),
+                **self.maybe_update_defaults(**kwargs),
+            )
+        else:
+            # XXX: just use small batchsize if can't find num_workers?
+            nbatches = self._nworkers
+            batchsize = self.max_repeats // nbatches
+            batchremainder = self.max_repeats % nbatches
+            each_ntrials = [
+                batchsize + (i < batchremainder) for i in range(nbatches)
+            ]
+
+            fs = [
+                self._pool.submit(
+                    self._optimize_fn,
+                    inputs,
+                    output,
+                    size_dict,
+                    use_ssa=True,
+                    ntrials=ntrials,
+                    seed=self.rng.randint(0, 2**32 - 1),
+                    **self.maybe_update_defaults(**kwargs),
+                )
+                for ntrials in each_ntrials
+                if (ntrials > 0)
+            ]
+            ssa_path, flops = min((f.result() for f in fs), key=lambda x: x[1])
+
+        if flops < self.best_flops:
+            self.best_ssa_path = ssa_path
+            self.best_flops = flops
+
+        return self.best_ssa_path
+
+    def search(self, inputs, output, size_dict, **kwargs):
+        from ..core import ContractionTree
+
+        return ContractionTree.from_path(
+            inputs,
+            output,
+            size_dict,
+            ssa_path=self.ssa_path(
+                inputs,
+                output,
+                size_dict,
+                **self.maybe_update_defaults(**kwargs),
+            ),
+        )
+
+    def __call__(self, inputs, output, size_dict, **kwargs):
+        return ssa_to_linear(
+            self.ssa_path(
+                inputs,
+                output,
+                size_dict,
+                **self.maybe_update_defaults(**kwargs),
+            ),
+        )
+
+
 @functools.lru_cache()
 def get_optimize_optimal(accel="auto"):
     if accel == "auto":
@@ -1053,7 +1372,7 @@ def get_optimize_optimal(accel="auto"):
     if accel is True:
         from cotengrust import optimize_optimal as f
 
-        return ensure_inputs_output_are_sequence(f)
+        return EnsureInputsOutputAreSequence(f)
 
     if accel is False:
         return optimize_optimal

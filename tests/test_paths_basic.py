@@ -1,9 +1,9 @@
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
+
 import cotengra as ctg
 import cotengra.pathfinders.path_basic as pb
-
 
 # these are taken from opt_einsum
 test_case_eqs = [
@@ -101,9 +101,7 @@ def test_manual_cases(eq, which):
     path = {
         "greedy": pb.optimize_greedy,
         "optimal": pb.optimize_optimal,
-    }[
-        which
-    ](inputs, output, size_dict)
+    }[which](inputs, output, size_dict)
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
     assert_allclose(tree.contract(arrays), expected)
 
@@ -126,15 +124,44 @@ def test_basic_rand(seed, which):
     path = {
         "greedy": pb.optimize_greedy,
         "optimal": pb.optimize_optimal,
-    }[
-        which
-    ](inputs, output, size_dict)
+    }[which](inputs, output, size_dict)
 
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
     arrays = [np.random.randn(*s) for s in shapes]
     assert_allclose(
         tree.contract(arrays), np.einsum(eq, *arrays, optimize=True)
     )
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_random_greedy_track_flops(seed):
+    inputs, output, _, size_dict = ctg.utils.lattice_equation(
+        [4, 5],
+        d_min=2,
+        d_max=3,
+        seed=seed,
+    )
+    opt = ctg.RandomGreedyOptimizer(
+        max_repeats=2,
+        temperature=0.1,
+        seed=seed,
+        accel=False,
+        parallel=False,
+    )
+    path = opt(inputs, output, size_dict)
+    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+    assert tree.contraction_cost(log=10) == pytest.approx(opt.best_flops)
+    # check deterministic
+    opt2 = ctg.RandomGreedyOptimizer(
+        max_repeats=2,
+        temperature=0.1,
+        seed=seed,
+        accel=False,
+        parallel=False,
+    )
+    opt2(inputs, output, size_dict)
+    assert opt.best_ssa_path == opt2.best_ssa_path
+    assert opt.best_flops == opt2.best_flops
 
 
 @pytest.mark.parametrize("seed", range(10))
@@ -148,9 +175,7 @@ def test_basic_perverse(seed, which):
     path = {
         "greedy": pb.optimize_greedy,
         "optimal": pb.optimize_optimal,
-    }[
-        which
-    ](inputs, output, size_dict)
+    }[which](inputs, output, size_dict)
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
     arrays = [np.random.randn(*s) for s in shapes]
     assert_allclose(
