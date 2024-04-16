@@ -60,7 +60,7 @@ from .interface import (
 )
 from .pathfinders import (
     path_basic,
-    path_greedy,
+    path_compressed_greedy,
     path_igraph,
     path_kahypar,
     path_labels,
@@ -165,7 +165,7 @@ __all__ = (
     "optimize_flowcutter",
     "optimize_quickbb",
     "path_basic",
-    "path_greedy",
+    "path_compressed_greedy",
     "path_igraph",
     "path_kahypar",
     "path_labels",
@@ -270,12 +270,12 @@ try:
     )
     register_preset(
         "greedy-compressed",
-        path_greedy.greedy_compressed,
+        path_compressed_greedy.greedy_compressed,
         compressed=True,
     )
     register_preset(
         "greedy-span",
-        path_greedy.greedy_span,
+        path_compressed_greedy.greedy_span,
         compressed=True,
     )
 except KeyError:

@@ -532,3 +532,20 @@ register_hyper_function(
         "distance_steal": {"type": "STRING", "options": ["", "abs", "rel"]},
     },
 )
+
+register_hyper_function(
+    name="greedy-span-max",
+    ssa_func=trial_greedy_span,
+    space={
+        "score_perm": {"type": "STRING", "options": _allowed_perms},
+        "coeff_connectivity": {"type": "INT", "min": 0, "max": 1},
+        "coeff_ndim": {"type": "INT", "min": -1, "max": 1},
+        "coeff_distance": {"type": "INT", "min": -1, "max": 1},
+        "coeff_next_centrality": {"type": "FLOAT", "min": -1, "max": 1},
+        "weight_bonds": {"type": "BOOL"},
+        "temperature": {"type": "FLOAT", "min": -1.0, "max": 1.0},
+        "distance_p": {"type": "FLOAT", "min": -5.0, "max": 5.0},
+        "distance_steal": {"type": "STRING", "options": ["", "abs", "rel"]},
+    },
+    constants={"start": "max"},
+)
