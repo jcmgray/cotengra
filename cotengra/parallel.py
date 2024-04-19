@@ -13,27 +13,43 @@ _AUTO_BACKEND = None
 _DEFAULT_BACKEND = "concurrent.futures"
 
 
+@functools.lru_cache(None)
+def choose_default_num_workers():
+    import os
+
+    if "COTENGRA_NUM_WORKERS" in os.environ:
+        return int(os.environ["COTENGRA_NUM_WORKERS"])
+
+    if "OMP_NUM_THREADS" in os.environ:
+        return int(os.environ["OMP_NUM_THREADS"])
+
+    return os.cpu_count()
+
+
 def get_pool(n_workers=None, maybe_create=False, backend=None):
     """Get a parallel pool."""
-
     if backend is None:
         backend = _DEFAULT_BACKEND
-
-    if backend == "loky":
-        get_reusable_executor = get_loky_get_reusable_executor()
-        return get_reusable_executor(max_workers=n_workers)
-
-    if backend == "concurrent.futures":
-        return _get_pool_cf(n_workers=n_workers)
-
-    if backend == "threads":
-        return _get_threads_cf(n_workers=n_workers)
 
     if backend == "dask":
         return _get_pool_dask(n_workers=n_workers, maybe_create=maybe_create)
 
     if backend == "ray":
         return _get_pool_ray(n_workers=n_workers, maybe_create=maybe_create)
+
+    # above backends are distributed, don't specify n_workers
+    if n_workers is None:
+        n_workers = choose_default_num_workers()
+
+    if backend == "loky":
+        get_reusable_executor = get_loky_get_reusable_executor()
+        return get_reusable_executor(max_workers=n_workers)
+
+    if backend == "concurrent.futures":
+        return _get_process_pool_cf(n_workers=n_workers)
+
+    if backend == "threads":
+        return _get_thread_pool_cf(n_workers=n_workers)
 
 
 @functools.lru_cache(None)
@@ -233,7 +249,7 @@ def _shutdown_cached_process_pool():
     ProcessPoolHandler.shutdown()
 
 
-def _get_pool_cf(n_workers=None):
+def _get_process_pool_cf(n_workers=None):
     return ProcessPoolHandler(n_workers)
 
 
@@ -271,7 +287,7 @@ def _shutdown_cached_thread_pool():
     ThreadPoolHandler.shutdown()
 
 
-def _get_threads_cf(n_workers=None):
+def _get_thread_pool_cf(n_workers=None):
     return ThreadPoolHandler(n_workers)
 
 

@@ -753,12 +753,17 @@ def get_symbol(i):
 
     """
     if i < 52:
+        # use a-z, A-Z first
         return _einsum_symbols_base[i]
-    elif i >= 55296:
+
+    # then proceed from 'À'
+    i += 140
+
+    if i >= 55296:
         # Skip chr(57343) - chr(55296) as surrogates
-        return chr(i + 2048)
-    else:
-        return chr(i + 140)
+        i += 2048
+
+    return chr(i)
 
 
 def get_symbol_map(inputs):
