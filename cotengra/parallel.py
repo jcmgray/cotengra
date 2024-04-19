@@ -13,24 +13,43 @@ _AUTO_BACKEND = None
 _DEFAULT_BACKEND = "concurrent.futures"
 
 
+@functools.lru_cache(None)
+def choose_default_num_workers():
+    import os
+
+    if "COTENGRA_NUM_WORKERS" in os.environ:
+        return int(os.environ["COTENGRA_NUM_WORKERS"])
+
+    if "OMP_NUM_THREADS" in os.environ:
+        return int(os.environ["OMP_NUM_THREADS"])
+
+    return os.cpu_count()
+
+
 def get_pool(n_workers=None, maybe_create=False, backend=None):
     """Get a parallel pool."""
-
     if backend is None:
         backend = _DEFAULT_BACKEND
-
-    if backend == "loky":
-        get_reusable_executor = get_loky_get_reusable_executor()
-        return get_reusable_executor(max_workers=n_workers)
-
-    if backend == "concurrent.futures":
-        return _get_pool_cf(n_workers=n_workers)
 
     if backend == "dask":
         return _get_pool_dask(n_workers=n_workers, maybe_create=maybe_create)
 
     if backend == "ray":
         return _get_pool_ray(n_workers=n_workers, maybe_create=maybe_create)
+
+    # above backends are distributed, don't specify n_workers
+    if n_workers is None:
+        n_workers = choose_default_num_workers()
+
+    if backend == "loky":
+        get_reusable_executor = get_loky_get_reusable_executor()
+        return get_reusable_executor(max_workers=n_workers)
+
+    if backend == "concurrent.futures":
+        return _get_process_pool_cf(n_workers=n_workers)
+
+    if backend == "threads":
+        return _get_thread_pool_cf(n_workers=n_workers)
 
 
 @functools.lru_cache(None)
@@ -117,6 +136,9 @@ def parse_parallel_arg(parallel):
 
     if parallel == "concurrent.futures":
         return get_pool(maybe_create=True, backend="concurrent.futures")
+
+    if parallel == "threads":
+        return get_pool(maybe_create=True, backend="threads")
 
     if parallel == "dask":
         _AUTO_BACKEND = "dask"
@@ -219,16 +241,54 @@ class CachedProcessPoolExecutor:
         self.shutdown()
 
 
-PoolHandler = CachedProcessPoolExecutor()
+ProcessPoolHandler = CachedProcessPoolExecutor()
 
 
 @atexit.register
 def _shutdown_cached_process_pool():
-    PoolHandler.shutdown()
+    ProcessPoolHandler.shutdown()
 
 
-def _get_pool_cf(n_workers=None):
-    return PoolHandler(n_workers)
+def _get_process_pool_cf(n_workers=None):
+    return ProcessPoolHandler(n_workers)
+
+
+class CachedThreadPoolExecutor:
+    def __init__(self):
+        self._pool = None
+        self._n_workers = -1
+
+    def __call__(self, n_workers=None):
+        if n_workers != self._n_workers:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self.shutdown()
+            self._pool = ThreadPoolExecutor(n_workers)
+            self._n_workers = n_workers
+        return self._pool
+
+    def is_initialized(self):
+        return self._pool is not None
+
+    def shutdown(self):
+        if self._pool is not None:
+            self._pool.shutdown()
+            self._pool = None
+
+    def __del__(self):
+        self.shutdown()
+
+
+ThreadPoolHandler = CachedThreadPoolExecutor()
+
+
+@atexit.register
+def _shutdown_cached_thread_pool():
+    ThreadPoolHandler.shutdown()
+
+
+def _get_thread_pool_cf(n_workers=None):
+    return ThreadPoolHandler(n_workers)
 
 
 # ---------------------------------- DASK ----------------------------------- #
