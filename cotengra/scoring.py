@@ -330,7 +330,7 @@ class LimitObjective(ExactObjective):
 
     def __call__(self, trial):
         tree = trial["tree"]
-        return math.log2(tree.total_cost(factor=self.factor, combine=max))
+        return math.log2(tree.combo_cost(factor=self.factor, combine=max))
 
 
 # --------------------- compressed contraction scoring ---------------------- #

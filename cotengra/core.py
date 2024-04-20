@@ -875,7 +875,7 @@ class ContractionTree:
             self.compute_centralities()
             return self.info[node]["centrality"]
 
-    def total_flops(self, dtype=None):
+    def total_flops(self, dtype=None, log=None):
         """Sum the flops contribution from every node in the tree.
 
         Parameters
@@ -895,13 +895,18 @@ class ContractionTree:
             C = self.multiplicity * self._flops
 
         if dtype is None:
-            return C
+            pass
+        elif "float" in dtype:
+            C *= 2
+        elif "complex" in dtype:
+            C *= 4
+        else:
+            raise ValueError(f"Unknown dtype {dtype}")
 
-        if "float" in dtype:
-            return 2 * C
+        if log is not None:
+            C = math.log(C, log)
 
-        if "complex" in dtype:
-            return 8 * C
+        return C
 
     def total_write(self):
         """Sum the total amount of memory that will be created and operated on."""
@@ -914,7 +919,7 @@ class ContractionTree:
 
         return self.multiplicity * self._write
 
-    def total_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum, log=None):
+    def combo_cost(self, factor=DEFAULT_COMBO_FACTOR, combine=sum, log=None):
         t = 0
         for p in self.children:
             f = self.get_flops(p)
@@ -927,6 +932,8 @@ class ContractionTree:
             t = math.log(t, log)
 
         return t
+
+    total_cost = combo_cost
 
     def max_size(self, log=None):
         """The size of the largest intermediate tensor."""
@@ -1011,10 +1018,7 @@ class ContractionTree:
 
     def contraction_cost(self, log=None):
         """Get the total number of scalar operations ~ time complexity."""
-        C = float(self.total_flops(dtype=None))
-        if log is not None:
-            C = math.log(C, log)
-        return C
+        return self.total_flops(dtype=None, log=log)
 
     def contraction_width(self, log=2):
         """Get log2 of the size of the largest tensor."""
@@ -1072,6 +1076,7 @@ class ContractionTree:
         order="surface_order",
         compress_late=None,
         dtype=None,
+        log=None,
     ):
         """Estimate the total flops for a compressed contraction of this tree
         with maximum bond size ``chi``. This includes basic estimates of the
@@ -1083,11 +1088,18 @@ class ContractionTree:
                 "number of abstract scalar ops."
             )
 
-        return self.compressed_contract_stats(
+        F = self.compressed_contract_stats(
             chi=chi,
             order=order,
             compress_late=compress_late,
         ).flops
+
+        if log is not None:
+            F = math.log(F, log)
+
+        return F
+
+    contraction_cost_compressed = total_flops_compressed
 
     def total_write_compressed(
         self,
@@ -1095,19 +1107,25 @@ class ContractionTree:
         order="surface_order",
         compress_late=None,
         accel="auto",
+        log=None,
     ):
         """Compute the total size of all intermediate tensors when a
         compressed contraction is performed with maximum bond size ``chi``,
         ordered by ``order``. This is relevant maybe for time complexity and
         e.g. autodiff space complexity (since every intermediate is kept).
         """
-        return self.compressed_contract_stats(
+        W = self.compressed_contract_stats(
             chi=chi,
             order=order,
             compress_late=compress_late,
         ).write
 
-    def total_cost_compressed(
+        if log is not None:
+            W = math.log(W, log)
+
+        return W
+
+    def combo_cost_compressed(
         self,
         chi=None,
         order="surface_order",
@@ -1123,9 +1141,13 @@ class ContractionTree:
         ) + factor * self.total_write_compressed(
             chi=chi, order=order, compress_late=compress_late
         )
+
         if log is not None:
             C = math.log(C, log)
+
         return C
+
+    total_cost_compressed = combo_cost_compressed
 
     def max_size_compressed(
         self, chi=None, order="surface_order", compress_late=None, log=None
@@ -1140,8 +1162,10 @@ class ContractionTree:
             order=order,
             compress_late=compress_late,
         ).max_size
+
         if log is not None:
             S = math.log(S, log)
+
         return S
 
     def peak_size_compressed(
@@ -1162,11 +1186,11 @@ class ContractionTree:
             order=order,
             compress_late=compress_late,
         ).peak_size
+
         if log is not None:
             P = math.log(P, log)
-        return P
 
-    contraction_cost_compressed = total_cost_compressed
+        return P
 
     def contraction_width_compressed(
         self, chi=None, order="surface_order", compress_late=None, log=2
@@ -3526,16 +3550,16 @@ class ContractionTree:
         if info == "normal":
             return join.join(
                 (
-                    f"log10[FLOPs]={self.contraction_cost(log=10):.4g}",
-                    f"log2[SIZE]={self.contraction_width(log=2):.4g}",
+                    f"log10[FLOPs]={self.total_flops(log=10):.4g}",
+                    f"log2[SIZE]={self.max_size(log=2):.4g}",
                 )
             )
 
         elif info == "full":
             s = [
-                f"log10[FLOPS]={self.contraction_cost(log=10):.4g}",
-                f"log10[COMBO]={self.total_cost(log=10):.4g}",
-                f"log2[SIZE]={self.contraction_width(log=2):.4g}",
+                f"log10[FLOPS]={self.total_flops(log=10):.4g}",
+                f"log10[COMBO]={self.combo_cost(log=10):.4g}",
+                f"log2[SIZE]={self.max_size(log=2):.4g}",
                 f"log2[PEAK]={self.peak_size(log=2):.4g}",
             ]
             if self.sliced_inds:
@@ -3544,9 +3568,9 @@ class ContractionTree:
 
         elif info == "concise":
             s = [
-                f"F={self.contraction_cost(log=10):.4g}",
-                f"C={self.total_cost(log=10):.4g}",
-                f"S={self.contraction_width(log=2):.4g}",
+                f"F={self.total_flops(log=10):.4g}",
+                f"C={self.combo_cost(log=10):.4g}",
+                f"S={self.max_size(log=2):.4g}",
                 f"P={self.peak_size(log=2):.4g}",
             ]
             if self.sliced_inds:
@@ -3663,6 +3687,7 @@ class ContractionTreeCompressed(ContractionTree):
 
     total_flops = ContractionTree.total_flops_compressed
     total_write = ContractionTree.total_write_compressed
+    combo_cost = ContractionTree.combo_cost_compressed
     total_cost = ContractionTree.total_cost_compressed
     max_size = ContractionTree.max_size_compressed
     peak_size = ContractionTree.peak_size_compressed
@@ -3671,6 +3696,7 @@ class ContractionTreeCompressed(ContractionTree):
 
     total_flops_exact = ContractionTree.total_flops
     total_write_exact = ContractionTree.total_write
+    combo_cost_exact = ContractionTree.combo_cost
     total_cost_exact = ContractionTree.total_cost
     max_size_exact = ContractionTree.max_size
     peak_size_exact = ContractionTree.peak_size
