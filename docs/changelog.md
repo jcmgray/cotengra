@@ -8,10 +8,11 @@
 
 **Enhancements**
 
-- add [RandomGreedyOptimizer](cotengra.pathfinders.path_basic.RandomGreedyOptimizer) which is a lightweight and performant randomized greedy optimizer, eschewing
-  both hyper parameter tuning and full contraction tree construction, making it suitable for very large contractions (10,000s of tensors+).
+- add [RandomGreedyOptimizer](cotengra.pathfinders.path_basic.RandomGreedyOptimizer) which is a lightweight and performant randomized greedy optimizer, eschewing both hyper parameter tuning and full contraction tree construction, making it suitable for very large contractions (10,000s of tensors+).
 - add [optimize_random_greedy_track_flops](cotengra.pathfinders.path_basic.optimize_random_greedy_track_flops) which runs N trials of (random) greedy path optimization, whilst computing the FLOP count simultaneously. This or its accelerated rust counterpart in `cotengrust` is the driver for the above optimizer.
 - add `parallel="threads"` backend, and make it the default for `RandomGreedyOptimizer` when `cotengrust` is present, since its version of `optimize_random_greedy_track_flops` releases the GIL.
+- significantly improve both the speed and memory usage of [`SliceFinder`](cotengra.slicer.SliceFinder)
+- alias `tree.total_cost()` to `tree.combo_cost()`
 
 
 ## v0.6.0 (2024-04-10)
