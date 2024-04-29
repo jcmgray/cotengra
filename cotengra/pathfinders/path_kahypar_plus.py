@@ -1,3 +1,7 @@
+#
+# Based on https://github.com/ti2-group/hybrid_contraction_tree_optimizer/
+#
+
 import copy
 import math
 import random
