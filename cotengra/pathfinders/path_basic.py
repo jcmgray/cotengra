@@ -1369,7 +1369,7 @@ class RandomGreedyOptimizer(PathOptimizer):
             self.best_ssa_path = ssa_path
             self.best_flops = flops
 
-        return self.best_ssa_path, self.best_flops
+        return self.best_ssa_path
 
     def search(self, inputs, output, size_dict, **kwargs):
         from ..core import ContractionTree

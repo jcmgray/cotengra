@@ -56,7 +56,7 @@ InputNode = Union[OriginalInputNode, SubNetworkInputNode]
 InputNodes = List["InputNode"]
 
 
-def greedy_optimizer(tn: "TensorNetwork") -> Tuple[Path, float]:
+def greedy_optimizer(tn: "TensorNetwork") -> Tuple[Path]:
     inputs = [input.indices for input in tn.inputs]
     output = tn.output_indices
     size_dict = tn.size_dict
@@ -65,7 +65,7 @@ def greedy_optimizer(tn: "TensorNetwork") -> Tuple[Path, float]:
         optimal_opt = OptimalOptimizer()
         return optimal_opt.ssa_path(inputs, output, size_dict)
 
-    greedy_opt = RandomGreedyOptimizer(max_repeats=512)
+    greedy_opt = RandomGreedyOptimizer(max_repeats=64)
     return greedy_opt.ssa_path(inputs, output, size_dict)
 
 
@@ -111,7 +111,7 @@ def get_sub_networks(
         quiet=True,
     )
 
-    ## Noramlize block ids
+    # Noramlize block ids
 
     # Check if all input nodes were assigned to the same block
     input_block_ids = block_ids[:num_input_nodes]
@@ -127,7 +127,7 @@ def get_sub_networks(
 
     assert (
         len(set(input_block_ids)) == 2
-    ), f"There should be two blocks, {input_block_ids}, {min_block_id}, {max_block_id}"
+    ), f"There should be two blocks, {input_block_ids}"
 
     # Group inputs by block id
     block_inputs: list[InputNodes] = [[], []]
@@ -141,7 +141,8 @@ def get_sub_networks(
         for block in block_inputs
     ]
 
-    cut_indices = block_indices[0].intersection(block_indices[1])
+    # Include output indices in cut, since it is not in block indices
+    cut_indices = block_indices[0].intersection(block_indices[1]).union(output)
 
     if len(output) > 0:
         parent_block_id = block_ids[-1]
@@ -149,6 +150,9 @@ def get_sub_networks(
         parent_block_id = random.choice([0, 1])
 
     child_block_id = 1 - parent_block_id
+    child_output = list(
+        cut_indices.intersection(block_indices[child_block_id])
+    )
 
     parent_sub_network = TensorNetwork(
         f"{tensor_network.name}.{parent_block_id}",
@@ -163,7 +167,7 @@ def get_sub_networks(
         parent_sub_network.name,
         block_inputs[child_block_id],
         tensor_network.size_dict,
-        cut_indices,
+        child_output,
     )
 
     sub_network_node = SubNetworkInputNode(
@@ -211,12 +215,10 @@ def hybrid_hypercut_greedy(
     path = []
     last_id = len(inputs) - 1
     network_by_name = {tensor_network.name: tensor_network}
-    cost = 0
     while stack:
         tn = stack.pop()
         if len(tn.inputs) <= cutoff:
-            sub_path, sub_cost = greedy_optimizer(tn)
-            cost += sub_cost
+            sub_path = greedy_optimizer(tn)
             last_id = extend_path(tn, sub_path, last_id, path)
             tn._ssa_id = last_id
             while tn.parent_name and len(tn.parent_name) < len(tn.name):
@@ -233,13 +235,12 @@ def hybrid_hypercut_greedy(
         stack.append(child_sub_network)
         network_by_name[child_sub_network.name] = child_sub_network
 
-    # print(f"{cost:.6e}", math.log10(cost / 2), imbalance, cutoff, weight_nodes)
     return ContractionTree.from_path(inputs, output, size_dict, ssa_path=path)
 
 
 hyper_space = {
     "imbalance": {"type": "FLOAT", "min": 0.001, "max": 0.2},
-    "weight_nodes": {"type": "STRING", "options": ["log"]},
-    "cutoff": {"type": "INT", "min": 60, "max": 100},
+    "weight_nodes": {"type": "STRING", "options": ["log", "const"]},
+    "cutoff": {"type": "INT", "min": 10, "max": 200},
 }
 register_hyper_function("kahypar+", hybrid_hypercut_greedy, hyper_space)
