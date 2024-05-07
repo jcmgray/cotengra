@@ -2525,6 +2525,7 @@ class ContractionTree:
             self.output,
             self.size_dict,
             ssa_path=ssa_path,
+            objective=minimize,
         )
         if inplace:
             self.set_state_from(rtree)
@@ -3550,31 +3551,31 @@ class ContractionTree:
         if info == "normal":
             return join.join(
                 (
-                    f"log10[FLOPs]={self.total_flops(log=10):.4g}",
-                    f"log2[SIZE]={self.max_size(log=2):.4g}",
+                    f"log10[FLOPs]={self.total_flops(log=10):.2f}",
+                    f"log2[SIZE]={self.max_size(log=2):.2f}",
                 )
             )
 
         elif info == "full":
             s = [
-                f"log10[FLOPS]={self.total_flops(log=10):.4g}",
-                f"log10[COMBO]={self.combo_cost(log=10):.4g}",
-                f"log2[SIZE]={self.max_size(log=2):.4g}",
-                f"log2[PEAK]={self.peak_size(log=2):.4g}",
+                f"log10[FLOPS]={self.total_flops(log=10):.2f}",
+                f"log10[COMBO]={self.combo_cost(log=10):.2f}",
+                f"log2[SIZE]={self.max_size(log=2):.2f}",
+                f"log2[PEAK]={self.peak_size(log=2):.2f}",
             ]
             if self.sliced_inds:
-                s.append(f"NSLICES={self.multiplicity:.4g}")
+                s.append(f"NSLICES={self.multiplicity:.2f}")
             return join.join(s)
 
         elif info == "concise":
             s = [
-                f"F={self.total_flops(log=10):.4g}",
-                f"C={self.combo_cost(log=10):.4g}",
-                f"S={self.max_size(log=2):.4g}",
-                f"P={self.peak_size(log=2):.4g}",
+                f"F={self.total_flops(log=10):.2f}",
+                f"C={self.combo_cost(log=10):.2f}",
+                f"S={self.max_size(log=2):.2f}",
+                f"P={self.peak_size(log=2):.2f}",
             ]
             if self.sliced_inds:
-                s.append(f"$={self.multiplicity:.4g}")
+                s.append(f"$={self.multiplicity:.2f}")
             return join.join(s)
 
     def __repr__(self):

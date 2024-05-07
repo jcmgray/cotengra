@@ -1,7 +1,6 @@
-"""Greedy contraction tree finders.
-"""
+"""Greedy contraction tree finders."""
+
 import collections
-import functools
 import heapq
 import itertools
 import math
@@ -10,68 +9,11 @@ from ..core import (
     ContractionTree,
     ContractionTreeCompressed,
     get_hypergraph,
-    jitter_dict,
 )
 from ..hyperoptimizers.hyper import register_hyper_function
 from ..utils import BadTrial, GumbelBatchedGenerator, get_rng, oset
-from .path_basic import get_optimize_greedy, ssa_to_linear
-
-ssa_greedy_optimize = functools.partial(get_optimize_greedy(), use_ssa=True)
-
-# ------------------------------ GREEDY HYPER ------------------------------- #
-
-
-def trial_greedy(
-    inputs,
-    output,
-    size_dict,
-    random_strength=0.0,
-    temperature=0.0,
-    costmod=1.0,
-):
-    if random_strength != 0.0:
-        # don't supply randomized sizes to actual contraction tree
-        greedy_size_dict = jitter_dict(size_dict, random_strength)
-    else:
-        greedy_size_dict = size_dict
-
-    ssa_path = ssa_greedy_optimize(
-        inputs,
-        output,
-        greedy_size_dict,
-        temperature=temperature,
-        costmod=costmod,
-    )
-
-    return ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
-    )
-
-
-register_hyper_function(
-    name="greedy",
-    ssa_func=trial_greedy,
-    space={
-        "random_strength": {"type": "FLOAT_EXP", "min": 0.001, "max": 1.0},
-        "temperature": {"type": "FLOAT_EXP", "min": 0.001, "max": 1.0},
-        "costmod": {"type": "FLOAT", "min": 0.0, "max": 50.0},
-    },
-)
-
-# greedy but don't explore costmod or add index size noise
-# -> better for a small number of runs
-register_hyper_function(
-    name="random-greedy",
-    ssa_func=trial_greedy,
-    space={
-        "temperature": {"type": "FLOAT_EXP", "min": 0.001, "max": 0.01},
-    },
-    constants={
-        "costmod": 1.0,
-        "random_strength": 0.0,
-    },
-)
-
+from .path_basic import ssa_to_linear
+from .path_greedy import ssa_greedy_optimize
 
 # --------------------------------------------------------------------------- #
 

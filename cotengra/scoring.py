@@ -448,7 +448,7 @@ class CompressedStatsTracker:
         S = math.log2(max(1, self.max_size))
         P = math.log2(max(1, self.peak_size))
         return join.join((
-            f"F={F:.4g}", f"C={C:.4g}", f"S={S:.4g}", f"P={P:.4g}"
+            f"F={F:.2f}", f"C={C:.2f}", f"S={S:.2f}", f"P={P:.2f}"
         ))
 
     def __repr__(self):\

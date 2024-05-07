@@ -220,7 +220,7 @@ def plot_scatter(
         ax.text(
             bestx[-1],
             besty[-1],
-            f"{besty[-1]:.4g}",
+            f"{besty[-1]:.2f}",
             ha="left",
             va="center",
             color=(0, 0.7, 0.3),

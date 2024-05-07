@@ -326,8 +326,8 @@ def progress_description(best, info="concise"):
         return best["tree"].describe(info=info)
     except KeyError:
         return (
-            f"log10[FLOPs]={log10(best['flops']):.4g} "
-            f"log2[SIZE]={log2(best['size']):.4g}"
+            f"log10[FLOPs]={log10(best['flops']):.2f} "
+            f"log2[SIZE]={log2(best['size']):.2f}"
         )
 
 

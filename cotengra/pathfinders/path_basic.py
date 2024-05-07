@@ -527,25 +527,22 @@ class ContractionProcessor:
         seed=None,
     ):
         """ """
-
         if temperature == 0.0:
 
             def local_score(sa, sb, sab):
-                return sab - costmod * (sa + sb)
+                return sab / costmod - (sa + sb) * costmod
 
         else:
             gmblgen = GumbelBatchedGenerator(seed)
 
             def local_score(sa, sb, sab):
-                score = sab - costmod * (sa + sb)
+                score = sab / costmod - (sa + sb) * costmod
                 if score > 0:
                     return math.log(score) - temperature * gmblgen()
                 elif score < 0:
                     return -math.log(-score) - temperature * gmblgen()
                 else:
                     return -temperature * gmblgen()
-
-                # return sab - costmod * (sa + sb) - temperature * gmblgen()
 
         node_sizes = {}
         for i, ilegs in self.nodes.items():
@@ -863,7 +860,7 @@ def optimize_greedy(
         When assessing local greedy scores how much to weight the size of the
         tensors removed compared to the size of the tensor added::
 
-            score = size_ab - costmod * (size_a + size_b)
+            score = size_ab / costmod - (size_a + size_b) * costmod
 
         This can be a useful hyper-parameter to tune.
     temperature : float, optional
@@ -912,8 +909,8 @@ def optimize_random_greedy_track_flops(
     output,
     size_dict,
     ntrials=1,
-    costmod=1.0,
-    temperature=0.01,
+    costmod=(0.1, 4.0),
+    temperature=(0.001, 1.0),
     seed=None,
     simplify=True,
     use_ssa=False,
@@ -932,20 +929,21 @@ def optimize_random_greedy_track_flops(
         A dictionary mapping indices to their dimension.
     ntrials : int, optional
         The number of random greedy trials to perform. The default is 1.
-    costmod : float, optional
+    costmod : (float, float), optional
         When assessing local greedy scores how much to weight the size of the
         tensors removed compared to the size of the tensor added::
 
-            score = size_ab - costmod * (size_a + size_b)
+            score = size_ab / costmod - (size_a + size_b) * costmod
 
-        This can be a useful hyper-parameter to tune.
-    temperature : float, optional
+        It is sampled uniformly from the given range.
+    temperature : (float, float), optional
         When asessing local greedy scores, how much to randomly perturb the
         score. This is implemented as::
 
             score -> sign(score) * log(|score|) - temperature * gumbel()
 
-        which implements boltzmann sampling.
+        which implements boltzmann sampling. It is sampled log-uniformly from
+        the given range.
     seed : int, optional
         The seed for the random number generator.
     simplify : bool, optional
@@ -984,9 +982,38 @@ def optimize_random_greedy_track_flops(
     if simplify:
         cp0.simplify()
 
+    if isinstance(costmod, float):
+        # constant
+
+        def _next_costmod():
+            return costmod
+
+    else:
+        # uniformly sample
+
+        def _next_costmod():
+            return rng.uniform(*costmod)
+
+    if isinstance(temperature, float):
+        # constant
+
+        def _next_temperature():
+            return temperature
+
+    else:
+        # log-uniformly sample
+        logtempmin, logtempmax = map(math.log, temperature)
+
+        def _next_temperature():
+            return math.exp(rng.uniform(logtempmin, logtempmax))
+
     for _ in range(ntrials):
         cp = cp0.copy()
-        cp.optimize_greedy(costmod=costmod, temperature=temperature, seed=rng)
+        cp.optimize_greedy(
+            costmod=_next_costmod(),
+            temperature=_next_temperature(),
+            seed=rng,
+        )
         # handle disconnected subgraphs
         cp.optimize_remaining_by_size()
 
@@ -1208,20 +1235,21 @@ class RandomGreedyOptimizer(PathOptimizer):
     ----------
     max_repeats : int, optional
         The number of random greedy trials to perform.
-    costmod : float, optional
+    costmod : (float, float), optional
         When assessing local greedy scores how much to weight the size of the
         tensors removed compared to the size of the tensor added::
 
-            score = size_ab - costmod * (size_a + size_b)
+            score = size_ab / costmod - (size_a + size_b) * costmod
 
-        This can be a useful hyper-parameter to tune.
-    temperature : float, optional
+        It is sampled uniformly from the given range.
+    temperature : (float, float), optional
         When asessing local greedy scores, how much to randomly perturb the
         score. This is implemented as::
 
             score -> sign(score) * log(|score|) - temperature * gumbel()
 
-        which implements boltzmann sampling.
+        which implements boltzmann sampling. It is sampled log-uniformly from
+        the given range.
     seed : int, optional
         The seed for the random number generator. Note that deterministic
         behavior is only guaranteed within the python or rust backend
@@ -1257,16 +1285,26 @@ class RandomGreedyOptimizer(PathOptimizer):
     def __init__(
         self,
         max_repeats=32,
-        costmod=1.0,
-        temperature=0.01,
+        costmod=(0.1, 4.0),
+        temperature=(0.001, 1.0),
         seed=None,
         simplify=True,
         accel="auto",
         parallel="auto",
     ):
         self.max_repeats = max_repeats
-        self.costmod = costmod
-        self.temperature = temperature
+
+        # for cotengrust, ensure these are always ranges
+        if isinstance(costmod, float):
+            self.costmod = (costmod, costmod)
+        else:
+            self.costmod = tuple(costmod)
+
+        if isinstance(temperature, float):
+            self.temperature = (temperature, temperature)
+        else:
+            self.temperature = tuple(temperature)
+
         self.simplify = simplify
         self.rng = get_rng(seed)
         self.best_ssa_path = None
