@@ -297,9 +297,17 @@ class ContractionProcessor:
         "ssa_path",
         "track_flops",
         "flops",
+        "flops_limit",
     )
 
-    def __init__(self, inputs, output, size_dict, track_flops=False):
+    def __init__(
+        self,
+        inputs,
+        output,
+        size_dict,
+        track_flops=False,
+        flops_limit=float("inf"),
+    ):
         self.nodes = {}
         self.edges = {}
         self.indmap = {}
@@ -334,6 +342,7 @@ class ContractionProcessor:
         self.ssa_path = []
         self.track_flops = track_flops
         self.flops = 0
+        self.flops_limit = flops_limit
 
     def copy(self):
         new = ContractionProcessor.__new__(ContractionProcessor)
@@ -346,6 +355,7 @@ class ContractionProcessor:
         new.ssa_path = self.ssa_path.copy()
         new.track_flops = self.track_flops
         new.flops = self.flops
+        new.flops_limit = self.flops_limit
         return new
 
     def neighbors(self, i):
@@ -572,6 +582,13 @@ class ContractionProcessor:
                 continue
 
             k = self.contract_nodes(i, j, new_legs=klegs)
+
+            if (
+                self.track_flops and (self.flops >= self.flops_limit)
+            ):
+                # shortcut - stop early and return failed
+                return False
+
             node_sizes[k] = ksize
 
             for l in self.neighbors(k):
@@ -584,6 +601,8 @@ class ContractionProcessor:
                 heapq.heappush(queue, (score, c))
                 contractions[c] = (k, l, msize, mlegs)
                 c += 1
+
+        return True
 
     def optimize_optimal_connected(
         self,
@@ -1009,17 +1028,24 @@ def optimize_random_greedy_track_flops(
 
     for _ in range(ntrials):
         cp = cp0.copy()
-        cp.optimize_greedy(
+        success = cp.optimize_greedy(
             costmod=_next_costmod(),
             temperature=_next_temperature(),
             seed=rng,
         )
+
+        if not success:
+            # optimization hit the flops limit
+            continue
+
         # handle disconnected subgraphs
         cp.optimize_remaining_by_size()
 
         if cp.flops < best_flops:
             best_path = cp.ssa_path
             best_flops = cp.flops
+            # enable even earlier stopping
+            cp0.flops_limit = best_flops
 
     # for consistency with cotengrust / easier comparison
     best_flops = math.log10(best_flops)
