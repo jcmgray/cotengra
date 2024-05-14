@@ -539,9 +539,18 @@ def _build_expression(
             # 'contraction' is a no-op
 
             def fn(*arrays, backend=None):
+                # this is surprisingly complicated 'to do nothing', since we
+                # have to respect potential backend conversion
+                x = arrays[0]
                 if backend is None:
-                    return arrays[0]
-                return ar.do("array", arrays[0], like=backend)
+                    # haven't requested a specific backend, just return
+                    return x
+                elif backend == ar.infer_backend(x):
+                    # requested backend is the same as the input, just return
+                    return x
+                else:
+                    # requested backend is different, convert
+                    return ar.do("array", arrays[0], like=backend)
 
         elif len(term) == len(output):
             # 'contraction' is just a transposition

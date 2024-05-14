@@ -30,7 +30,7 @@ setup(
     ],
     extras_require={
         "recommended": [
-            "cotengrust",
+            "cotengrust>=0.1.3",
             "cytoolz",
             "kahypar",
             "networkx",
@@ -76,6 +76,7 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
     keywords="tensor network contraction graph hypergraph partition einsum",
 )
