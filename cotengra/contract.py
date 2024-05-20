@@ -723,8 +723,17 @@ class Contractor:
         if implementation == "cotengra":
             _einsum, _tensordot = einsum, tensordot
         elif implementation == "autoray":
-            _einsum = get_lib_fn(backend, "einsum")
-            _tensordot = get_lib_fn(backend, "tensordot")
+            try:
+                _einsum = get_lib_fn(backend, "einsum")
+            except ImportError:
+                # fallback to cotengra (matmul) implementation
+                _einsum = einsum
+
+            try:
+                _tensordot = get_lib_fn(backend, "tensordot")
+            except ImportError:
+                # fallback to cotengra (matmul) implementation
+                _tensordot = tensordot
         else:
             # manually supplied
             _einsum, _tensordot = implementation
