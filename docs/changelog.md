@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.2 (2024-05-21)
+
+**Bug fixes**
+
+- Fix final, output contractions being mistakenly marked as not tensordot-able.
+- When `implementation="autoray"` don't require a backend to have both `einsum` and `tensordot`, instead fallback to `cotengra`'s own.
+
+
 ## v0.6.1 (2024-05-15)
 
 **Breaking changes**
