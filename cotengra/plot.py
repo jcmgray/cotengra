@@ -426,7 +426,9 @@ def hypergraph_compute_plot_info_G(
     if node_color is True:
         from .schematic import auto_colors
 
-        node_colors = auto_colors(H.get_num_nodes())
+        node_colors = dict(
+            zip(sorted(H.nodes), auto_colors(H.get_num_nodes()))
+        )
 
         def _node_colorer(nd):
             return node_colors[nd]

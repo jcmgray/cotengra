@@ -1,6 +1,7 @@
 import pytest
 import cotengra as ctg
 
+
 def test_shortest_distances():
     inputs, output, _, size_dict = ctg.utils.lattice_equation([3, 3])
     hg = ctg.HyperGraph(inputs, output, size_dict)
@@ -34,6 +35,28 @@ def test_compute_loops():
     hg = ctg.HyperGraph(inputs, output, size_dict)
     loops = list(hg.compute_loops())
     assert set(loops) == {
-        (0, 1, 3, 4), (1, 2, 4, 5), (3, 4, 6, 7), (4, 5, 7, 8)
+        (0, 1, 3, 4),
+        (1, 2, 4, 5),
+        (3, 4, 6, 7),
+        (4, 5, 7, 8),
     }
     assert len(list(hg.compute_loops(max_loop_length=6))) == 8
+
+
+def test_plot_nonconsec():
+    import matplotlib as mpl
+
+    mpl.use("Template")
+
+    inputs = [
+        ("a", "b", "x"),
+        ("b", "c", "d"),
+        ("c", "e", "y"),
+        ("e", "a", "d"),
+    ]
+    output = ("x", "y")
+    size_dict = {"x": 2, "y": 3, "a": 4, "b": 5, "c": 6, "d": 7, "e": 8}
+
+    hg = ctg.HyperGraph(inputs, output, size_dict)
+    hg.contract(0, 1)
+    hg.plot()
