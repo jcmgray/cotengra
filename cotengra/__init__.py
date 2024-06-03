@@ -65,6 +65,7 @@ from .pathfinders import (
     path_igraph,
     path_kahypar,
     path_labels,
+    path_kahypar_plus,
 )
 from .pathfinders.path_basic import (
     GreedyOptimizer,
