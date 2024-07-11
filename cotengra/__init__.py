@@ -171,6 +171,7 @@ __all__ = (
     "path_compressed_greedy",
     "path_igraph",
     "path_kahypar",
+    "path_kahypar_plus",
     "path_labels",
     "plot_contractions_alt",
     "plot_contractions",
