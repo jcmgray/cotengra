@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - autoray
-  - cmaes
+  - cmaes>=0.10
   - coverage
   - matplotlib
   - networkx
