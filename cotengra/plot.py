@@ -303,6 +303,144 @@ def plot_scatter_alt(
     ).interactive()
 
 
+def logxextrapolate(p1, p2, x):
+    x1, y1 = p1
+    x2, y2 = p2
+    # Calculate the slope (m) and intercept (b) in log-x space
+    m = (y2 - y1) / (math.log(x2) - math.log(x1))
+    b = y1 - m * math.log(x1)
+    return m * math.log(x) + b
+
+
+def mapper(y, x, mn, mx):
+    return (x, (y - mn) / (mx - mn))
+
+
+def mapper_cat(c, x, lookup):
+    return (x, lookup[c])
+
+
+@show_and_close
+def plot_parameters_parallel(
+    self,
+    method,
+    colormap="Spectral",
+    smoothing=0.5,
+    rasterized=None,
+    **drawing_opts
+):
+    """Plot the parameter choices for a given method in parallel coordinates.
+
+    Parameters
+    ----------
+    method : str
+        The method to plot the parameter choices for.
+    colormap : str, optional
+        The colormap to use for coloring the curves.
+    smoothing : float, optional
+        The amount of smoothing to apply to the curves.
+    rasterized : bool, optional
+        Whether to rasterize the plot.
+    drawing_opts : dict, optional
+        Additional options to pass to the Drawing constructor.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure containing the plot.
+    ax : matplotlib.axes.Axes
+        The axes containing the plot.
+    """
+    import matplotlib as mpl
+    from cotengra.schematic import Drawing
+
+    # collect only rows with the same method
+    columns = {"score": []}
+    for m, p, s in zip(self.method_choices, self.param_choices, self.scores):
+        if m != method:
+            continue
+        for k, v in p.items():
+            try:
+                columns[k].append(v)
+            except KeyError:
+                columns[k] = [v]
+        columns["score"].append(s)
+
+    ncol = len(columns)
+    nrow = len(columns["score"])
+
+    # determine ranges for mapping parameters into [0, 1]
+    ranges = {}
+    mappers = {}
+    order = sorted(columns, key=lambda k: (k == "score", k))
+    for x, k in enumerate(order):
+        vs = columns[k]
+        if isinstance(vs[0], str):
+            # categorical
+            values = sorted(set(vs))
+            ranges[k] = values
+            lookup = {
+                c: (0.5 if len(values) == 1 else x / (len(values) - 1))
+                for x, c in enumerate(values)
+            }
+            mappers[k] = functools.partial(mapper_cat, x=x, lookup=lookup)
+        else:
+            # numerical
+            mn = min(vs)
+            mx = max(vs)
+            ranges[k] = (mn, mx)
+            mappers[k] = functools.partial(mapper, x=x, mn=mn, mx=mx)
+
+    drawing_opts.setdefault("figsize", (2 * ncol, 2 * ncol))
+    d = Drawing(**drawing_opts)
+
+
+    # draw the curves through the mapped points
+    cmap = mpl.colormaps.get_cmap(colormap)
+    linewidth = logxextrapolate((1, 2), (1000, 0.5), nrow)
+    alpha = logxextrapolate((1, 1.0), (1000, 0.25), nrow)
+    if rasterized is None:
+        rasterized = nrow > 64
+
+    for i in range(nrow):
+        coos = [mappers[k](columns[k][i]) for k in order]
+        # last column is the score
+        mapped_score = coos[-1][1]
+        c = cmap(1 - mapped_score)
+        d.curve(
+            coos,
+            color=c,
+            alpha=alpha,
+            linewidth=linewidth,
+            smoothing=smoothing,
+            # make best and worst appear on top, slightly prefer best
+            zorder=1 + abs(0.51 - mapped_score),
+            rasterized=rasterized,
+        )
+
+    # label the axes and data ranges
+    for j, k in enumerate(ranges):
+        d.line((j, 0), (j, 1), color=(0.5, 0.5, 0.5), linewidth=0.5)
+        d.text((j, 1.2), k, color=(0.5, 0.5, 0.5))
+        rk = ranges[k]
+        if isinstance(rk, list):
+            # categorical
+            for o in rk:
+                d.text(
+                    mappers[k](o),
+                    o,
+                    color=(0.5, 0.5, 0.5),
+                    va="bottom",
+                    zorder=10,
+                )
+        else:
+            # numerical
+            d.text((j, 1.1), f"{ranges[k][1]:.4g}", color=(0.5, 0.5, 0.5))
+            d.text((j, -0.1), f"{ranges[k][0]:.4g}", color=(0.5, 0.5, 0.5))
+
+    return d.fig, d.ax
+
+
 def tree_to_networkx(tree):
     import networkx as nx
 

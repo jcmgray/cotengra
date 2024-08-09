@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.3 (unreleased)
+
+**Enhancements**
+
+- Add [`cmaes`](https://github.com/CyberAgentAILab/cmaes) as an `optlib` method, use it by default for `'auto'` preset if available since ih has less overhead than `optuna`.
+- Add [`HyperOptimizer.plot_parameters_parallel`](cotengra.plot.plot_parameters_parallel) for plotting the sampled parameter space of a hyper optimizer method in parallel coordinates.
+
+**Bug fixes**
+
+- Fix [`HyperGraph.plot`](cotengra.plot.plot_hypergraph) when nodes are not labelled as consecutive integers ({issue}`36`)
+
+
 ## v0.6.2 (2024-05-21)
 
 **Bug fixes**

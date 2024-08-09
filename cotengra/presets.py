@@ -1,9 +1,16 @@
-"""Preset configured optimizers.
-"""
+"""Preset configured optimizers."""
+
 import threading
 
 from .core import ContractionTree
-from .hyperoptimizers.hyper import HyperOptimizer, ReusableHyperOptimizer
+from .hyperoptimizers.hyper import (
+    HyperOptimizer,
+    ReusableHyperOptimizer,
+    get_default_hq_methods,
+    get_default_optlib,
+    get_default_optlib_eco,
+)
+from .interface import register_preset
 from .oe import (
     PathOptimizer,
 )
@@ -12,8 +19,6 @@ from .pathfinders.path_basic import (
     OptimalOptimizer,
     get_optimize_optimal,
 )
-from .interface import register_preset
-from .hyperoptimizers.hyper import get_default_hq_methods
 
 
 def estimate_optimal_hardness(inputs):
@@ -54,6 +59,7 @@ class AutoOptimizer(PathOptimizer):
         self.kwargs.setdefault("methods", ("random-greedy",))
         self.kwargs.setdefault("max_repeats", 128)
         self.kwargs.setdefault("max_time", "rate:1e9")
+        self.kwargs.setdefault("optlib", get_default_optlib_eco())
         self.kwargs.setdefault("parallel", False)
         self.kwargs.setdefault("reconf_opts", {})
         self.kwargs["reconf_opts"].setdefault("subtree_size", 4)
@@ -134,6 +140,7 @@ class AutoHQOptimizer(AutoOptimizer):
         kwargs.setdefault("methods", get_default_hq_methods())
         kwargs.setdefault("max_repeats", 128)
         kwargs.setdefault("max_time", "rate:1e8")
+        kwargs.setdefault("optlib", get_default_optlib())
         kwargs.setdefault("parallel", False)
         kwargs.setdefault("reconf_opts", {})
         kwargs["reconf_opts"].setdefault("subtree_size", 8)

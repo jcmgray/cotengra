@@ -1,6 +1,6 @@
 # Installation
 
-`cotengra` is available on both [pypi](https://pypi.org/project/cotengra/) and [conda-forge](https://anaconda.org/conda-forge/cotengra). While `cotengra` is itself pure python, the recommended distribution would be [mambaforge](https://github.com/conda-forge/miniforge#mambaforge) for installing the various optional dependencies.
+`cotengra` is available on both [pypi](https://pypi.org/project/cotengra/) and [conda-forge](https://anaconda.org/conda-forge/cotengra). While `cotengra` is itself pure python, the recommended distribution would be [miniforge](https://github.com/conda-forge/miniforge) for installing the various optional dependencies.
 
 **Installing with `pip`:**
 ```bash
@@ -18,7 +18,7 @@ mamba install cotengra
 ```
 
 ```{hint}
-Mamba is a faster version of `conda`, and the -forge distritbution comes pre-configured with only the `conda-forge` channel, which further simplifies and speeds up installing dependencies.
+Mamba is a faster version of `conda`, and the -forge distribution comes pre-configured with only the `conda-forge` channel, which further simplifies and speeds up installing dependencies.
 ```
 
 **Installing the latest version directly from github:**
@@ -41,7 +41,7 @@ Other than that, the optional dependencies are detailed below.
 ````{hint}
 The recommended selection of optional dependencies from below covering most use-cases is:
 ```
-autoray cotengrust cytoolz kahypar loky networkx opt_einsum optuna tqdm
+autoray cmaes cotengrust cytoolz kahypar loky networkx opt_einsum optuna tqdm
 ```
 ````
 
@@ -62,11 +62,10 @@ which supports at least `numpy`, `cupy`, `torch`, `tensorflow`, `jax`, and `auto
 
 To perform the hyper-optimization (and not just randomly sample) one of the following libraries is needed:
 
-* [`optuna`](https://github.com/optuna/optuna) - **Tree of Parzen Estimators** used by default
-* [`baytune`](https://github.com/HDI-Project/BTB) - *Bayesian Tuning and Bandits* - **Gaussian Processes** used by default
-* [`chocolate`](https://chocolate.readthedocs.io/en/latest/) - the **CMAES** optimization algorithm is used by default (`sampler='QuasiRandom'` also useful)
-* [`skopt`](https://scikit-optimize.github.io/stable/) - random forest as well as Gaussian process regressors (high quality but slow)
-* [`nevergrad`](https://facebookresearch.github.io/nevergrad/) - various population and evolutionary algorithms (v fast & suitable for highly parallel path findings)
+* [`optuna`](https://github.com/optuna/optuna) - **Tree of Parzen Estimators** used by default, high quality but only medium fast
+* [`cmaes`](https://github.com/CyberAgentAILab/cmaes) - **Covariance Matrix Adaptation Evolution Strategy**, medium quality but very fast
+* [`nevergrad`](https://facebookresearch.github.io/nevergrad/) - various population and evolutionary algorithms (also fast & suitable for highly parallel path findings)
+* [`skopt`](https://scikit-optimize.github.io/stable/) - random forest as well as Gaussian process regressors (very high quality but very slow)
 
 If you want to experiment with other algorithms then the following can be used:
 

@@ -30,6 +30,7 @@ setup(
     ],
     extras_require={
         "recommended": [
+            "cmaes",
             "cotengrust>=0.1.3",
             "cytoolz",
             "kahypar",
@@ -55,6 +56,7 @@ setup(
             "altair",
             "baytune",
             "chocolate",
+            "cmaes",
             "dask",
             "distributed",
             "kahypar",

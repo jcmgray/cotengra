@@ -18,7 +18,13 @@ from ..core import (
 from ..core_multi import ContractionTreeMulti
 from ..oe import PathOptimizer
 from ..parallel import get_n_workers, parse_parallel_arg, should_nest, submit
-from ..plot import plot_scatter, plot_scatter_alt, plot_trials, plot_trials_alt
+from ..plot import (
+    plot_parameters_parallel,
+    plot_scatter,
+    plot_scatter_alt,
+    plot_trials,
+    plot_trials_alt,
+)
 from ..scoring import get_score_fn
 from ..utils import BadTrial, DiskDict, get_rng
 
@@ -38,22 +44,38 @@ def get_default_hq_methods():
 
 
 @functools.lru_cache(maxsize=None)
-def get_default_optlib():
-    if importlib.util.find_spec("optuna"):
-        optlib = "optuna"
-    elif importlib.util.find_spec("btb"):
-        optlib = "baytune"
-    elif importlib.util.find_spec("chocolate"):
-        optlib = "chocolate"
+def get_default_optlib_eco():
+    """Get the default optimizer favoring speed."""
+    if importlib.util.find_spec("cmaes"):
+        optlib = "cmaes"
     elif importlib.util.find_spec("nevergrad"):
         optlib = "nevergrad"
-    elif importlib.util.find_spec("skopt"):
-        optlib = "skopt"
+    elif importlib.util.find_spec("optuna"):
+        optlib = "optuna"
     else:
         optlib = "random"
         warnings.warn(
-            "Couldn't find `optuna`, `baytune (btb)`, `chocolate`, "
-            "`nevergrad` or `skopt` so will use completely random "
+            "Couldn't find `optuna`, `cmaes`, `baytune (btb)`, `chocolate`, "
+            "or `nevergrad` so will use completely random "
+            "sampling in place of hyper-optimization."
+        )
+    return optlib
+
+
+@functools.lru_cache(maxsize=None)
+def get_default_optlib():
+    """Get the default optimizer balancing quality and speed."""
+    if importlib.util.find_spec("optuna"):
+        optlib = "optuna"
+    elif importlib.util.find_spec("cmaes"):
+        optlib = "cmaes"
+    elif importlib.util.find_spec("nevergrad"):
+        optlib = "nevergrad"
+    else:
+        optlib = "random"
+        warnings.warn(
+            "Couldn't find `optuna`, `cmaes`, `baytune (btb)`, `chocolate`, "
+            "or `nevergrad` so will use completely random "
             "sampling in place of hyper-optimization."
         )
     return optlib
@@ -249,7 +271,7 @@ class SlicedReconfTrialFn:
 
 
 class CompressedReconfTrial:
-    def __init__(self, trial_fn, minimize, **opts):
+    def __init__(self, trial_fn, minimize=None, **opts):
         self.trial_fn = trial_fn
         self.minimize = minimize
         self.opts = opts
@@ -367,7 +389,7 @@ class HyperOptimizer(PathOptimizer):
         If supplied, once a trial contraction path is found, try subtree
         reconfiguation with the given options, and then update the flops and
         size of the trial with the reconfigured versions.
-    optlib : {'baytune', 'nevergrad', 'chocolate', 'skopt'}, optional
+    optlib : {'optuna', 'cmaes', 'nevergrad', 'skopt', ...}, optional
         Which optimizer to sample and train with.
     space : dict, optional
         The hyper space to search, see ``get_hyper_space`` for the default.
@@ -838,6 +860,7 @@ class HyperOptimizer(PathOptimizer):
     plot_trials_alt = plot_trials_alt
     plot_scatter = plot_scatter
     plot_scatter_alt = plot_scatter_alt
+    plot_parameters_parallel = plot_parameters_parallel
 
 
 def sortedtuple(x):

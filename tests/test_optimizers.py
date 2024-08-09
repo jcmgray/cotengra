@@ -112,6 +112,7 @@ def test_basic(contraction_20_5, opt, requires):
         ("chocolate", "chocolate"),
         ("nevergrad", "nevergrad"),
         ("skopt", "skopt"),
+        ("cmaes", "cmaes"),
     ],
 )
 @pytest.mark.parametrize("parallel", [False, True])

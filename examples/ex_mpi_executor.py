@@ -29,8 +29,8 @@ with MPICommExecutor() as pool:
             parallel=pool,
             # make sure we generate at least 1 slice per process
             slicing_opts={'target_slices': comm.size},
-            # nevergrad is suited to generating many trials quickly
-            optlib='nevergrad',
+            # cmaes is suited to generating many trials quickly
+            optlib='cmaes',
             max_repeats=512,
             progbar=True,
         )

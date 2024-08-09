@@ -34,6 +34,7 @@ from .hypergraph import (
 from .hyperoptimizers import (
     hyper_baytune,
     hyper_choco,
+    hyper_cmaes,
     hyper_nevergrad,
     hyper_optuna,
     hyper_random,
@@ -151,6 +152,7 @@ __all__ = (
     "hash_contraction",
     "hyper_baytune",
     "hyper_choco",
+    "hyper_cmaes",
     "hyper_nevergrad",
     "hyper_optimize",
     "hyper_optuna",
