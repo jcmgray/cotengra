@@ -133,6 +133,28 @@ def compute_con_cost_flops(
     return iscore + jscore + cost
 
 
+def compute_con_cost_max(
+    temp_legs,
+    appearances,
+    sizes,
+    iscore,
+    jscore,
+):
+    """Compute the max flops cost of a contraction given by temporary legs,
+    also removing any contracted indices from the temporary legs.
+    """
+    cost = 1
+    for i in range(len(temp_legs) - 1, -1, -1):
+        ix, ix_count = temp_legs[i]
+        d = sizes[ix]
+        cost *= d
+        if ix_count == appearances[ix]:
+            # contracted index, remove
+            del temp_legs[i]
+
+    return max((iscore, jscore, cost))
+
+
 def compute_con_cost_size(
     temp_legs,
     appearances,
@@ -247,6 +269,7 @@ def parse_minimize_for_optimal(minimize):
     contraction. The string can be one of the following:
 
         - "flops": compute_con_cost_flops
+        - "max": compute_con_cost_max
         - "size": compute_con_cost_size
         - "write": compute_con_cost_write
         - "combo": compute_con_cost_combo
@@ -260,6 +283,8 @@ def parse_minimize_for_optimal(minimize):
 
     if minimize == "flops":
         return compute_con_cost_flops
+    elif minimize == "max":
+        return compute_con_cost_max
     elif minimize == "size":
         return compute_con_cost_size
     elif minimize == "write":
@@ -1082,20 +1107,20 @@ def optimize_optimal(
     size_dict : dict[str, int]
         A dictionary mapping indices to their dimension.
     minimize : str, optional
-        How to compute the cost of a contraction. The default is "flops".
-        Can be one of:
+        The cost function to minimize. The options are:
 
-            - "flops": minimize with respect to total operation count only
-              (also known as contraction cost)
-            - "size": minimize with respect to maximum intermediate size only
-              (also known as contraction width)
-            - "write": minimize with respect to total write cost only
-            - "combo" or "combo-{factor}": minimize with respect sum of flops
-              and write weighted by specified factor. If the factor is not
-              given a default value is used.
-            - "limit" or "limit-{factor}": minimize with respect to max (at
-              each contraction) of flops or write weighted by specified
-              factor. If the factor is not given a default value is used.
+        - "flops": minimize with respect to total operation count only
+          (also known as contraction cost)
+        - "size": minimize with respect to maximum intermediate size only
+          (also known as contraction width)
+        - 'max': minimize the single most expensive contraction, i.e. the
+          asymptotic (in index size) scaling of the contraction
+        - 'write' : minimize the sum of all tensor sizes, i.e. memory written
+        - 'combo' or 'combo={factor}` : minimize the sum of
+          FLOPS + factor * WRITE, with a default factor of 64.
+        - 'limit' or 'limit={factor}` : minimize the sum of
+          MAX(FLOPS, alpha * WRITE) for each individual contraction, with a
+          default factor of 64.
 
         'combo' is generally a good default in term of practical hardware
         performance, where both memory bandwidth and compute are limited.
@@ -1110,11 +1135,11 @@ def optimize_optimal(
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
 
-            - ignore any indices that appear in all terms
-            - combine any repeated indices within a single term
-            - reduce any non-output indices that only appear on a single term
-            - combine any scalar terms
-            - combine any tensors with matching indices (hadamard products)
+        - ignore any indices that appear in all terms
+        - combine any repeated indices within a single term
+        - reduce any non-output indices that only appear on a single term
+        - combine any scalar terms
+        - combine any tensors with matching indices (hadamard products)
 
         Such simpifications may be required in the general case for the proper
         functioning of the core optimization, but may be skipped if the input

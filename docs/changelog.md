@@ -6,10 +6,16 @@
 
 - Add [`cmaes`](https://github.com/CyberAgentAILab/cmaes) as an `optlib` method, use it by default for `'auto'` preset if available since ih has less overhead than `optuna`.
 - Add [`HyperOptimizer.plot_parameters_parallel`](cotengra.plot.plot_parameters_parallel) for plotting the sampled parameter space of a hyper optimizer method in parallel coordinates.
+- Add [`ncon`](cotengra.ncon) interface.
+- Add [`utils.save_to_json`](cotengra.utils.save_to_json) and [`utils.load_from_json`](cotengra.utils.load_from_json) for saving and loading contractions to/from json.
+- Add `examples/benchmarks` with various json benchmark contractions
+- Add [`utils.networkx_graph_to_equation`](cotengra.utils.networkx_graph_to_equation) for converting a networkx graph to cotengra style `inputs`, `output` and `size_dict`.
+- Add `"max"` as a valid `minimize` option for `optimize_optimal` (also added to `cotengrust`), which minimizes the single most expensive contraction (i.e. the cost *scaling*)
 
 **Bug fixes**
 
 - Fix [`HyperGraph.plot`](cotengra.plot.plot_hypergraph) when nodes are not labelled as consecutive integers ({issue}`36`)
+- Fix [`ContractionTreeCompressed.windowed_reconfigure`] not propagating the default objective
 
 
 ## v0.6.2 (2024-05-21)
