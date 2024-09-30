@@ -12,7 +12,7 @@ expressions involving large numbers of tensors - the main docs can be found
 at [cotengra.readthedocs.io](https://cotengra.readthedocs.io/).
 Some of the key feautures of `cotengra` include:
 
-* drop-in ``einsum`` replacement
+* drop-in ``einsum`` and ``ncon`` replacement
 * an explicit **contraction tree** object that can be flexibly built, modified and visualized
 * a **'hyper optimizer'** that samples trees while tuning the generating meta-paremeters
 * **dynamic slicing** for massive memory savings and parallelism

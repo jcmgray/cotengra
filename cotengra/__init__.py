@@ -58,6 +58,7 @@ from .interface import (
     einsum,
     einsum_expression,
     einsum_tree,
+    ncon,
     register_preset,
 )
 from .pathfinders import (
@@ -163,6 +164,7 @@ __all__ = (
     "HyperMultiOptimizer",
     "HyperOptimizer",
     "list_hyper_functions",
+    "ncon",
     "optimal_optimize",
     "optimal_outer_optimize",
     "OptimalOptimizer",

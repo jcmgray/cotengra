@@ -1018,3 +1018,50 @@ def einsum(
         backend=backend,
         **kwargs,
     )
+
+
+def ncon(arrays, indices, **kwargs):
+    """Perform a contraction specified by the `ncon` style indices, using
+    `cotengra`. This is very similar to `array_contract`, but the indices
+    should be intergers, with negative integers specifying outputs. The
+    output order is determined by the order of the negative integers, like
+    ``[-1, -2, -3, ...]``.
+
+    See paper https://arxiv.org/abs/1402.0939 and python implementation
+    https://github.com/mhauru/ncon.
+
+    The contraction order is found as with other `cotengra` routines, and does
+    *not* default to contracting in the order given by the indices.
+
+    Parameters
+    ----------
+    arrays : Sequence[array_like]
+        The arrays to contract.
+    indices : Sequence[Sequence[int]]
+        The indices to contract, with negative integers specifying outputs.
+    kwargs : dict
+        Supplied to `array_contract`.
+
+    Returns
+    -------
+    array_like
+    """
+    inputs = []
+    output = set()
+
+    # we just need to put negative integers in the output
+    for ixs in indices:
+        for ix in ixs:
+            if isinstance(ix, int) and ix < 0:
+                output.add(ix)
+        inputs.append(tuple(ixs))
+
+    # and sort them like [-1, -2, ...]
+    output = sorted(output, reverse=True)
+
+    return array_contract(
+        arrays,
+        inputs,
+        output,
+        **kwargs,
+    )
