@@ -900,6 +900,50 @@ def tree_equation(
     return inputs, output, shapes, size_dict
 
 
+def networkx_graph_to_equation(
+    G,
+    d_min=2,
+    d_max=3,
+    seed=None,
+):
+    """Turn a networkx graph into a `cotengra` style contraction, randomly
+    sampling index sizes for each edge.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        The graph to convert.
+    d_min : int, optional
+        The minimum size of an index.
+    d_max : int, optional
+        The maximum size of an index.
+    seed : None, int or np.random.Generator, optional
+        Seed for repeatibility.
+
+    Returns
+    -------
+    inputs : list[list[str]]
+    output : list[str]
+    shapes : list[tuple[int]]
+    size_dict : dict[str, int]
+    """
+    inputs = [[] for _ in range(len(G.nodes))]
+    for i, (na, nb) in enumerate(G.edges):
+        ix = get_symbol(i)
+        inputs[na].append(ix)
+        inputs[nb].append(ix)
+
+    rng = get_rng(seed)
+    size_dict = {
+        get_symbol(i): rng.randint(d_min, d_max) for i in range(len(G.edges))
+    }
+
+    output = []
+    shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
+
+    return inputs, output, shapes, size_dict
+
+
 def randreg_equation(
     n,
     reg,
@@ -933,21 +977,7 @@ def randreg_equation(
     import networkx as nx
 
     G = nx.random_regular_graph(reg, n, seed=seed)
-    inputs = [[] for _ in range(n)]
-    for i, (na, nb) in enumerate(G.edges):
-        ix = get_symbol(i)
-        inputs[na].append(ix)
-        inputs[nb].append(ix)
-
-    rng = get_rng(seed)
-    size_dict = {
-        get_symbol(i): rng.randint(d_min, d_max) for i in range(len(G.edges))
-    }
-
-    output = []
-    shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
-
-    return inputs, output, shapes, size_dict
+    return networkx_graph_to_equation(G, d_min=d_min, d_max=d_max, seed=seed)
 
 
 def perverse_equation(
@@ -1013,6 +1043,8 @@ def rand_tree(
     seed=None,
     optimize="greedy",
 ):
+    """Get a random contraction tree (note, not a tree like equation).
+    """
     from .interface import array_contract_tree
 
     inputs, output, _, size_dict = rand_equation(
