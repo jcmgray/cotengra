@@ -2588,6 +2588,7 @@ class ContractionTree:
             self.output,
             self.size_dict,
             ssa_path=ssa_path,
+            objective=minimize,
         )
 
         if inplace:

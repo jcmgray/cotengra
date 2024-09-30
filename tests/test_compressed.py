@@ -71,3 +71,18 @@ def test_compressed_reconfigure(order_only):
     )
     tree_wr = tree.windowed_reconfigure(minimize, order_only=order_only)
     assert tree_wr.peak_size(chi) < tree.peak_size(chi)
+
+
+def test_compressed_windowed_reconfigure():
+    chi = 4
+    minimize = ctg.scoring.CompressedPeakObjective(chi)
+    inputs, output, _, size_dict = ctg.utils.lattice_equation([8, 8])
+    tree = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize=ctg.path_compressed_greedy.GreedyCompressed(chi),
+    )
+    tree_wr = tree.windowed_reconfigure(minimize)
+    assert tree_wr.get_default_objective().chi == chi
+    assert tree_wr.peak_size(chi) < tree.peak_size(chi)
