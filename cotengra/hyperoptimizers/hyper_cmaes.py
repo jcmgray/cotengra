@@ -1,3 +1,8 @@
+"""Hyper parameter optimization using cmaes, as implemented by
+
+https://github.com/CyberAgentAILab/cmaes.
+
+"""
 import math
 
 from ..utils import get_rng
@@ -128,6 +133,16 @@ class ParamString(Param):
         return self.options[i]
 
 
+class ParamBool(Param):
+    def __init__(self, name):
+        super().__init__(name)
+        self.size = 2
+        self.name = name
+
+    def convert_raw(self, x):
+        return x[0] > x[1]
+
+
 class HyperCMAESSampler:
     def __init__(
         self,
@@ -158,6 +173,8 @@ class HyperCMAESSampler:
                 self.params.append(ParamInt(p["min"], p["max"], name=name))
             elif p["type"] == "STRING":
                 self.params.append(ParamString(p["options"], name=name))
+            elif p["type"] == "BOOL":
+                self.params.append(ParamBool(name=name))
             else:
                 raise ValueError(f"Unknown parameter type {p['type']}")
 
