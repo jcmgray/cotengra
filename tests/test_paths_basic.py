@@ -195,3 +195,16 @@ def test_optimal_lattice_eq():
     path = pb.optimize_optimal(inputs, output, size_dict, minimize="size")
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
     assert tree.contraction_width() == pytest.approx(5.584962500721156)
+
+
+def test_random_optimize():
+    inputs, output, _, size_dict = ctg.utils.lattice_equation(
+        [4, 5], d_max=3, seed=42
+    )
+    tree = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize="random",
+    )
+    assert tree.is_complete()

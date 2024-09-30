@@ -11,6 +11,7 @@
 - Add `examples/benchmarks` with various json benchmark contractions
 - Add [`utils.networkx_graph_to_equation`](cotengra.utils.networkx_graph_to_equation) for converting a networkx graph to cotengra style `inputs`, `output` and `size_dict`.
 - Add `"max"` as a valid `minimize` option for `optimize_optimal` (also added to `cotengrust`), which minimizes the single most expensive contraction (i.e. the cost *scaling*)
+- Add [`RandomOptimizer`](cotengra.RandomOptimizer), a fully random optimizer for testing and initialization purposes. It can be used with `optimize="random"` but is not recommended for actual optimization.
 
 **Bug fixes**
 

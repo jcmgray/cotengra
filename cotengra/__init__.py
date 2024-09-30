@@ -78,6 +78,7 @@ from .pathfinders.path_flowcutter import (
     optimize_flowcutter,
 )
 from .pathfinders.path_quickbb import QuickBBOptimizer, optimize_quickbb
+from .pathfinders.path_random import RandomOptimizer
 from .plot import (
     plot_contractions,
     plot_contractions_alt,
@@ -190,6 +191,7 @@ __all__ = (
     "QuasiRandOptimizer",
     "QuickBBOptimizer",
     "RandomGreedyOptimizer",
+    "RandomOptimizer",
     "register_preset",
     "ReusableHyperCompressedOptimizer",
     "ReusableHyperOptimizer",
