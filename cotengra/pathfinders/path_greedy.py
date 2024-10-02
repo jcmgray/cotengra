@@ -47,6 +47,8 @@ register_hyper_function(
 )
 
 # greedy but less exploratative -> better for a small number of runs
+# note this hyper driver is slightly different from overall preset
+# "random-greedy" which doesn't use the hyper framework
 register_hyper_function(
     name="random-greedy",
     ssa_func=trial_greedy,

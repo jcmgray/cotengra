@@ -156,12 +156,48 @@ optimal_outer_optimize = OptimalOptimizer(search_outer=True)
 
 
 # these names overlap with opt_einsum, but won't override presets there
-register_preset("auto", auto_optimize)
-register_preset("auto-hq", auto_hq_optimize)
-register_preset("greedy", greedy_optimize)
-register_preset("eager", greedy_optimize)
-register_preset("opportunistic", greedy_optimize)
-register_preset("optimal", optimal_optimize)
-register_preset("dp", optimal_optimize)
-register_preset("dynamic-programming", optimal_optimize)
-register_preset("optimal-outer", optimal_outer_optimize)
+register_preset(
+    "auto",
+    auto_optimize,
+    auto_optimize.search,
+)
+register_preset(
+    "auto-hq",
+    auto_hq_optimize,
+    auto_optimize.search,
+)
+register_preset(
+    "greedy",
+    greedy_optimize,
+    greedy_optimize.search,
+)
+register_preset(
+    "eager",
+    greedy_optimize,
+    greedy_optimize.search,
+)
+register_preset(
+    "opportunistic",
+    greedy_optimize,
+    greedy_optimize.search,
+)
+register_preset(
+    "optimal",
+    optimal_optimize,
+    optimal_optimize.search
+)
+register_preset(
+    "dp",
+    optimal_optimize,
+    optimal_optimize.search
+)
+register_preset(
+    "dynamic-programming",
+    optimal_optimize,
+    optimal_optimize.search
+)
+register_preset(
+    "optimal-outer",
+    optimal_outer_optimize,
+    optimal_outer_optimize.search
+)

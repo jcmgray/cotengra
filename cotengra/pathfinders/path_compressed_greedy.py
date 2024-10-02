@@ -6,7 +6,6 @@ import itertools
 import math
 
 from ..core import (
-    ContractionTree,
     ContractionTreeCompressed,
     get_hypergraph,
 )
@@ -214,18 +213,19 @@ class GreedyCompressed:
 
 
 def greedy_compressed(inputs, output, size_dict, memory_limit=None, **kwargs):
-    chi = max(size_dict.values()) ** 2
+    try:
+        chi = kwargs.pop("chi")
+    except KeyError:
+        chi = max(size_dict.values()) ** 2
     return GreedyCompressed(chi, **kwargs)(inputs, output, size_dict)
 
 
 def trial_greedy_compressed(inputs, output, size_dict, **kwargs):
-    opt = GreedyCompressed(**kwargs)
-    ssa_path = opt.get_ssa_path(inputs, output, size_dict)
-    tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
-    )
-    tree.set_surface_order_from_path(ssa_path)
-    return tree
+    try:
+        chi = kwargs.pop("chi")
+    except KeyError:
+        chi = max(size_dict.values()) ** 2
+    return GreedyCompressed(chi, **kwargs).search(inputs, output, size_dict)
 
 
 register_hyper_function(
@@ -444,13 +444,7 @@ def greedy_span(inputs, output, size_dict, memory_limit=None, **kwargs):
 
 
 def trial_greedy_span(inputs, output, size_dict, **kwargs):
-    opt = GreedySpan(**kwargs)
-    ssa_path = opt.get_ssa_path(inputs, output, size_dict)
-    tree = ContractionTree.from_path(
-        inputs, output, size_dict, ssa_path=ssa_path
-    )
-    tree.set_surface_order_from_path(ssa_path)
-    return tree
+    return GreedySpan(**kwargs).search(inputs, output, size_dict)
 
 
 _allowed_perms = tuple(

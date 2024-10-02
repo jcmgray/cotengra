@@ -65,6 +65,7 @@ from .oe import PathOptimizer
 from .pathfinders import (
     path_basic,
     path_compressed_greedy,
+    path_greedy,
     path_igraph,
     path_kahypar,
     path_labels,
@@ -174,6 +175,7 @@ __all__ = (
     "optimize_quickbb",
     "path_basic",
     "path_compressed_greedy",
+    "path_greedy",
     "path_igraph",
     "path_kahypar",
     "path_labels",
@@ -206,9 +208,38 @@ __all__ = (
 # add some presets
 
 
-def hyper_optimize(inputs, output, size_dict, memory_limit=None, **opts):
+def hyper_optimize(
+    inputs,
+    output,
+    size_dict,
+    memory_limit=None,
+    get="path",
+    **opts,
+):
     optimizer = HyperOptimizer(**opts)
-    return optimizer(inputs, output, size_dict, memory_limit)
+    if get == "path":
+        return optimizer(inputs, output, size_dict, memory_limit)
+    elif get == "tree":
+        return optimizer.search(inputs, output, size_dict, memory_limit)
+    else:
+        raise ValueError(f"Unknown get option {get}")
+
+
+def hyper_compressed_optimize(
+    inputs,
+    output,
+    size_dict,
+    get="path",
+    **opts,
+):
+    optimizer = HyperCompressedOptimizer(**opts)
+
+    if get == "path":
+        return optimizer(inputs, output, size_dict)
+    elif get == "tree":
+        return optimizer.search(inputs, output, size_dict)
+    else:
+        raise ValueError(f"Unknown get option {get}")
 
 
 def random_greedy_optimize(
@@ -222,35 +253,54 @@ try:
     register_preset(
         "hyper",
         hyper_optimize,
+        optimizer_tree=functools.partial(hyper_optimize, get="tree"),
     )
     register_preset(
         "hyper-256",
         functools.partial(hyper_optimize, max_repeats=256),
+        optimizer_tree=functools.partial(
+            hyper_optimize, max_repeats=256, get="tree"
+        ),
     )
     register_preset(
         "hyper-greedy",
         functools.partial(hyper_optimize, methods=["greedy"]),
+        optimizer_tree=functools.partial(
+            hyper_optimize, methods=["greedy"], get="tree"
+        ),
     )
     register_preset(
         "hyper-labels",
         functools.partial(hyper_optimize, methods=["labels"]),
+        optimizer_tree=functools.partial(
+            hyper_optimize, methods=["labels"], get="tree"
+        ),
     )
     register_preset(
         "hyper-kahypar",
         functools.partial(hyper_optimize, methods=["kahypar"]),
+        optimizer_tree=functools.partial(
+            hyper_optimize, methods=["kahypar"], get="tree"
+        ),
     )
     register_preset(
         "hyper-balanced",
         functools.partial(
             hyper_optimize, methods=["kahypar-balanced"], max_repeats=16
         ),
+        optimizer_tree=functools.partial(
+            hyper_optimize,
+            methods=["kahypar-balanced"],
+            max_repeats=16,
+            get="tree",
+        ),
     )
     register_preset(
         "hyper-compressed",
-        functools.partial(
-            hyper_optimize,
-            minimize="peak-compressed",
-            methods=("greedy-span", "greedy-compressed", "kahypar-agglom"),
+        hyper_compressed_optimize,
+        optimizer_tree=functools.partial(
+            hyper_compressed_optimize,
+            get="tree",
         ),
         compressed=True,
     )
@@ -297,11 +347,13 @@ try:
     register_preset(
         "greedy-compressed",
         path_compressed_greedy.greedy_compressed,
+        path_compressed_greedy.trial_greedy_compressed,
         compressed=True,
     )
     register_preset(
         "greedy-span",
         path_compressed_greedy.greedy_span,
+        path_compressed_greedy.trial_greedy_span,
         compressed=True,
     )
 except KeyError:

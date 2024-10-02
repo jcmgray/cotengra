@@ -18,24 +18,47 @@ from .oe import (
     register_path_fn,
 )
 
-_PRESETS = {}
+_PRESETS_PATH = {}
+_PRESETS_TREE = {}
 _COMPRESSED_PRESETS = set()
 
 
 def register_preset(
-    preset, optimizer, register_opt_einsum="auto", compressed=False
+    preset,
+    optimizer,
+    optimizer_tree=None,
+    register_opt_einsum="auto",
+    compressed=False,
 ):
-    """Register a preset optimizer."""
-    _PRESETS[preset] = optimizer
+    """Register a preset optimizer.
 
-    if register_opt_einsum == "auto":
-        register_opt_einsum = opt_einsum_installed
+    Parameters
+    ----------
+    preset : str
+        The name of the preset.
+    optimizer : callable
+        The optimizer function that returns a path.
+    optimizer_tree : callable, optional
+        The optimizer function that returns a tree.
+    register_opt_einsum : bool or str, optional
+        If ``True`` or ``'auto'``, register the preset with opt_einsum.
+    compressed : bool, optional
+        If ``True``, the preset presents a compressed contraction optimizer.
+    """
+    if optimizer is not None:
+        _PRESETS_PATH[preset] = optimizer
 
-    if register_opt_einsum:
-        try:
-            register_path_fn(preset, optimizer)
-        except KeyError:
-            pass
+        if register_opt_einsum == "auto":
+            register_opt_einsum = opt_einsum_installed
+
+        if register_opt_einsum:
+            try:
+                register_path_fn(preset, optimizer)
+            except KeyError:
+                pass
+
+    if optimizer_tree is not None:
+        _PRESETS_TREE[preset] = optimizer_tree
 
     if compressed:
         _COMPRESSED_PRESETS.add(preset)
@@ -45,7 +68,7 @@ def register_preset(
 def preset_to_optimizer(preset):
     """ """
     try:
-        return _PRESETS[preset]
+        return _PRESETS_PATH[preset]
     except KeyError:
         if not opt_einsum_installed:
             raise KeyError(
@@ -277,12 +300,16 @@ def _find_tree_optimizer_basic(inputs, output, size_dict, optimize, **kwargs):
 
 
 def _find_tree_preset(inputs, output, size_dict, optimize, **kwargs):
-    compressed = optimize in _COMPRESSED_PRESETS
-    optimize = preset_to_optimizer(optimize)
-    tree = find_tree(inputs, output, size_dict, optimize, **kwargs)
-    if compressed:
-        tree.__class__ = ContractionTreeCompressed
-    return tree
+    try:
+        # preset method can directly return a tree
+        return _PRESETS_TREE[optimize](inputs, output, size_dict, **kwargs)
+    except KeyError:
+        # preset method returns a path, which we convert to a tree
+        optimize = preset_to_optimizer(optimize)
+        tree = find_tree(inputs, output, size_dict, optimize, **kwargs)
+        if optimize in _COMPRESSED_PRESETS:
+            tree.__class__ = ContractionTreeCompressed
+        return tree
 
 
 def _find_tree_tree(inputs, output, size_dict, optimize, **kwargs):
