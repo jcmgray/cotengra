@@ -61,6 +61,7 @@ from .interface import (
     ncon,
     register_preset,
 )
+from .oe import PathOptimizer
 from .pathfinders import (
     path_basic,
     path_compressed_greedy,
@@ -176,6 +177,7 @@ __all__ = (
     "path_igraph",
     "path_kahypar",
     "path_labels",
+    "PathOptimizer",
     "plot_contractions_alt",
     "plot_contractions",
     "plot_scatter_alt",
