@@ -36,13 +36,10 @@ jobs:
       with:
         environment-file: ci/requirements/py-${{ matrix.env }}.yml
         environment-name: test-env
+        cache-environment: true
         create-args: >-
           python=${{ matrix.python-version }}
-        cache-environment: true
-        post-cleanup: 'all'
-        init-shell: >-
-          bash
-          powershell
+          conda
 
     - name: Test with pytest
       run: pytest --cov=cotengra tests/ --cov-report=xml tests
