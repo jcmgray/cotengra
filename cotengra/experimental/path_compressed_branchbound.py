@@ -1,5 +1,5 @@
-"""Compressed contraction path finding using branch and bound.
-"""
+"""Compressed contraction path finding using branch and bound."""
+
 import math
 import heapq
 import itertools
@@ -480,4 +480,3 @@ class CompressedTreeRefiner:
             _, bins, _ = plt.hist(old_scores, bins=bins, alpha=0.8)
             plt.hist(new_scores, bins=bins, color="orange", alpha=0.8)
             plt.hist(self.finished_scores, bins=bins, color="red", alpha=0.8)
-

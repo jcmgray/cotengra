@@ -828,7 +828,7 @@ class CuQuantumContractor:
                 )
 
         self.kwargs = kwargs
-        self.autotune = (3 if autotune is True else autotune)
+        self.autotune = 3 if autotune is True else autotune
         self.handle = None
         self.network = None
 

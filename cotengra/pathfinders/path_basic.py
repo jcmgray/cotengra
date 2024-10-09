@@ -608,9 +608,7 @@ class ContractionProcessor:
 
             k = self.contract_nodes(i, j, new_legs=klegs)
 
-            if (
-                self.track_flops and (self.flops >= self.flops_limit)
-            ):
+            if self.track_flops and (self.flops >= self.flops_limit):
                 # shortcut - stop early and return failed
                 return False
 

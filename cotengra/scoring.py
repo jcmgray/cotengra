@@ -447,14 +447,12 @@ class CompressedStatsTracker:
         )
         S = math.log2(max(1, self.max_size))
         P = math.log2(max(1, self.peak_size))
-        return join.join((
-            f"F={F:.2f}", f"C={C:.2f}", f"S={S:.2f}", f"P={P:.2f}"
-        ))
-
-    def __repr__(self):\
-        return (
-            f"<{self.__class__.__name__}({self.describe(join=', ')})>"
+        return join.join(
+            (f"F={F:.2f}", f"C={C:.2f}", f"S={S:.2f}", f"P={P:.2f}")
         )
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}({self.describe(join=', ')})>"
 
 
 class CompressedStatsTrackerSize(CompressedStatsTracker):
@@ -879,7 +877,6 @@ def get_score_fn(minimize):
 
 
 class MultiObjective(Objective):
-
     __slots__ = ("num_configs",)
 
     def __init__(self, num_configs):
@@ -889,9 +886,9 @@ class MultiObjective(Objective):
         raise NotImplementedError
 
     def estimate_node_mult(self, tree, node):
-        return self.compute_mult([
-            tree.size_dict[ix] for ix in tree.get_node_var_inds(node)
-        ])
+        return self.compute_mult(
+            [tree.size_dict[ix] for ix in tree.get_node_var_inds(node)]
+        )
 
     def estimate_node_cache_mult(self, tree, node, sliced_ind_ordering):
         node_var_inds = tree.get_node_var_inds(node)
@@ -911,6 +908,7 @@ class MultiObjectiveDense(MultiObjective):
     """Number of intermediate configurations is expected to scale as if all
     configurations are present.
     """
+
     __slots__ = ("num_configs",)
 
     def compute_mult(self, dims):
@@ -928,6 +926,7 @@ class MultiObjectiveUniform(MultiObjective):
     """Number of intermediate configurations is expected to scale as if all
     configurations are randomly draw from a uniform distribution.
     """
+
     __slots__ = ("num_configs",)
 
     def compute_mult(self, dims):
@@ -939,6 +938,7 @@ class MultiObjectiveLinear(MultiObjective):
     respect to number of variable indices (e.g. VMC like 'locally connected'
     configurations).
     """
+
     __slots__ = ("num_configs", "coeff")
 
     def __init__(self, num_configs, coeff=1):
@@ -947,4 +947,3 @@ class MultiObjectiveLinear(MultiObjective):
 
     def compute_mult(self, dims):
         return min(self.coeff * len(dims), self.num_configs)
-

@@ -1,5 +1,5 @@
-"""Hyper optimization using baytune.
-"""
+"""Hyper optimization using baytune."""
+
 from .hyper import register_hyper_optlib
 
 

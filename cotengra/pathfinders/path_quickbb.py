@@ -1,5 +1,5 @@
-"""Quickbb based pathfinder.
-"""
+"""Quickbb based pathfinder."""
+
 import re
 import time
 import signal
@@ -81,9 +81,7 @@ class QuickBBOptimizer(PathOptimizer):
             suffix=".cnf"
         ) as file, tempfile.NamedTemporaryFile(
             suffix=".out"
-        ) as sfile, tempfile.NamedTemporaryFile(
-            suffix=".out"
-        ) as ofile:
+        ) as sfile, tempfile.NamedTemporaryFile(suffix=".out") as ofile:
             self.lg.to_cnf_file(file.name)
 
             max_time = self.max_time

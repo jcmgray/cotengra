@@ -1,5 +1,5 @@
-"""Fake hyper optimization using random sampling.
-"""
+"""Fake hyper optimization using random sampling."""
+
 import math
 import functools
 

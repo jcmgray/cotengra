@@ -181,23 +181,11 @@ register_preset(
     greedy_optimize,
     greedy_optimize.search,
 )
+register_preset("optimal", optimal_optimize, optimal_optimize.search)
+register_preset("dp", optimal_optimize, optimal_optimize.search)
 register_preset(
-    "optimal",
-    optimal_optimize,
-    optimal_optimize.search
+    "dynamic-programming", optimal_optimize, optimal_optimize.search
 )
 register_preset(
-    "dp",
-    optimal_optimize,
-    optimal_optimize.search
-)
-register_preset(
-    "dynamic-programming",
-    optimal_optimize,
-    optimal_optimize.search
-)
-register_preset(
-    "optimal-outer",
-    optimal_outer_optimize,
-    optimal_outer_optimize.search
+    "optimal-outer", optimal_outer_optimize, optimal_outer_optimize.search
 )

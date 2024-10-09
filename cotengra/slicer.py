@@ -65,7 +65,9 @@ class ContractionCosts:
                 self._flop_reductions[ix] += c[IDX_FLOPS] - c[IDX_FLOPS] // d
                 self._where[ix].add(i)
                 if ix in c[IDX_LEGS]:
-                    self._write_reductions[ix] += c[IDX_SIZE] - c[IDX_SIZE] // d
+                    self._write_reductions[ix] += (
+                        c[IDX_SIZE] - c[IDX_SIZE] // d
+                    )
 
         self.nslices = nslices
         if original_flops is None:
@@ -139,7 +141,6 @@ class ContractionCosts:
         cost.nslices *= d
 
         for i in cost._where.pop(ix):
-
             old_involved, old_legs, old_size, old_flops = cost.contractions[i]
 
             # update the actual flops reduction

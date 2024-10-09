@@ -1,5 +1,5 @@
-"""Flowcutter based pathfinder.
-"""
+"""Flowcutter based pathfinder."""
+
 import re
 import time
 import signal

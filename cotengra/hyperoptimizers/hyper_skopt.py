@@ -1,5 +1,5 @@
-"""Hyper optimization using scikit-optimize.
-"""
+"""Hyper optimization using scikit-optimize."""
+
 from .hyper import register_hyper_optlib
 
 

@@ -1,5 +1,5 @@
-"""Compressed contraction tree finding routines.
-"""
+"""Compressed contraction tree finding routines."""
+
 import heapq
 import itertools
 
@@ -247,8 +247,7 @@ def bit_path_to_ssa_path(bitpath):
 
 
 class WindowedOptimizer:
-    """
-    """
+    """ """
 
     def __init__(
         self,

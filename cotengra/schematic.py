@@ -1,5 +1,4 @@
-"""Draw psuedo-3D diagrams using matplotlib.
-"""
+"""Draw psuedo-3D diagrams using matplotlib."""
 
 import functools
 import warnings
@@ -1022,6 +1021,9 @@ class Drawing:
         pcoos = [inverse(*rcoo) for rcoo in rcoos]
         self.patch(pcoos, preset=preset, **style)
 
+    def savefig(self, fname, dpi=300, bbox_inches="tight"):
+        self.fig.savefig(fname, dpi=dpi, bbox_inches=bbox_inches)
+
 
 def parse_style_preset(presets, preset, **kwargs):
     """Parse a one or more style presets plus manual kwargs.
@@ -1288,7 +1290,6 @@ def jitter_color(color, factor=0.05):
     )
     rgb = mpl.colors.hsv_to_rgb(hsv)
     return tuple(rgb) + rgba[3:]
-
 
 
 COLORING_SEED = 8  # 8, 10

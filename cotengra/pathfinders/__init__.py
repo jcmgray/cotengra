@@ -1,2 +1,1 @@
-"""Parametrized contraction tree finders.
-"""
+"""Parametrized contraction tree finders."""

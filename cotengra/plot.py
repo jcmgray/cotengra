@@ -327,7 +327,7 @@ def plot_parameters_parallel(
     colormap="Spectral",
     smoothing=0.5,
     rasterized=None,
-    **drawing_opts
+    **drawing_opts,
 ):
     """Plot the parameter choices for a given method in parallel coordinates.
 
@@ -393,7 +393,6 @@ def plot_parameters_parallel(
 
     drawing_opts.setdefault("figsize", (2 * ncol, 2 * ncol))
     d = Drawing(**drawing_opts)
-
 
     # draw the curves through the mapped points
     cmap = mpl.colormaps.get_cmap(colormap)

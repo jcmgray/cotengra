@@ -1,5 +1,5 @@
-"""Interface for parallelism.
-"""
+"""Interface for parallelism."""
+
 import atexit
 import inspect
 import numbers
@@ -178,8 +178,7 @@ def submit(pool, fn, *args, **kwargs):
 
 
 def scatter(pool, data):
-    """Interface for maybe turning ``data`` into a remote object or reference.
-    """
+    """Interface for maybe turning ``data`` into a remote object or reference."""
     if _infer_backend(pool) in ("dask", "ray"):
         return pool.scatter(data)
     return data
@@ -387,8 +386,7 @@ def get_ray():
 
 
 class RayFuture:
-    """Basic ``concurrent.futures`` like future wrapping a ray ``ObjectRef``.
-    """
+    """Basic ``concurrent.futures`` like future wrapping a ray ``ObjectRef``."""
 
     __slots__ = ("_obj", "_cancelled")
 

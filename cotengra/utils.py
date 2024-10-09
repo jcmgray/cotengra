@@ -1043,8 +1043,7 @@ def rand_tree(
     seed=None,
     optimize="greedy",
 ):
-    """Get a random contraction tree (note, not a tree like equation).
-    """
+    """Get a random contraction tree (note, not a tree like equation)."""
     from .interface import array_contract_tree
 
     inputs, output, _, size_dict = rand_equation(

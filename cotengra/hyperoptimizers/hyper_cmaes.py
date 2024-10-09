@@ -3,6 +3,7 @@
 https://github.com/CyberAgentAILab/cmaes.
 
 """
+
 import math
 
 from ..utils import get_rng

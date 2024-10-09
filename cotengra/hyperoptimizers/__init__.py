@@ -1,2 +1,1 @@
-"""Different hyper (or meta) optimizers for sampling paramtetrized trees.
-"""
+"""Different hyper (or meta) optimizers for sampling paramtetrized trees."""

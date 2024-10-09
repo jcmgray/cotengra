@@ -1,5 +1,5 @@
-"""Hyper optimization using choco.
-"""
+"""Hyper optimization using choco."""
+
 from .hyper import register_hyper_optlib
 
 
