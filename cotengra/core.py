@@ -509,7 +509,7 @@ class ContractionTree:
                 # warn that we are completing
                 warnings.warn(
                     "Path was not complete - contracting all remaining. "
-                    "You can silence this warning with `complete=True`."
+                    "You can silence this warning with `autocomplete=True`."
                 )
 
             tree.contract_nodes(nodes, check=check)
@@ -3632,6 +3632,7 @@ class ContractionTreeCompressed(ContractionTree):
         *,
         path=None,
         ssa_path=None,
+        autocomplete="auto",
         check=False,
         **kwargs,
     ):
@@ -3658,6 +3659,16 @@ class ContractionTreeCompressed(ContractionTree):
             terms.append(tree.contract_nodes(merge, check=check))
 
         tree.set_surface_order_from_path(ssa_path)
+
+        if (len(tree.children) < tree.N - 1) and autocomplete:
+            if autocomplete == "auto":
+                # warn that we are completing
+                warnings.warn(
+                    "Path was not complete - contracting all remaining. "
+                    "You can silence this warning with `autocomplete=True`."
+                )
+
+            tree.autocomplete(optimize="greedy-compressed")
 
         return tree
 
