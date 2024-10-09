@@ -89,13 +89,16 @@ def test_einsum_formats_interleaved():
     assert np.allclose(x, y)
 
 
-@pytest.mark.parametrize("eq,shapes", [
-    ("c...a,b...c->b...a", [(2, 5, 6, 3), (4, 6, 2)]),
-    ("a...a->...", [(3, 3)]),
-    ("a...a->...a", [(3, 4, 5, 3)]),
-    ("...,...ab->ba...", [(), (2, 3, 4, 5)]),
-    ("a,b,ab...c->b...a", [(2,), (3,), (2, 3, 4, 5, 6)]),
-])
+@pytest.mark.parametrize(
+    "eq,shapes",
+    [
+        ("c...a,b...c->b...a", [(2, 5, 6, 3), (4, 6, 2)]),
+        ("a...a->...", [(3, 3)]),
+        ("a...a->...a", [(3, 4, 5, 3)]),
+        ("...,...ab->ba...", [(), (2, 3, 4, 5)]),
+        ("a,b,ab...c->b...a", [(2,), (3,), (2, 3, 4, 5, 6)]),
+    ],
+)
 def test_einsum_ellipses(eq, shapes):
     arrays = [np.random.rand(*shape) for shape in shapes]
     x = np.einsum(eq, *arrays)

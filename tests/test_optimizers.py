@@ -168,14 +168,10 @@ def test_binaries(contraction_20_5, optimize):
 def test_hyper_slicer(parallel):
     if parallel:
         pytest.importorskip("distributed")
-    pytest.importorskip("opt_einsum")
 
-    import opt_einsum as oe
-
-    try:
-        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
-    except AttributeError:
-        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
 
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
@@ -184,8 +180,10 @@ def test_hyper_slicer(parallel):
         slicing_opts={"target_slices": 1000},
         progbar=True,
     )
-    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
-    assert optimizer.get_tree().multiplicity >= 1000
+    tree = ctg.array_contract_tree(
+        inputs, output, size_dict, optimize=optimizer
+    )
+    assert tree.multiplicity >= 1000
     assert optimizer.best["flops"] > optimizer.best["original_flops"]
 
 
@@ -193,14 +191,10 @@ def test_hyper_slicer(parallel):
 def test_hyper_reconf(parallel):
     if parallel:
         pytest.importorskip("distributed")
-    pytest.importorskip("opt_einsum")
 
-    import opt_einsum as oe
-
-    try:
-        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
-    except AttributeError:
-        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
 
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
@@ -209,7 +203,7 @@ def test_hyper_reconf(parallel):
         reconf_opts={"subtree_size": 6},
         progbar=True,
     )
-    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
+    ctg.array_contract_tree(inputs, output, size_dict, optimize=optimizer)
     assert optimizer.best["flops"] < optimizer.best["original_flops"]
 
 
@@ -217,14 +211,10 @@ def test_hyper_reconf(parallel):
 def test_hyper_slicer_reconf(parallel):
     if parallel:
         pytest.importorskip("distributed")
-    pytest.importorskip("opt_einsum")
 
-    import opt_einsum as oe
-
-    try:
-        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
-    except AttributeError:
-        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
 
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
@@ -238,8 +228,10 @@ def test_hyper_slicer_reconf(parallel):
         },
         progbar=True,
     )
-    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
-    assert optimizer.get_tree().max_size() <= 2**19
+    tree = ctg.array_contract_tree(
+        inputs, output, size_dict, optimize=optimizer
+    )
+    assert tree.max_size() <= 2**19
 
 
 @pytest.mark.parametrize("parallel_backend", ("dask", "ray"))
@@ -248,14 +240,10 @@ def test_insane_nested(parallel_backend):
         pytest.importorskip("distributed")
     else:
         pytest.importorskip(parallel_backend)
-    pytest.importorskip("opt_einsum")
 
-    import opt_einsum as oe
-
-    try:
-        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
-    except AttributeError:
-        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
 
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
@@ -274,8 +262,10 @@ def test_insane_nested(parallel_backend):
             },
         },
     )
-    oe.contract_path(eq, *shapes, shapes=True, optimize=optimizer)
-    assert optimizer.get_tree().max_size() <= 2**20
+    tree = ctg.array_contract_tree(
+        inputs, output, size_dict, optimize=optimizer
+    )
+    assert tree.max_size() <= 2**20
 
 
 def test_plotting():
