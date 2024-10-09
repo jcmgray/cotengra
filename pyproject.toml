@@ -74,7 +74,7 @@ test = [
     "opt_einsum",
     "pytest",
     "seaborn",
-    "skopt"
+    "scikit-optimize",
 ]
 
 [tool.setuptools.packages.find]
