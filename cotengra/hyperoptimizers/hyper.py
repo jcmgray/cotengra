@@ -921,7 +921,58 @@ def hash_contraction(inputs, output, size_dict, method="a"):
         raise ValueError("Unknown hash method: {}".format(method))
 
 
-class ReusableHyperOptimizer(PathOptimizer):
+class ReusableOptmizer(PathOptimizer):
+    """Mixin class for optimizers that can be reused, caching the paths
+    and other relevant information for reconstructing the full tree.
+    """
+
+    def __init__(
+        self,
+        *,
+        directory=None,
+        overwrite=False,
+        hash_method="a",
+        cache_only=False,
+        **opt_kwargs,
+    ):
+        self._suboptimizers = {}
+        self._suboptimizer_kwargs = opt_kwargs
+        if directory is True:
+            # automatically generate the directory
+            directory = f"ctg_cache/opts{self.auto_hash_path_relevant_opts()}"
+        self._cache = DiskDict(directory)
+        self.overwrite = overwrite
+        self._hash_method = hash_method
+        self.cache_only = cache_only
+
+    @property
+    def last_opt(self):
+        return self._suboptimizers.get(threading.get_ident(), None)
+
+    def get_path_relevant_opts(self):
+        """We only want to hash on options that affect the contraction, not
+        things like `progbar`.
+        """
+        raise NotImplementedError
+
+    def auto_hash_path_relevant_opts(self):
+        """Automatically hash the path relevant options used to create the
+        optimizer.
+        """
+        return hashlib.sha1(
+            pickle.dumps(self.get_path_relevant_opts())
+        ).hexdigest()
+
+    def hash_query(self, inputs, output, size_dict):
+        """Hash the contraction specification, returning this and whether the
+        contraction is already present as a tuple.
+        """
+        h = hash_contraction(inputs, output, size_dict, self._hash_method)
+        missing = h not in self._cache
+        return h, missing
+
+
+class ReusableHyperOptimizer(ReusableOptmizer):
     """Like ``HyperOptimizer`` but it will re-instantiate the optimizer
     whenever a new contraction is detected, and also cache the paths (and
     sliced indices) found.
@@ -954,29 +1005,6 @@ class ReusableHyperOptimizer(PathOptimizer):
     suboptimizer = HyperOptimizer
     set_surface_order = False
 
-    def __init__(
-        self,
-        *,
-        directory=None,
-        overwrite=False,
-        hash_method="a",
-        cache_only=False,
-        **opt_kwargs,
-    ):
-        self._suboptimizers = {}
-        self._suboptimizer_kwargs = opt_kwargs
-        if directory is True:
-            # automatically generate the directory
-            directory = f"ctg_cache/opts{self.auto_hash_path_relevant_opts()}"
-        self._cache = DiskDict(directory)
-        self.overwrite = overwrite
-        self._hash_method = hash_method
-        self.cache_only = cache_only
-
-    @property
-    def last_opt(self):
-        return self._suboptimizers.get(threading.get_ident(), None)
-
     def get_path_relevant_opts(self):
         """Get a frozenset of the options that are most likely to affect the
         path. These are the options that we use when the directory name is not
@@ -998,68 +1026,75 @@ class ReusableHyperOptimizer(PathOptimizer):
             ]
         )
 
-    def auto_hash_path_relevant_opts(self):
-        """Automatically hash the path relevant options used to create the
-        optimizer.
-        """
-        return hashlib.sha1(
-            pickle.dumps(self.get_path_relevant_opts())
-        ).hexdigest()
-
-    def hash_query(self, inputs, output, size_dict):
-        """Hash the contraction specification, returning this and whether the
-        contraction is already present as a tuple.
-        """
-        h = hash_contraction(inputs, output, size_dict, self._hash_method)
-        missing = self.overwrite or (h not in self._cache)
-        return h, missing
-
-    def _compute_path(self, inputs, output, size_dict):
-        opt = self.suboptimizer(**self._suboptimizer_kwargs)
-        opt._search(inputs, output, size_dict)
-        thrid = threading.get_ident()
-        self._suboptimizers[thrid] = opt
-        return {
-            "path": opt.path,
-            # dont' need to store all slice info, just which indices
-            "sliced_inds": tuple(opt.tree.sliced_inds),
-        }
-
-    def update_from_tree(self, tree, overwrite=True):
+    def update_from_tree(self, tree, overwrite="improved"):
         """Explicitly add the contraction that ``tree`` represents into the
         cache. For example, if you have manually improved it via reconfing.
         If ``overwrite=False`` and the contracton is present already then do
         nothing.
         """
         h, missing = self.hash_query(tree.inputs, tree.output, tree.size_dict)
-        if overwrite or missing:
+        if missing or overwrite:
             self._cache[h] = {
                 "path": tree.get_path(),
+                "score": tree.get_score(),
                 # dont' need to store all slice info, just which indices
                 "sliced_inds": tuple(tree.sliced_inds),
             }
 
-    def __call__(self, inputs, output, size_dict, memory_limit=None):
+    def _run_optimizer(self, inputs, output, size_dict):
+        opt = self.suboptimizer(**self._suboptimizer_kwargs)
+        opt._search(inputs, output, size_dict)
+        thrid = threading.get_ident()
+        self._suboptimizers[thrid] = opt
+        tree = opt.tree
+        return {
+            "path": tree.get_path(),
+            "score": tree.get_score(),
+            # dont' need to store all slice info, just which indices
+            "sliced_inds": tuple(tree.sliced_inds),
+        }
+
+    def _maybe_run_optimizer(self, inputs, output, size_dict):
         h, missing = self.hash_query(inputs, output, size_dict)
-        if missing:
+
+        should_run = missing or self.overwrite
+        if should_run:
             if self.cache_only:
                 raise KeyError("Contraction missing from cache.")
-            self._cache[h] = self._compute_path(inputs, output, size_dict)
 
-        return self._cache[h]["path"]
+            con = self._run_optimizer(inputs, output, size_dict)
+
+            if (self.overwrite == "improved") and (not missing):
+                # only overwrite if the new path is better
+                old_con = self._cache[h]
+                if con["score"] < old_con["score"]:
+                    # replace the old path
+                    self._cache[h] = con
+                else:
+                    # use the old path
+                    con = old_con
+                    # need flag that we can't use the last run
+                    should_run = False
+            else:
+                # write to the cache
+                self._cache[h] = con
+        else:
+            # just retrieve from the cache
+            con = self._cache[h]
+
+        return should_run, con
+
+    def __call__(self, inputs, output, size_dict, memory_limit=None):
+        _, con = self._maybe_run_optimizer(inputs, output, size_dict)
+        return con["path"]
 
     def search(self, inputs, output, size_dict):
-        h, missing = self.hash_query(inputs, output, size_dict)
-
-        if missing:
-            if self.cache_only:
-                raise KeyError("Contraction missing from cache.")
-            # run and immediately retrieve tree directly
-            self._cache[h] = self._compute_path(inputs, output, size_dict)
+        searched, con = self._maybe_run_optimizer(inputs, output, size_dict)
+        if searched:
+            # already have the tree to return
             return self.last_opt.tree
 
-        # reconstruct tree
-        con = self._cache[h]
+        # else need to reconstruct the tree from the path
 
         if self.set_surface_order:
             # need ssa_path to set order

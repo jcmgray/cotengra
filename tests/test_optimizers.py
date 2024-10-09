@@ -303,3 +303,31 @@ def test_auto_optimizers_threadsafe():
         for inputs, output, _, size_dict in contractions
     ]
     [f.result() for f in fs]
+
+
+def test_reusable_optimizes_overwrite_improved():
+    contractions = []
+
+    for seed in range(10):
+        con = ctg.utils.rand_equation(20, 3, 2, 2, 2, seed=seed)
+        contractions.append(con)
+
+    opt = ctg.ReusableHyperOptimizer(
+        methods="greedy",
+        overwrite="improved",
+        max_repeats=2,
+    )
+
+    scores_a = [
+        opt.search(inputs, output, size_dict).get_score()
+        for inputs, output, _, size_dict in contractions
+    ]
+    # second time the optimize runs for every contraction, but if an old tree
+    # is better than the new one, it will be used instead
+    scores_b = [
+        opt.search(inputs, output, size_dict).get_score()
+        for inputs, output, _, size_dict in contractions
+    ]
+
+    for s1, s2 in zip(scores_b, scores_a):
+        assert s1 <= s2

@@ -342,6 +342,17 @@ class ContractionTree:
         except AttributeError:
             return DEFAULT_COMBO_FACTOR
 
+    def get_score(self, objective=None):
+        """Score this tree using the default objective function."""
+        from .scoring import get_score_fn
+
+        if objective is None:
+            objective = self.get_default_objective()
+
+        objective = get_score_fn(objective)
+
+        return objective({"tree": self})
+
     @property
     def nslices(self):
         """Simple alias for how many independent contractions this tree
