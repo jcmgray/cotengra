@@ -786,7 +786,7 @@ def get_symbol_map(inputs):
 def rand_equation(
     n, reg, n_out=0, n_hyper_in=0, n_hyper_out=0, d_min=2, d_max=3, seed=None
 ):
-    """A more advanced version of ``opt_einsum.helpers.rand_equation`` that
+    """A more advanced version of ``opt_einsum.testing.rand_equation`` that
     can also generate both inner and outer hyper-edges. Mostly useful for
     generating test instances covering all edge cases.
 

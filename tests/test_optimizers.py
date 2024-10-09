@@ -172,7 +172,11 @@ def test_hyper_slicer(parallel):
 
     import opt_einsum as oe
 
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    try:
+        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    except AttributeError:
+        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
         parallel=parallel,
@@ -193,7 +197,11 @@ def test_hyper_reconf(parallel):
 
     import opt_einsum as oe
 
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    try:
+        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    except AttributeError:
+        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
         parallel=parallel,
@@ -213,7 +221,11 @@ def test_hyper_slicer_reconf(parallel):
 
     import opt_einsum as oe
 
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    try:
+        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    except AttributeError:
+        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
         parallel=parallel,
@@ -240,7 +252,11 @@ def test_insane_nested(parallel_backend):
 
     import opt_einsum as oe
 
-    eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    try:
+        eq, shapes = oe.helpers.rand_equation(30, reg=5, seed=42, d_max=3)
+    except AttributeError:
+        eq, shapes = oe.testing.rand_equation(30, reg=5, seed=42, d_max=3)
+
     optimizer = ctg.HyperOptimizer(
         max_repeats=16,
         parallel=parallel_backend,
