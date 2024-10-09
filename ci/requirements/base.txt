@@ -1,0 +1,15 @@
+autoray
+cmaes>=0.10
+cotengrust
+coverage
+kahypar
+matplotlib
+networkx
+nevergrad
+opt_einsum
+optuna
+pytest
+pytest-cov
+ray
+seaborn
+tqdm
