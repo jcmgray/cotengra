@@ -1379,6 +1379,26 @@ class ContractionTree:
     def get_default_order(self):
         return "dfs"
 
+    def _traverse_dfs(self):
+        """Traverse the tree in a depth first, non-recursive, order."""
+        ready = set(self.gen_leaves())
+        queue = [self.root]
+
+        while queue:
+            node = queue[-1]
+            l, r = self.children[node]
+
+            # both node's children are ready -> we can yield this contraction
+            if (l in ready) and (r in ready):
+                ready.add(queue.pop())
+                yield node, l, r
+                continue
+
+            if r not in ready:
+                queue.append(r)
+            if l not in ready:
+                queue.append(l)
+
     def _traverse_ordered(self, order):
         """Traverse the tree in the order that minimizes ``order(node)``, but
         still constrained to produce children before parents.
@@ -1439,27 +1459,10 @@ class ContractionTree:
         if order is None:
             order = self.get_default_order()
 
-        if order != "dfs":
+        if order == "dfs":
+            yield from self._traverse_dfs()
+        else:
             yield from self._traverse_ordered(order=order)
-            return
-
-        ready = set(self.gen_leaves())
-        queue = [self.root]
-
-        while queue:
-            node = queue[-1]
-            l, r = self.children[node]
-
-            # both node's children are ready -> we can yield this contraction
-            if (l in ready) and (r in ready):
-                ready.add(queue.pop())
-                yield node, l, r
-                continue
-
-            if r not in ready:
-                queue.append(r)
-            if l not in ready:
-                queue.append(l)
 
     def descend(self, mode="dfs"):
         """Generate, from root to leaves, all the node merges in this tree.
@@ -2542,7 +2545,7 @@ class ContractionTree:
         if inplace:
             self.set_state_from(rtree)
             rtree = self
-        rtree.set_surface_order_from_path(ssa_path)
+
         rtree.contraction_cores.clear()
         return rtree
 
@@ -2605,7 +2608,7 @@ class ContractionTree:
         if inplace:
             self.set_state_from(rtree)
             rtree = self
-        rtree.set_surface_order_from_path(ssa_path)
+
         rtree.contraction_cores.clear()
         return rtree
 
@@ -3634,6 +3637,10 @@ class ContractionTreeCompressed(ContractionTree):
     difference is that this defaults to the 'surface' traversal ordering.
     """
 
+    def set_state_from(self, other):
+        super().set_state_from(other)
+        self.set_surface_order_from_path(other.get_ssa_path())
+
     @classmethod
     def from_path(
         cls,
@@ -3734,19 +3741,58 @@ class ContractionTreeCompressed(ContractionTree):
             "with e.g. `optimize=tree.get_path()`."
         )
 
+    def simulated_anneal(
+        self,
+        minimize=None,
+        tfinal=0.0001,
+        tstart=0.01,
+        tsteps=50,
+        numiter=50,
+        seed=None,
+        inplace=False,
+        progbar=False,
+        **kwargs,
+    ):
+        from .pathfinders.path_compressed import WindowedOptimizer
 
-class ContractionTreeMulti(ContractionTree):
-    def set_varmults(self, varmults):
-        self._varmults = varmults
+        if minimize is None:
+            minimize = self.get_default_objective()
 
-    def get_varmults(self):
-        return self._varmults
+        wo = WindowedOptimizer(
+            self.inputs,
+            self.output,
+            self.size_dict,
+            minimize=minimize,
+            ssa_path=self.get_ssa_path(),
+            seed=seed,
+        )
 
-    def set_numconfigs(self, numconfigs):
-        self._numconfigs = numconfigs
+        wo.simulated_anneal(
+            tfinal=tfinal,
+            tstart=tstart,
+            tsteps=tsteps,
+            numiter=numiter,
+            progbar=progbar,
+            **kwargs,
+        )
+        ssa_path = wo.get_ssa_path()
 
-    def get_numconfigs(self):
-        return self._numconfigs
+        rtree = self.__class__.from_path(
+            self.inputs,
+            self.output,
+            self.size_dict,
+            ssa_path=ssa_path,
+            objective=minimize,
+        )
+
+        if inplace:
+            self.set_state_from(rtree)
+            rtree = self
+
+        rtree.contraction_cores.clear()
+        return rtree
+
+    simulated_anneal_ = functools.partialmethod(simulated_anneal, inplace=True)
 
 
 class PartitionTreeBuilder:

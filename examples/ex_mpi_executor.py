@@ -13,10 +13,12 @@ comm = MPI.COMM_WORLD
 with MPICommExecutor() as pool:
     # only need to make calls from the root process
     if pool is not None:
-
         # generate a random contraction
         inputs, output, shapes, size_dict = ctg.utils.rand_equation(
-            100, 3, n_out=2, seed=666,
+            100,
+            3,
+            n_out=2,
+            seed=666,
         )
         arrays = [np.random.randn(*s) for s in shapes]
 
@@ -28,9 +30,9 @@ with MPICommExecutor() as pool:
         opt = ctg.HyperOptimizer(
             parallel=pool,
             # make sure we generate at least 1 slice per process
-            slicing_opts={'target_slices': comm.size},
+            slicing_opts={"target_slices": comm.size},
             # cmaes is suited to generating many trials quickly
-            optlib='cmaes',
+            optlib="cmaes",
             max_repeats=512,
             progbar=True,
         )
@@ -43,8 +45,10 @@ with MPICommExecutor() as pool:
         print(f"{comm.rank}:: Contracting tree executor style ...")
 
         # submit contractions eagerly
-        fs = [pool.submit(tree.contract_slice, arrays, i)
-              for i in range(tree.nslices)]
+        fs = [
+            pool.submit(tree.contract_slice, arrays, i)
+            for i in range(tree.nslices)
+        ]
 
         # gather results lazily (i.e. using generator)
         x = tree.gather_slices((f.result() for f in fs))

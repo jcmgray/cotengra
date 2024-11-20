@@ -1,6 +1,7 @@
 """This script shows how to manually use jax to jit-compile the core
 contraction.
 """
+
 import jax
 import numpy as np
 import cotengra as ctg
@@ -8,7 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 # generate a random contraction
 inputs, output, shapes, size_dict = ctg.utils.rand_equation(
-    140, 3, n_out=2, seed=666,
+    140,
+    3,
+    n_out=2,
+    seed=666,
 )
 arrays = [np.random.randn(*s) for s in shapes]
 
@@ -20,7 +24,7 @@ print("Finding tree...")
 opt = ctg.HyperOptimizer(
     parallel=True,
     # make sure contractions fit onto GPU
-    slicing_reconf_opts={'target_size': 2**28},
+    slicing_reconf_opts={"target_size": 2**28},
     max_repeats=32,
     progbar=True,
 )
@@ -59,15 +63,10 @@ print("2: Contracting slices with jax and constants...")
 # this time we'll treat the input arrays as constant, so they ideally be
 # folded in, possibly with some extra memory overhead
 jax_arrays = [jax.numpy.asarray(x) for x in arrays]
-contract_core_jit = jax.jit(
-    lambda i: tree.contract_slice(jax_arrays, i)
-)
+contract_core_jit = jax.jit(lambda i: tree.contract_slice(jax_arrays, i))
 
 # eagerly submit all the contractions to the thread pool
-fs = [
-    pool.submit(contract_core_jit, np.array(i))
-    for i in range(tree.nslices)
-]
+fs = [pool.submit(contract_core_jit, np.array(i)) for i in range(tree.nslices)]
 
 # lazily gather all the slices in the main process with progress bar
 slices = (np.array(f.result()) for f in fs)

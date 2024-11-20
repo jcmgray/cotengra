@@ -273,17 +273,23 @@ class WindowedOptimizer:
     @use_neutral_style
     def plot_size_footprint(self, figsize=(8, 3)):
         import matplotlib.pyplot as plt
+        import math
 
         fig, ax = plt.subplots(figsize=figsize)
         cs = range(len(self.nodes))
-        xs0 = [self.nodes[c].tracker.total_size_post_contract for c in cs]
-        xs1 = [self.nodes[c].tracker.total_size for c in cs]
-        xs2 = [self.nodes[c].tracker.contracted_size for c in cs]
+        xs0 = [
+            math.log2(max(1, self.nodes[c].tracker.total_size_post_contract))
+            for c in cs
+        ]
+        xs1 = [math.log2(max(1, self.nodes[c].tracker.total_size)) for c in cs]
+        xs2 = [
+            math.log2(max(1, self.nodes[c].tracker.contracted_size))
+            for c in cs
+        ]
         ax.plot(cs, xs0, label="total size contracted", zorder=4)
         ax.plot(cs, xs1, label="total size compressed", zorder=3)
         ax.plot(cs, xs2, label="single size", zorder=2)
         ax.legend()
-        ax.set_yscale("log")
         return fig, ax
 
     def optimize_window(
@@ -415,6 +421,117 @@ class WindowedOptimizer:
 
             if progbar:
                 its.set_description(f"{self.tracker}", refresh=False)
+
+    def simulated_anneal(
+        self,
+        tfinal=0.0001,
+        tstart=0.01,
+        tsteps=50,
+        numiter=50,
+        select="descend",
+        target_size=None,
+        slice_mode=None,
+        progbar=False,
+    ):
+        import math
+        from .path_simulated_annealing import linspace_generator
+
+        if progbar:
+            import tqdm
+
+            pbar = tqdm.tqdm(total=numiter * tsteps)
+        else:
+            pbar = None
+
+        N = len(self.nodes)
+
+        if select == "descend":
+            ns = range(N - 2, 0, -1)
+        elif select == "ascend":
+            ns = range(1, N - 1)
+        elif select in ("random", "bounce"):
+            ns = list(range(1, N - 1))
+        else:
+            raise ValueError(f"Unknown select mode: {select}")
+
+        try:
+            for temp in linspace_generator(tstart, tfinal, tsteps, log=True):
+                for _ in range(numiter):
+
+                    if select == "random":
+                        self.rng.shuffle(ns)
+                    elif select == "bounce":
+                        ns.reverse()
+
+                    for n in ns:
+
+                        node_0 = self.nodes[n - 1]
+                        node_1 = self.nodes[n]
+                        node_2 = self.nodes[n + 1]
+
+                        pa, la, ra = node_1.plr
+                        pb, lb, rb = node_2.plr
+
+                        if (pa == lb) or (pa == rb):
+                            # dependent contractions
+                            if pa == lb:
+                                a, b, c = la, ra, rb
+                            else:  # pa == rb
+                                a, b, c = la, ra, lb
+
+                            if self.rng.choice([0, 1]) == 0:
+                                # propose ((AC)B)
+                                x = a | c
+                                node_p1 = node_0.next(x, a, c)
+                                node_p2 = node_p1.next(pb, x, b)
+                            else:
+                                # propose (A(BC))
+                                x = b | c
+                                node_p1 = node_0.next(x, b, c)
+                                node_p2 = node_p1.next(pb, x, a)
+                        else:
+                            # parallel contractions (AB)(CD)
+                            node_p1 = node_0.next(pb, lb, rb)
+                            node_p2 = node_p1.next(pa, la, ra)
+
+                        current_score = max(
+                            node_1.tracker.score, node_2.tracker.score
+                        )
+                        proposed_score = max(
+                            node_p1.tracker.score, node_p2.tracker.score
+                        )
+
+                        dE = proposed_score - current_score
+                        accept = (dE <= 0) or (
+                            math.log(self.rng.random()) < -dE / temp
+                        )
+
+                        if accept:
+                            self.nodes[n] = node_p1
+                            self.nodes[n + 1] = node_p2
+
+                            # # need to update any global score trackers
+                            # for c in range(n + 2, len(self.nodes)):
+                            #     self.nodes[c].tracker.update_score(
+                            #         self.nodes[c - 1].tracker
+                            #     )
+
+                    for c in range(1, len(self.nodes)):
+                        self.nodes[c].tracker.update_score(
+                            self.nodes[c - 1].tracker
+                        )
+
+                    if progbar:
+                        pbar.update()
+                        pbar.set_description(
+                            f"T={temp:.3g} {self.tracker.describe()}"
+                        )
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if pbar:
+                pbar.close()
 
     def get_ssa_path(self):
         bitpath = [self.nodes[c].plr for c in range(1, len(self.nodes))]

@@ -1,7 +1,9 @@
 import collections.abc
+import functools
 import itertools
 import math
 import time
+from numbers import Integral
 
 from ..parallel import (
     can_scatter,
@@ -109,18 +111,22 @@ def _describe_tree(tree, info="concise"):
     return tree.describe(info=info)
 
 
-def _score_tree(scorer, tree, target_size=None):
+def _score_tree(scorer, tree, target_size=None, coeff_size_penalty=1.0):
     trial = {"tree": tree}
     x = scorer(trial)
     if target_size is not None:
         # penalize oversize
-        x += math.log2(max(trial["size"] / target_size, 1))
+        x += coeff_size_penalty * math.log2(
+            max(trial["size"] / target_size, 1)
+        )
     return x
 
 
-def _slice_tree_basic(tree, current_target_size, rng):
-    if tree.sliced_inds:
-        # always unslice a random index
+def _slice_tree_basic(tree, current_target_size, rng, unslice=1):
+    # always unslice one or more random indices
+    for _ in range(unslice):
+        if not tree.sliced_inds:
+            break
         tree.unslice_rand_(seed=rng)
     tree.slice_(target_size=current_target_size, seed=rng)
 
@@ -181,7 +187,7 @@ def simulated_anneal_tree(
     target_size_initial : int, optional
         The initial target size to use in the slicing schedule. If None, then
         the current size is used.
-    slice_mode : {'basic', 'reslice', 'drift'}, optional
+    slice_mode : {'basic', 'reslice', 'drift', int}, optional
         The mode for slicing the contraction tree within each annealing
         iteration. 'basic' always unslices a random index and then slices to
         the target size. 'reslice' unslices all indices and then slices to the
@@ -228,11 +234,18 @@ def simulated_anneal_tree(
             tsteps,
             log=True,
         )
-        _slice_tree = {
-            "basic": _slice_tree_basic,
-            "reslice": _slice_tree_reslice,
-            "drift": _slice_tree_drift,
-        }[slice_mode]
+
+        if isinstance(slice_mode, Integral):
+            # unslice this many random indices at each step
+            _slice_tree = functools.partial(
+                _slice_tree_basic, unslice=slice_mode
+            )
+        else:
+            _slice_tree = {
+                "basic": _slice_tree_basic,
+                "reslice": _slice_tree_reslice,
+                "drift": _slice_tree_drift,
+            }[slice_mode]
     else:
         target_sizes = itertools.repeat(None)
 
@@ -373,9 +386,11 @@ def parallel_temper_tree(
     numiter=50,
     minimize=None,
     target_size=None,
+    target_size_initial=None,
     slice_mode="drift",
     parallel_slice_mode="temperature",
     swappiness=1.0,
+    coeff_size_penalty=1.0,
     max_time=None,
     seed=None,
     parallel="auto",
@@ -459,15 +474,17 @@ def parallel_temper_tree(
         # target_sizes = itertools.repeat(None)
         target_sizes = (None,) * num_trees
     else:
-        current_size = max(
-            t.contraction_width(log=None) for t in tree_or_trees
-        )
+        if target_size_initial is None:
+            target_size_initial = max(
+                t.contraction_width(log=None) for t in tree_or_trees
+            )
+
         if parallel_slice_mode == "temperature":
             # target size decreases with temperature
             target_sizes = tuple(
                 linspace_generator(
                     target_size,
-                    current_size,
+                    target_size_initial,
                     num_trees,
                     log=True,
                 )
@@ -475,7 +492,7 @@ def parallel_temper_tree(
         elif parallel_slice_mode == "time":
             # target size decreases with time
             target_sizes = linspace_generator(
-                current_size,
+                target_size_initial,
                 target_size,
                 tsteps,
                 log=True,
@@ -530,7 +547,15 @@ def parallel_temper_tree(
                 )
                 for t, temp, tsz in args
             ]
-            scores = [_score_tree(scorer, t, target_size) for t in trees]
+            scores = [
+                _score_tree(
+                    scorer,
+                    t,
+                    target_size,
+                    coeff_size_penalty=coeff_size_penalty,
+                )
+                for t in trees
+            ]
 
         else:
             # submit in smaller steps for scatter pools?
@@ -550,7 +575,15 @@ def parallel_temper_tree(
             if not is_scatter_pool:
                 # gather trees and compute scores locally
                 trees = [f.result() for f in trees]
-                scores = [_score_tree(scorer, t, target_size) for t in trees]
+                scores = [
+                    _score_tree(
+                        scorer,
+                        t,
+                        target_size,
+                        coeff_size_penalty=coeff_size_penalty,
+                    )
+                    for t in trees
+                ]
             else:
                 # compute scores remotely also
                 scores = [
