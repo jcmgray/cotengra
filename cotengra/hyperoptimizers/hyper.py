@@ -1026,20 +1026,50 @@ class ReusableHyperOptimizer(ReusableOptmizer):
             ]
         )
 
+    @property
+    def minimize(self):
+        if self.last_opt is not None:
+            return self.last_opt.minimize
+        else:
+            return self._suboptimizer_kwargs.get("minimize", "flops")
+
     def update_from_tree(self, tree, overwrite="improved"):
         """Explicitly add the contraction that ``tree`` represents into the
         cache. For example, if you have manually improved it via reconfing.
         If ``overwrite=False`` and the contracton is present already then do
-        nothing.
+        nothing. If ``overwrite='improved'`` then only overwrite if the new
+        path is better. If ``overwrite=True`` then always overwrite.
+
+        Parameters
+        ----------
+        tree : ContractionTree
+            The tree to add to the cache.
+        overwrite : bool or "improved", optional
+            If ``True`` always overwrite, if ``False`` only overwrite if the
+            contraction is missing, if ``'improved'`` only overwrite if the new
+            path is better (the default). Note that the comparison of scores
+            is based on default objective of the tree.
         """
         h, missing = self.hash_query(tree.inputs, tree.output, tree.size_dict)
-        if missing or overwrite:
-            self._cache[h] = {
-                "path": tree.get_path(),
-                "score": tree.get_score(),
-                # dont' need to store all slice info, just which indices
-                "sliced_inds": tuple(tree.sliced_inds),
-            }
+
+        new_con = {
+            "path": tree.get_path(),
+            "score": tree.get_score(),
+            "sliced_inds": tuple(tree.sliced_inds),
+        }
+
+        if missing:
+            # write to the cache
+            self._cache[h] = new_con
+        elif overwrite:
+            if overwrite == "improved":
+                old_con = self._cache[h]
+                if new_con["score"] < old_con["score"]:
+                    # overwrite only if we have a better score
+                    self._cache[h] = new_con
+            else:
+                # overwrite regardless of score
+                self._cache[h] = new_con
 
     def _run_optimizer(self, inputs, output, size_dict):
         opt = self.suboptimizer(**self._suboptimizer_kwargs)
@@ -1094,16 +1124,24 @@ class ReusableHyperOptimizer(ReusableOptmizer):
             # already have the tree to return
             return self.last_opt.tree
 
-        # else need to reconstruct the tree from the path
+        # else need to *reconstruct* the tree from the more compact path
 
         if self.set_surface_order:
             # need ssa_path to set order
             tree = ContractionTreeCompressed.from_path(
-                inputs, output, size_dict, path=con["path"]
+                inputs,
+                output,
+                size_dict,
+                path=con["path"],
+                objective=self.minimize,
             )
         else:
             tree = ContractionTree.from_path(
-                inputs, output, size_dict, path=con["path"]
+                inputs,
+                output,
+                size_dict,
+                path=con["path"],
+                objective=self.minimize,
             )
 
         for ix in con["sliced_inds"]:
