@@ -2968,30 +2968,42 @@ class ContractionTree:
             else:
                 type_msg = "einsum"
 
-            pa = "".join(
-                PINK + f"{{{ix}}}"
-                if (ix in l_legs) and (ix in r_legs)
-                else GREEN + f"({ix})"
-                if ix in r_legs
-                else BLUE + ix
-                for ix in p_inds
-            ).replace(f"){GREEN}(", "").replace(f"}}{PINK}{{", "")
-            la = "".join(
-                PINK + f"{{{ix}}}"
-                if (ix in p_legs) and (ix in r_legs)
-                else RED + f"[{ix}]"
-                if ix in r_legs
-                else BLUE + ix
-                for ix in l_inds
-            ).replace(f"]{RED}[", "").replace(f"}}{PINK}{{", "")
-            ra = "".join(
-                PINK + f"{{{ix}}}"
-                if (ix in p_legs) and (ix in l_legs)
-                else RED + f"[{ix}]"
-                if ix in l_legs
-                else GREEN + ix
-                for ix in r_inds
-            ).replace(f"]{RED}[", "").replace(f"}}{PINK}{{", "")
+            pa = (
+                "".join(
+                    PINK + f"{{{ix}}}"
+                    if (ix in l_legs) and (ix in r_legs)
+                    else GREEN + f"({ix})"
+                    if ix in r_legs
+                    else BLUE + ix
+                    for ix in p_inds
+                )
+                .replace(f"){GREEN}(", "")
+                .replace(f"}}{PINK}{{", "")
+            )
+            la = (
+                "".join(
+                    PINK + f"{{{ix}}}"
+                    if (ix in p_legs) and (ix in r_legs)
+                    else RED + f"[{ix}]"
+                    if ix in r_legs
+                    else BLUE + ix
+                    for ix in l_inds
+                )
+                .replace(f"]{RED}[", "")
+                .replace(f"}}{PINK}{{", "")
+            )
+            ra = (
+                "".join(
+                    PINK + f"{{{ix}}}"
+                    if (ix in p_legs) and (ix in l_legs)
+                    else RED + f"[{ix}]"
+                    if ix in l_legs
+                    else GREEN + ix
+                    for ix in r_inds
+                )
+                .replace(f"]{RED}[", "")
+                .replace(f"}}{PINK}{{", "")
+            )
 
             entries.append(
                 (

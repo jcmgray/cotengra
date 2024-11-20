@@ -1,18 +1,9 @@
-[build-system]
-build-backend = "setuptools.build_meta"
-requires = [
-    "setuptools>=45",
-    "setuptools_scm[toml]>=6.2"
-]
-
 [project]
 name = "cotengra"
 description = "Hyper optimized contraction trees for large tensor networks and einsums."
 readme = { file = "README.md", content-type = "text/markdown" }
 dynamic = ["version"]
-authors = [
-    { name = "Johnnie Gray", email = "johnniemcgray@gmail.com" }
-]
+authors = [{ name = "Johnnie Gray", email = "johnniemcgray@gmail.com" }]
 license = { file = "LICENSE.md" }
 requires-python = ">=3.8"
 classifiers = [
@@ -28,10 +19,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
-keywords = ["tensor", "network", "contraction", "graph", "hypergraph", "partition", "einsum"]
-dependencies = [
-    "autoray"
+keywords = [
+    "contraction",
+    "einsum",
+    "graph",
+    "hypergraph",
+    "network",
+    "partition",
+    "tensor",
 ]
+dependencies = ["autoray"]
 
 [project.urls]
 "Documentation" = "https://cotengra.readthedocs.io/"
@@ -50,18 +47,18 @@ recommended = [
     "opt_einsum",
     "optuna",
     "ray",
-    "tqdm"
+    "tqdm",
 ]
 docs = [
+    "astroid < 3.0.0",
     "furo",
     "ipython != 8.7.0",
     "myst-nb",
     "setuptools_scm",
+    "sphinx >= 2.0",
     "sphinx-autoapi",
-    "astroid < 3.0.0",
     "sphinx-copybutton",
     "sphinx-design",
-    "sphinx >= 2.0"
 ]
 test = [
     "altair",
@@ -77,15 +74,19 @@ test = [
     "numpy",
     "opt_einsum",
     "pytest",
-    "seaborn",
     "scikit-optimize",
+    "seaborn",
 ]
 
-[tool.setuptools.packages.find]
-exclude = ["docs", "tests"]
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
-[tool.setuptools_scm]
-write_to = "cotengra/_version.py"
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "cotengra/_version.py"
 
 [tool.pytest.ini_options]
 testpaths = "tests"
