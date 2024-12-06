@@ -1,16 +1,23 @@
 """Interface for parallelism."""
 
 import atexit
+import collections
+import functools
+import importlib
 import inspect
 import numbers
-import warnings
 import operator
-import functools
-import collections
-
+import warnings
 
 _AUTO_BACKEND = None
-_DEFAULT_BACKEND = "concurrent.futures"
+
+# check for loky, joblib (vendors loky), then default to concurrent.futures
+have_loky = importlib.util.find_spec("loky") is not None
+have_joblib = importlib.util.find_spec("joblib") is not None
+if have_loky or have_joblib:
+    _DEFAULT_BACKEND = "loky"
+else:
+    _DEFAULT_BACKEND = "concurrent.futures"
 
 
 @functools.lru_cache(None)
@@ -218,6 +225,7 @@ class CachedProcessPoolExecutor:
     def __init__(self):
         self._pool = None
         self._n_workers = -1
+        atexit.register(self.shutdown)
 
     def __call__(self, n_workers=None):
         if n_workers != self._n_workers:
@@ -243,11 +251,6 @@ class CachedProcessPoolExecutor:
 ProcessPoolHandler = CachedProcessPoolExecutor()
 
 
-@atexit.register
-def _shutdown_cached_process_pool():
-    ProcessPoolHandler.shutdown()
-
-
 def _get_process_pool_cf(n_workers=None):
     return ProcessPoolHandler(n_workers)
 
@@ -256,6 +259,7 @@ class CachedThreadPoolExecutor:
     def __init__(self):
         self._pool = None
         self._n_workers = -1
+        atexit.register(self.shutdown)
 
     def __call__(self, n_workers=None):
         if n_workers != self._n_workers:
@@ -279,11 +283,6 @@ class CachedThreadPoolExecutor:
 
 
 ThreadPoolHandler = CachedThreadPoolExecutor()
-
-
-@atexit.register
-def _shutdown_cached_thread_pool():
-    ThreadPoolHandler.shutdown()
 
 
 def _get_thread_pool_cf(n_workers=None):
@@ -322,9 +321,10 @@ def _get_pool_dask(n_workers=None, maybe_create=False):
         if not maybe_create:
             return None
 
-        from dask.distributed import LocalCluster, Client
-        import tempfile
         import shutil
+        import tempfile
+
+        from dask.distributed import Client, LocalCluster
 
         local_directory = tempfile.mkdtemp()
         lc = LocalCluster(
