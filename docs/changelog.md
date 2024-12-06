@@ -15,6 +15,8 @@
 - Add [`PathOptimizer`](cotengra.PathOptimizer) to top-level namespace.
 - [`ContractTreeCompressed.from_path`](cotengra.ContractionTreeCompressed.from_path): add the `autocomplete` option
 - Add option `overwrite="improved"` to reusable hyper optimizers, which always searches but only overwrites if the new tree is better, allowing easy incremental refining of a collection of trees.
+- einsum via bmm (`implementation="cotengra"`) avoids using einsum for transposing inputs.
+- add example {ref}`ex_extract_contraction` doc
 
 **Bug fixes**
 
