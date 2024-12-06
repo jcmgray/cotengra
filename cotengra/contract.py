@@ -258,14 +258,22 @@ def _parse_eq_to_batch_matmul(eq, shape_a, shape_b):
     # take diagonal, remove any trivial axes and transpose left
     desired_a = "".join((*bat_inds, *a_keep, *con_inds))
     if a_term != desired_a:
-        eq_a = f"{a_term}->{desired_a}"
+        if set(a_term) == set(desired_a):
+            # only need to transpose, don't invoke einsum
+            eq_a = tuple(a_term.index(ix) for ix in desired_a)
+        else:
+            eq_a = f"{a_term}->{desired_a}"
     else:
         eq_a = None
 
     # take diagonal, remove any trivial axes and transpose right
     desired_b = "".join((*bat_inds, *con_inds, *b_keep))
     if b_term != desired_b:
-        eq_b = f"{b_term}->{desired_b}"
+        if set(b_term) == set(desired_b):
+            # only need to transpose, don't invoke einsum
+            eq_b = tuple(b_term.index(ix) for ix in desired_b)
+        else:
+            eq_b = f"{b_term}->{desired_b}"
     else:
         eq_b = None
 
@@ -370,15 +378,23 @@ def _do_contraction_via_bmm(
 ):
     # prepare left
     if eq_a is not None:
-        # diagonals, sums, and tranpose
-        a = _einsum_single(eq_a, a)
+        if isinstance(eq_a, tuple):
+            # only transpose
+            a = do("transpose", a, eq_a, like=backend)
+        else:
+            # diagonals, sums, and tranpose
+            a = _einsum_single(eq_a, a)
     if new_shape_a is not None:
         a = do("reshape", a, new_shape_a, like=backend)
 
     # prepare right
     if eq_b is not None:
-        # diagonals, sums, and tranpose
-        b = _einsum_single(eq_b, b)
+        if isinstance(eq_b, tuple):
+            # only transpose
+            b = do("transpose", b, eq_b, like=backend)
+        else:
+            # diagonals, sums, and tranpose
+            b = _einsum_single(eq_b, b)
     if new_shape_b is not None:
         b = do("reshape", b, new_shape_b, like=backend)
 
