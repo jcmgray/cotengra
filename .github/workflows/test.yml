@@ -50,6 +50,6 @@ jobs:
       run: uv run pytest --cov=cotengra tests/ --cov-report=xml tests
 
     - name: Report to codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
