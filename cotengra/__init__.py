@@ -18,6 +18,7 @@ except ImportError:
         __version__ = "0.0.0+unknown"
 
 import functools
+import warnings
 
 from . import utils
 from .core import (
@@ -216,11 +217,16 @@ def hyper_optimize(
     get="path",
     **opts,
 ):
+    if memory_limit is not None:
+        warnings.warn(
+            "`memory_limit` is not supported in hyper_optimize, ignoring."
+        )
+
     optimizer = HyperOptimizer(**opts)
     if get == "path":
-        return optimizer(inputs, output, size_dict, memory_limit)
+        return optimizer(inputs, output, size_dict)
     elif get == "tree":
-        return optimizer.search(inputs, output, size_dict, memory_limit)
+        return optimizer.search(inputs, output, size_dict)
     else:
         raise ValueError(f"Unknown get option {get}")
 
@@ -245,6 +251,12 @@ def hyper_compressed_optimize(
 def random_greedy_optimize(
     inputs, output, size_dict, memory_limit=None, **opts
 ):
+    if memory_limit is not None:
+        warnings.warn(
+            "`memory_limit` is not supported in "
+            "random_greedy_optimize, ignoring."
+        )
+
     optimizer = RandomGreedyOptimizer(**opts)
     return optimizer(inputs, output, size_dict)
 

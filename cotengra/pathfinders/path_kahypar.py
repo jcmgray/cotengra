@@ -88,6 +88,16 @@ def kahypar_subgraph_find_membership(
         if len(nodes) == 1:
             hg.remove_edge(e)
 
+    if hg.num_edges == 0:
+        # completely disconnected graph -> kahypar will crash
+        # round robin partition instead
+        return [
+            i
+            for k in range(parts)
+            for i in
+            (k,) * ((nv // parts) + (k < (nv % parts)))
+        ]
+
     if compress:
         hg.compress(compress)
 
