@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.6.3 (unreleased)
+## v0.7.0 (2025-01-07)
 
 **Enhancements**
 
@@ -22,6 +22,7 @@
 
 - Fix [`HyperGraph.plot`](cotengra.plot.plot_hypergraph) when nodes are not labelled as consecutive integers ({issue}`36`)
 - Fix [`ContractionTreeCompressed.windowed_reconfigure`](ContractionTreeCompressed.windowed_reconfigure) not propagating the default objective
+- Fix `kahypar` path optimization when no edges are present ({issue}`48`)
 
 
 ## v0.6.2 (2024-05-21)
