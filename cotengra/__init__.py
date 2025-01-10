@@ -70,6 +70,7 @@ from .pathfinders import (
     path_igraph,
     path_kahypar,
     path_labels,
+    path_kahypar_plus,
 )
 from .pathfinders.path_basic import (
     GreedyOptimizer,
@@ -179,6 +180,7 @@ __all__ = (
     "path_greedy",
     "path_igraph",
     "path_kahypar",
+    "path_kahypar_plus",
     "path_labels",
     "PathOptimizer",
     "plot_contractions_alt",
