@@ -1,9 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400;1,600&display=swap');
-
-h1, h2, h3 {
-    font-family: 'IBM Plex Mono', monospace;
-    font-weight: bold;
-}
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=Spline+Sans+Mono:ital,wght@0,300..700;1,300..700&display=swap');
 
 h1 {
 	font-size: 2.0rem;
@@ -21,16 +16,8 @@ h3 {
 	font-size: 0.85rem;
 }
 
-body {
-    font-family: 'Atkinson Hyperlegible', sans-serif;
-}
-
 article {
 	font-size: 0.9rem;
-}
-
-code, kbd, pre, samp {
-    font-family: 'IBM Plex Mono', monospace;
 }
 
 /* code.literal {
@@ -42,7 +29,7 @@ div.cell div.cell_input {
 	padding-right: 0em;
 	border: 1px rgba(127, 127, 127, 0.1) solid;
 	background-color: rgba(127, 127, 127, 0.1);
-	border-left-color: green;
+	border-left-color: hsl(126, 25%, 45%);
 	border-left-width: medium;
 }
 
