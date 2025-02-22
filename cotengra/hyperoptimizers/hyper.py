@@ -949,7 +949,7 @@ class ReusableOptmizer(PathOptimizer):
         if directory_split == "auto":
             # peak at cache and see if it has a subdirectory structure
             path = self._cache._path
-            if path.exists():
+            if (path is not None) and path.exists():
                 anysub = next(path.glob("*"), None)
                 if anysub is not None:
                     directory_split = anysub.is_dir()
