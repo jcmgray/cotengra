@@ -55,7 +55,7 @@ def get_default_optlib_eco():
     else:
         optlib = "random"
         warnings.warn(
-            "Couldn't find `optuna`, `cmaes`, `baytune (btb)`, `chocolate`, "
+            "Couldn't find `optuna`, `cmaes`, "
             "or `nevergrad` so will use completely random "
             "sampling in place of hyper-optimization."
         )
@@ -74,7 +74,7 @@ def get_default_optlib():
     else:
         optlib = "random"
         warnings.warn(
-            "Couldn't find `optuna`, `cmaes`, `baytune (btb)`, `chocolate`, "
+            "Couldn't find `optuna`, `cmaes`, "
             "or `nevergrad` so will use completely random "
             "sampling in place of hyper-optimization."
         )
@@ -933,6 +933,7 @@ class ReusableOptmizer(PathOptimizer):
         overwrite=False,
         hash_method="a",
         cache_only=False,
+        directory_split="auto",
         **opt_kwargs,
     ):
         self._suboptimizers = {}
@@ -944,6 +945,22 @@ class ReusableOptmizer(PathOptimizer):
         self.overwrite = overwrite
         self._hash_method = hash_method
         self.cache_only = cache_only
+
+        if directory_split == "auto":
+            # peak at cache and see if it has a subdirectory structure
+            path = self._cache._path
+            if path.exists():
+                anysub = next(path.glob("*"), None)
+                if anysub is not None:
+                    directory_split = anysub.is_dir()
+                else:
+                    # default to True
+                    directory_split = True
+            else:
+                # default to True
+                directory_split = True
+
+        self.directory_split = directory_split
 
     @property
     def last_opt(self):
@@ -968,6 +985,11 @@ class ReusableOptmizer(PathOptimizer):
         contraction is already present as a tuple.
         """
         h = hash_contraction(inputs, output, size_dict, self._hash_method)
+
+        if self.directory_split:
+            # use first part of the hash (256 options) as sub directory
+            h = (h[:2], h[2:])
+
         missing = h not in self._cache
         return h, missing
 
@@ -998,6 +1020,11 @@ class ReusableHyperOptimizer(ReusableOptmizer):
     cache_only : bool, optional
         If ``True``, the optimizer will only use the cache, and will raise
         ``KeyError`` if a contraction is not found.
+    directory_split : "auto" or bool, optional
+        If specified, the hash will be split into two parts, the first part
+        will be used as a subdirectory, and the second part will be used as the
+        filename. This is useful for avoiding a very large flat diretory. If
+        "auto" it will check the current cache if any and guess from that.
     opt_kwargs
         Supplied to ``HyperOptimizer``.
     """

@@ -8,8 +8,7 @@ import operator
 import pathlib
 import pickle
 import random
-
-from functools import reduce, lru_cache, partial
+from functools import lru_cache, partial, reduce
 from operator import or_
 
 import autoray as ar
@@ -601,16 +600,42 @@ elif NODE_TYPE == "intbitset":
 
 
 class DiskDict:
-    """A simple persistent dict."""
+    """A simple persistent dict. The keys should be filesystem compatible
+    strings, or tuples of strings, in which case it will be used as a
+    sub-directory structure. The values should be picklable. The
+    directory will be created if it does not exist. Values are loaded into
+    memory once they are accessed.
 
-    __slots__ = ("_directory", "_mem_cache", "_path")
+    Parameters
+    ----------
+    directory : str or pathlib.Path, optional
+        The directory to store the files in. If None, the files will not
+        be stored on disk and only kept in memory.
+    max_retries : int, optional
+        The maximum number of retries to read a file if it is not
+        completely written yet. Default is 3.
+    retry_delay : float, optional
+        The delay between retries in seconds. Default is 0.01.
+    """
 
-    def __init__(self, directory=None):
+    __slots__ = (
+        "_directory",
+        "_mem_cache",
+        "_path",
+        "max_retries",
+        "retry_delay",
+    )
+
+    def __init__(self, directory=None, max_retries=3, retry_delay=0.01):
         self._mem_cache = {}
         self._directory = directory
         if directory is not None:
             self._path = pathlib.Path(directory)
             self._path.mkdir(parents=True, exist_ok=True)
+        else:
+            self._path = None
+        self.max_retries = int(max_retries)
+        self.retry_delay = float(retry_delay)
 
     def clear(self):
         self._mem_cache.clear()
@@ -624,40 +649,62 @@ class DiskDict:
             self._path.rmdir()
 
     def __contains__(self, k):
-        return (k in self._mem_cache) or (
-            self._directory is not None and self._path.joinpath(k).exists()
-        )
+        if k in self._mem_cache:
+            return True
+
+        if self._directory is None:
+            return False
+
+        if not isinstance(k, tuple):
+            k = (k,)
+
+        return self._path.joinpath(*k).exists()
 
     def __setitem__(self, k, v):
         self._mem_cache[k] = v
         if self._directory is not None:
-            fname = self._path.joinpath(k)
+            if not isinstance(k, tuple):
+                # treat all as nested key
+                k = (k,)
+            fname = self._path.joinpath(*k)
+            if len(k) > 1:
+                # ensure subparent directories exist
+                fname.parent.mkdir(parents=True, exist_ok=True)
+            # write file!
             with open(fname, "wb+") as f:
                 pickle.dump(v, f)
 
     def __getitem__(self, k):
         try:
             return self._mem_cache[k]
-        except KeyError:
+        except KeyError as e:
             if self._directory is None:
-                raise
-            fname = self._path.joinpath(k)
-            if not fname.exists():
-                raise KeyError
+                # cache is in-memory only
+                raise e
 
-            for _ in range(3):
+            if not isinstance(k, tuple):
+                # treat all as nested key
+                k = (k,)
+
+            fname = self._path.joinpath(*k)
+            if not fname.exists():
+                # file does not exist on disk
+                raise e
+
+            for _ in range(self.max_retries):
                 try:
                     with open(fname, "rb") as f:
                         self._mem_cache[k] = v = pickle.load(f)
                         return v
-                except (EOFError, pickle.UnpicklingError):
+                except (EOFError, pickle.UnpicklingError) as e:
                     # file was not written completely yet
                     # e.g. by another process
                     import time
 
-                    time.sleep(0.01)
+                    time.sleep(self.retry_delay)
 
-            raise KeyError
+            # file exists but there is some other error after retrying
+            raise e
 
 
 def get_rng(seed=None):
