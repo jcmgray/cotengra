@@ -73,6 +73,10 @@ def contraction_20_5():
             "kahypar",
         ),
         (
+            functools.partial(ctg.UniformOptimizer, methods="kahypar+"),
+            "kahypar",
+        ),
+        (
             functools.partial(ctg.UniformOptimizer, methods="betweenness"),
             "igraph",
         ),

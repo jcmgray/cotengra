@@ -5,6 +5,7 @@ import heapq
 import bisect
 import functools
 import itertools
+import random
 
 from ..oe import PathOptimizer
 from ..utils import get_rng, GumbelBatchedGenerator
@@ -1358,7 +1359,40 @@ class RandomGreedyOptimizer(PathOptimizer):
         self.rng = get_rng(seed)
         self.best_ssa_path = None
         self.best_flops = float("inf")
-        self._optimize_fn = get_optimize_random_greedy_track_flops(accel)
+        sub_optimize_fn = get_optimize_random_greedy_track_flops(accel)
+
+        # TODO: Remove This was just hacked in for testing
+        def mini_optimizer(
+            inputs,
+            output,
+            size_dict,
+            ntrials=1,
+            seed=None,
+            simplify=True,
+            use_ssa=False,
+        ):
+            best_cost = math.inf
+            best_path = None
+            for i in range(ntrials):
+                temp = 2 ** random.uniform(math.log2(0.001), math.log2(1))
+                path, cost = sub_optimize_fn(  # type: ignore
+                    inputs,
+                    output,
+                    size_dict,
+                    ntrials=1,
+                    seed=seed,
+                    costmod=random.uniform(0, 50),
+                    temperature=temp,
+                    simplify=simplify,
+                    use_ssa=use_ssa,
+                )
+
+                if cost < best_cost:
+                    best_cost = cost
+                    best_path = path
+            return best_path, best_cost
+
+        self._optimize_fn = mini_optimizer
 
         if (parallel == "auto") and (
             self._optimize_fn is not optimize_random_greedy_track_flops
@@ -1374,8 +1408,9 @@ class RandomGreedyOptimizer(PathOptimizer):
     def maybe_update_defaults(self, **kwargs):
         # allow overriding of defaults
         opts = {
-            "costmod": self.costmod,
-            "temperature": self.temperature,
+            # TODO: Remove This was just hacked in for testing
+            # "costmod": self.costmod,
+            # "temperature": self.temperature,
             "simplify": self.simplify,
         }
         opts.update(kwargs)
@@ -1463,7 +1498,6 @@ def get_optimize_optimal(accel="auto"):
 
     if accel is False:
         return optimize_optimal
-
     raise ValueError(f"Unrecognized value for `accel`: {accel}.")
 
 
