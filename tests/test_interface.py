@@ -1,7 +1,7 @@
+import numpy as np
 import pytest
 
 import cotengra as ctg
-import numpy as np
 
 
 @pytest.mark.parametrize("optimize_type", ["preset", "list", "tuple"])
@@ -33,7 +33,8 @@ def test_array_contract_path_cache(optimize_type):
 
 
 @pytest.mark.parametrize("optimize_type", ["preset", "list", "tuple"])
-def test_array_contract_expression_cache(optimize_type):
+@pytest.mark.parametrize("strip_exponent", [False, True])
+def test_array_contract_expression_cache(optimize_type, strip_exponent):
     if optimize_type == "preset":
         optimize = "auto"
     elif optimize_type == "list":
@@ -49,6 +50,7 @@ def test_array_contract_expression_cache(optimize_type):
         shapes=shapes,
         cache=True,
         optimize=optimize,
+        strip_exponent=strip_exponent,
     )
     exprb = ctg.array_contract_expression(
         inputs,
@@ -56,6 +58,7 @@ def test_array_contract_expression_cache(optimize_type):
         shapes=shapes,
         cache=True,
         optimize=optimize,
+        strip_exponent=strip_exponent,
     )
     exprc = ctg.array_contract_expression(
         inputs,
@@ -63,14 +66,19 @@ def test_array_contract_expression_cache(optimize_type):
         shapes=shapes,
         cache=False,
         optimize=optimize,
+        strip_exponent=strip_exponent,
     )
     assert expra is exprb
     assert exprb is not exprc
     eq = ctg.utils.inputs_output_to_eq(inputs, output)
     xa = np.einsum(eq, *arrays)
     xb = expra(*arrays)
+    if strip_exponent:
+        xb = xb[0] * 10 ** xb[1]
     assert np.allclose(xa, xb)
     xc = expra(*arrays)
+    if strip_exponent:
+        xc = xc[0] * 10 ** xc[1]
     assert np.allclose(xa, xc)
 
 
@@ -104,3 +112,47 @@ def test_einsum_ellipses(eq, shapes):
     x = np.einsum(eq, *arrays)
     y = ctg.einsum(eq, *arrays)
     assert np.allclose(x, y)
+
+
+def test_slice_and_strip_exponent():
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        10, 3, 2, 2, 2, seed=42
+    )
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict, seed=42)
+
+    x0 = ctg.array_contract(arrays, inputs, output, size_dict=size_dict)
+    x1 = ctg.array_contract(
+        arrays,
+        inputs,
+        output,
+        size_dict=size_dict,
+        optimize=ctg.HyperOptimizer(
+            methods=["greedy"],
+            slicing_opts=dict(target_slices=2),
+            max_repeats=4,
+        ),
+    )
+    np.testing.assert_allclose(x0, x1)
+    x2 = ctg.array_contract(
+        arrays,
+        inputs,
+        output,
+        size_dict=size_dict,
+        strip_exponent=True,
+    )
+    x2 = x2[0] * 10 ** x2[1]
+    np.testing.assert_allclose(x0, x2)
+    x3 = ctg.array_contract(
+        arrays,
+        inputs,
+        output,
+        size_dict=size_dict,
+        optimize=ctg.HyperOptimizer(
+            methods=["greedy"],
+            slicing_opts=dict(target_slices=2),
+            max_repeats=4,
+        ),
+        strip_exponent=True,
+    )
+    x3 = x3[0] * 10 ** x3[1]
+    np.testing.assert_allclose(x0, x3)

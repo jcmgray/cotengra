@@ -103,10 +103,13 @@ test_case_eqs = [
 @pytest.mark.parametrize(
     "dtype", ("float32", "float64", "complex64", "complex128")
 )
-def test_basic_equations(eq, dtype):
+@pytest.mark.parametrize("strip_exponent", [False, True])
+def test_basic_equations(eq, dtype, strip_exponent):
     arrays = ctg.utils.make_arrays_from_eq(eq, dtype=dtype)
     x = np.einsum(eq, *arrays)
-    y = ctg.einsum(eq, *arrays)
+    y = ctg.einsum(eq, *arrays, strip_exponent=strip_exponent)
+    if strip_exponent:
+        y = y[0] * 10**y[1]
     rtol = 5e-3 if dtype in ("float32", "complex64") else 5e-6
     assert_allclose(x, y, rtol=rtol)
 

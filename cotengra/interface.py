@@ -5,17 +5,17 @@ import functools
 import autoray as ar
 
 from .core import ContractionTree, ContractionTreeCompressed
+from .oe import (
+    get_path_fn,
+    opt_einsum_installed,
+    register_path_fn,
+)
 from .utils import (
     canonicalize_inputs,
     find_output_from_inputs,
     inputs_output_to_eq,
     parse_einsum_input,
     shapes_inputs_to_size_dict,
-)
-from .oe import (
-    get_path_fn,
-    opt_einsum_installed,
-    register_path_fn,
 )
 
 _PRESETS_PATH = {}
@@ -546,11 +546,20 @@ def _array_contract_expression_with_constants(
     return fn
 
 
+def _wrap_strip_exponent_final(fn):
+    @functools.wraps(fn)
+    def fn_stripped(*args, **kwargs):
+        return fn(*args, **kwargs), 0.0
+
+    return fn_stripped
+
+
 def _build_expression(
     inputs,
     output=None,
     size_dict=None,
     optimize="auto",
+    strip_exponent=False,
     implementation=None,
     prefer_einsum=False,
     autojit=False,
@@ -593,6 +602,9 @@ def _build_expression(
             def fn(*arrays, backend=None):
                 return ar.do("einsum", eq, arrays[0], like=backend)
 
+        if strip_exponent:
+            fn = _wrap_strip_exponent_final(fn)
+
     else:
         # get the contraction tree
         tree = array_contract_tree(
@@ -606,6 +618,7 @@ def _build_expression(
         if not tree.sliced_inds:
             # can extract pure sliced contraction function, forget tree
             fn = tree.get_contractor(
+                strip_exponent=strip_exponent,
                 autojit=autojit,
                 prefer_einsum=prefer_einsum,
                 implementation=implementation,
@@ -614,6 +627,7 @@ def _build_expression(
             # can't extract pure sliced contraction function yet...
             fn = Variadic(
                 tree.contract,
+                strip_exponent=strip_exponent,
                 autojit=autojit,
                 prefer_einsum=prefer_einsum,
                 implementation=implementation,
@@ -764,6 +778,7 @@ def array_contract(
     inputs,
     output=None,
     optimize="auto",
+    strip_exponent=False,
     cache_expression=True,
     backend=None,
     **kwargs,
@@ -790,6 +805,11 @@ def array_contract(
             - An explicit ``ContractionTree`` instance.
 
         If the optimizer provides sliced indices they will be used.
+    strip_exponent : bool, optional
+            If ``True``, eagerly strip the exponent (in log10) from
+            intermediate tensors to control numerical problems from leaving the
+            range of the datatype. This method then returns the scaled
+            'mantissa' output array and the exponent separately.
     cache_expression : bool, optional
         If ``True``, cache the expression used to contract the arrays. This
         negates the overhead of pathfinding and building the expression when
@@ -801,9 +821,10 @@ def array_contract(
     kwargs
         Passed to :func:`~cotengra.interface.array_contract_expression`.
 
-    Returns
-    -------
-    array_like
+    array_like or (array_like, scalar)
+        The result of the contraction. If ``strip_exponent`` is ``True``, the
+        result is a tuple of the output array mantissae and the exponent
+        (in log10).
 
     See Also
     --------
@@ -815,6 +836,7 @@ def array_contract(
         output,
         shapes=shapes,
         optimize=optimize,
+        strip_exponent=strip_exponent,
         cache=cache_expression,
         **kwargs,
     )
@@ -988,6 +1010,7 @@ def einsum_expression(
 def einsum(
     *args,
     optimize="auto",
+    strip_exponent=False,
     cache_expression=True,
     backend=None,
     **kwargs,
@@ -1012,6 +1035,11 @@ def einsum(
             - An explicit ``ContractionTree`` instance.
 
         If the optimizer provides sliced indices they will be used.
+    strip_exponent : bool, optional
+        If ``True``, eagerly strip the exponent (in log10) from intermediate
+        tensors to control numerical problems from leaving the range of the
+        datatype. This method then returns the scaled 'mantissa' output array
+        and the exponent separately.
     cache_expression : bool, optional
         If ``True``, cache the expression used to contract the arrays. This
         negates the overhead of pathfinding and building the expression when
@@ -1025,7 +1053,10 @@ def einsum(
 
     Returns
     -------
-    array_like
+    array_like or (array_like, scalar)
+        The result of the contraction. If ``strip_exponent`` is ``True``, the
+        result is a tuple of the output array mantissae and the exponent
+        (in log10).
 
     See Also
     --------
@@ -1041,6 +1072,7 @@ def einsum(
         inputs,
         output,
         optimize=optimize,
+        strip_exponent=strip_exponent,
         cache_expression=cache_expression,
         backend=backend,
         **kwargs,
@@ -1071,7 +1103,10 @@ def ncon(arrays, indices, **kwargs):
 
     Returns
     -------
-    array_like
+    array_like or (array_like, scalar)
+        The result of the contraction. If ``strip_exponent`` is ``True``, the
+        result is a tuple of the output array mantissae and the exponent
+        (in log10).
     """
     inputs = []
     output = set()

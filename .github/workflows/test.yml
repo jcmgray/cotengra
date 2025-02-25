@@ -15,7 +15,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        # kahypar doesn't have a 3.12 build yet
         python-version: ['3.9', '3.12']
         env: [base]
         include:

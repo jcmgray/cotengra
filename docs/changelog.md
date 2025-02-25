@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.1 (unreleased)
+
+- [`ReusableHyperOptimizer`](cotengra.ReusableHyperOptimizer) and [`DiskDict`](cotengra.utils.DiskDict), allow splitting key into subdirectory structure for better performance. Enabled for new caches by default.
+- High level interface functions accept the `strip_exponent` kwarg, which eagerly strips a scaling exponent (log10) as the contraction proceeds, avoiding issues to do with very large or very small numeric values.
+
+
 ## v0.7.0 (2025-01-07)
 
 **Enhancements**

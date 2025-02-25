@@ -3052,8 +3052,10 @@ class ContractionTree:
             Prefer to use ``einsum`` for pairwise contractions, even if
             ``tensordot`` can perform the contraction.
         strip_exponent : bool, optional
-            If ``True``, the function will strip the exponent from the output
-            array and return it separately.
+            If ``True``, the function will eagerly strip the exponent (in
+            log10) from intermediate tensors to control numerical problems from
+            leaving the range of the datatype. This method then returns the
+            scaled 'mantissa' output array and the exponent separately.
         check_zero : bool, optional
             If ``True``, when ``strip_exponent=True``, explicitly check for
             zero-valued intermediates that would otherwise produce ``nan``,
