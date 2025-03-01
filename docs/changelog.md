@@ -2,8 +2,9 @@
 
 ## v0.7.1 (2025-02-24)
 
-- [`ReusableHyperOptimizer`](cotengra.ReusableHyperOptimizer) and [`DiskDict`](cotengra.utils.DiskDict), allow splitting key into subdirectory structure for better performance. Enabled for new caches by default.
+- [`ReusableHyperOptimizer`](cotengra.ReusableHyperOptimizer) and [`DiskDict`](cotengra.utils.DiskDict), allow splitting key into subdirectory structure (sharding) for better performance. Enabled for new caches by default.
 - High level interface functions accept the `strip_exponent` kwarg, which eagerly strips a scaling exponent (log10) as the contraction proceeds, avoiding issues to do with very large or very small numeric values.
+- add [`ReusableRandomGreedyOptimizer`](cotengra.ReusableRandomGreedyOptimizer) for reusing the same random greedy optimizer across multiple contractions, which is faster than creating a new one each time.
 
 
 ## v0.7.0 (2025-01-07)

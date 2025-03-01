@@ -3767,6 +3767,9 @@ class ContractionTreeCompressed(ContractionTree):
         progbar=False,
         **kwargs,
     ):
+        """Perform simulated annealing refinement of this *compressed*
+        contraction tree.
+        """
         from .pathfinders.path_compressed import WindowedOptimizer
 
         if minimize is None:

@@ -1,14 +1,16 @@
 """Basic optimization routines."""
 
-import math
-import heapq
 import bisect
 import functools
+import heapq
 import itertools
+import math
 
+from ..core import ContractionTree
 from ..oe import PathOptimizer
-from ..utils import get_rng, GumbelBatchedGenerator
-from ..parallel import parse_parallel_arg, get_n_workers
+from ..parallel import get_n_workers, parse_parallel_arg
+from ..reusable import ReusableOptimizer
+from ..utils import GumbelBatchedGenerator, get_rng
 
 
 def is_simplifiable(legs, appearances):
@@ -1331,6 +1333,8 @@ class RandomGreedyOptimizer(PathOptimizer):
         contraction path found so far.
     """
 
+    minimize = "flops"
+
     def __init__(
         self,
         max_repeats=32,
@@ -1358,6 +1362,7 @@ class RandomGreedyOptimizer(PathOptimizer):
         self.rng = get_rng(seed)
         self.best_ssa_path = None
         self.best_flops = float("inf")
+        self.tree = None
         self._optimize_fn = get_optimize_random_greedy_track_flops(accel)
 
         if (parallel == "auto") and (
@@ -1426,27 +1431,64 @@ class RandomGreedyOptimizer(PathOptimizer):
     def search(self, inputs, output, size_dict, **kwargs):
         from ..core import ContractionTree
 
-        return ContractionTree.from_path(
+        ssa_path = self.ssa_path(
             inputs,
             output,
             size_dict,
-            ssa_path=self.ssa_path(
-                inputs,
-                output,
-                size_dict,
-                **self.maybe_update_defaults(**kwargs),
-            ),
+            **self.maybe_update_defaults(**kwargs),
         )
+        self.tree = ContractionTree.from_path(
+            inputs,
+            output,
+            size_dict,
+            ssa_path=ssa_path,
+        )
+        return self.tree
 
     def __call__(self, inputs, output, size_dict, **kwargs):
-        return ssa_to_linear(
-            self.ssa_path(
-                inputs,
-                output,
-                size_dict,
-                **self.maybe_update_defaults(**kwargs),
-            ),
+        ssa_path = self.ssa_path(
+            inputs,
+            output,
+            size_dict,
+            **self.maybe_update_defaults(**kwargs),
         )
+        return ssa_to_linear(ssa_path)
+
+
+class ReusableRandomGreedyOptimizer(ReusableOptimizer):
+    def _get_path_relevant_opts(self):
+        """Get a frozenset of the options that are most likely to affect the
+        path. These are the options that we use when the directory name is not
+        manually specified.
+        """
+        return [
+            ("max_repeats", 32),
+            ("costmod", (0.1, 4.0)),
+            ("temperature", (0.001, 1.0)),
+            ("simplify", True),
+        ]
+
+    def _get_suboptimizer(self):
+        return RandomGreedyOptimizer(**self._suboptimizer_kwargs)
+
+    def _deconstruct_tree(self, opt, tree):
+        return {
+            "path": tree.get_path(),
+            "score": opt.best_flops,
+            # store this for cache compatibility
+            "sliced_inds": (),
+        }
+
+    def _reconstruct_tree(self, inputs, output, size_dict, con):
+        tree = ContractionTree.from_path(
+            inputs,
+            output,
+            size_dict,
+            path=con["path"],
+            objective=self.minimize,
+        )
+
+        return tree
 
 
 @functools.lru_cache()

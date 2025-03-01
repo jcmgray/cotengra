@@ -48,7 +48,6 @@ from .hyperoptimizers.hyper import (
     ReusableHyperCompressedOptimizer,
     ReusableHyperOptimizer,
     get_hyper_space,
-    hash_contraction,
     list_hyper_functions,
 )
 from .interface import (
@@ -75,6 +74,7 @@ from .pathfinders.path_basic import (
     GreedyOptimizer,
     OptimalOptimizer,
     RandomGreedyOptimizer,
+    ReusableRandomGreedyOptimizer,
 )
 from .pathfinders.path_flowcutter import (
     FlowCutterOptimizer,
@@ -104,6 +104,9 @@ from .presets import (
     greedy_optimize,
     optimal_optimize,
     optimal_outer_optimize,
+)
+from .reusable import (
+    hash_contraction,
 )
 from .slicer import SliceFinder
 from .utils import (
@@ -200,6 +203,7 @@ __all__ = (
     "register_preset",
     "ReusableHyperCompressedOptimizer",
     "ReusableHyperOptimizer",
+    "ReusableRandomGreedyOptimizer",
     "SliceFinder",
     "UniformOptimizer",
     "utils",
