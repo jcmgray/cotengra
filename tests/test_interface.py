@@ -116,7 +116,12 @@ def test_einsum_ellipses(eq, shapes):
 
 def test_slice_and_strip_exponent():
     inputs, output, _, size_dict = ctg.utils.rand_equation(
-        10, 3, 2, 2, 2, seed=42
+        n=10,
+        reg=3,
+        n_out=2,
+        n_hyper_in=2,
+        n_hyper_out=2,
+        seed=42,
     )
     arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict, seed=42)
 

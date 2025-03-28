@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.2 (unreleased)
+
+**Breaking Changes**
+
+- When contracting with slices and `strip_exponent` enabled, each slice result is returned with the exponent separatly, rather than matching the first, these are are now combined in [`gather_slices`](cotengra.ContractionTree.gather_slices).
+
+
 ## v0.7.1 (2025-02-24)
 
 - [`ReusableHyperOptimizer`](cotengra.ReusableHyperOptimizer) and [`DiskDict`](cotengra.utils.DiskDict), allow splitting key into subdirectory structure (sharding) for better performance. Enabled for new caches by default.

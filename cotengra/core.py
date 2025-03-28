@@ -133,6 +133,35 @@ def get_slice_strides(sliced_inds):
     return strides
 
 
+def add_maybe_exponent_stripped(x, y):
+    """Add two arrays, or tuples of (array, exponent) together in a stable
+    and branchless way.
+    """
+    xistup = isinstance(x, tuple)
+    yistup = isinstance(y, tuple)
+    if not (xistup or yistup):
+        # simple sum without exponent
+        return x + y
+
+    if xistup:
+        xm, xe = x
+    else:
+        xm = x
+        xe = 0.0
+
+    if yistup:
+        ym, ye = y
+    else:
+        ym = y
+        ye = 0.0
+
+    # perform branchless for jit etc.
+    e = max(xe, ye)
+    m = xm * 10 ** (xe - e) + ym * 10 ** (ye - e)
+
+    return (m, e)
+
+
 class ContractionTree:
     """Binary tree representing a tensor network contraction.
 
@@ -491,7 +520,7 @@ class ContractionTree:
         """
         if int(path is None) + int(ssa_path is None) != 1:
             raise ValueError(
-                "Exactly one of ``path`` or ``ssa_path`` must be " "supplied."
+                "Exactly one of ``path`` or ``ssa_path`` must be supplied."
             )
 
         if ssa_path is not None:
@@ -3163,20 +3192,7 @@ class ContractionTree:
             check_zero=check_zero,
             progbar=progbar,
         )
-        result = fn(*arrays, backend=backend)
-
-        # handle exponent outside of potential jit
-        if isinstance(strip_exponent, dict):
-            result, exponent = result
-            if "exponent" not in strip_exponent:
-                # set the exponent (e.g. first slice)
-                strip_exponent["exponent"] = exponent
-            else:
-                # match the exponent (e.g. subsequent slices)
-                target = strip_exponent["exponent"]
-                result = result * 10 ** (exponent - target)
-
-        return result
+        return fn(*arrays, backend=backend)
 
     def slice_key(self, i, strides=None):
         """Get the combination of sliced index values for overall slice ``i``.
@@ -3245,7 +3261,7 @@ class ContractionTree:
 
         if not output_pos:
             # we can just sum everything
-            return functools.reduce(operator.add, slices)
+            return functools.reduce(add_maybe_exponent_stripped, slices)
 
         # first we sum over non-output sliced indices
         chunks = {}
@@ -3253,22 +3269,37 @@ class ContractionTree:
             key_slice = self.slice_key(i)
             key = tuple(key_slice[ix] for ix in output_pos)
             try:
-                chunks[key] = chunks[key] + s
+                chunks[key] = add_maybe_exponent_stripped(chunks[key], s)
             except KeyError:
                 chunks[key] = s
 
+        if isinstance(next(iter(chunks.values())), tuple):
+            # have stripped exponents, need to scale to largest
+            emax = max(v[1] for v in chunks.values())
+            chunks = {
+                k: mi * 10 ** (ei - emax) for k, (mi, ei) in chunks.items()
+            }
+        else:
+            emax = None
+
         # then we stack these summed chunks over output sliced indices
-        def recursively_stack_chunks(loc, rem):
-            if not rem:
+        def recursively_stack_chunks(loc, remaining):
+            if not remaining:
                 return chunks[loc]
             arrays = [
-                recursively_stack_chunks(loc + (d,), rem[1:])
-                for d in self.sliced_inds[rem[0]].sliced_range
+                recursively_stack_chunks(loc + (d,), remaining[1:])
+                for d in self.sliced_inds[remaining[0]].sliced_range
             ]
-            axes = output_pos[rem[0]] - len(loc)
+            axes = output_pos[remaining[0]] - len(loc)
             return do("stack", arrays, axes, like=backend)
 
-        return recursively_stack_chunks((), tuple(output_pos))
+        result = recursively_stack_chunks((), tuple(output_pos))
+
+        if emax is not None:
+            # strip_exponent was True, return the exponent separately
+            return result, emax
+
+        return result
 
     def gen_output_chunks(
         self, arrays, with_key=False, progbar=False, **contract_opts
@@ -3401,10 +3432,6 @@ class ContractionTree:
                 progbar=progbar,
             )
 
-        if strip_exponent:
-            # first slice will set the exponent for others to match
-            strip_exponent = {}
-
         slices = (
             self.contract_slice(
                 arrays,
@@ -3420,12 +3447,7 @@ class ContractionTree:
             for i in range(self.multiplicity)
         )
 
-        result = self.gather_slices(slices, backend=backend, progbar=progbar)
-
-        if strip_exponent:
-            return result, strip_exponent["exponent"]
-
-        return result
+        return self.gather_slices(slices, backend=backend, progbar=progbar)
 
     def contract_mpi(self, arrays, comm=None, root=None, **kwargs):
         """Contract the slices of this tree and sum them in parallel -
@@ -3675,7 +3697,7 @@ class ContractionTreeCompressed(ContractionTree):
         """
         if int(path is None) + int(ssa_path is None) != 1:
             raise ValueError(
-                "Exactly one of ``path`` or ``ssa_path`` must be " "supplied."
+                "Exactly one of ``path`` or ``ssa_path`` must be supplied."
             )
 
         if path is not None:
