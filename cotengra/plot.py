@@ -395,6 +395,7 @@ def plot_parameters_parallel(
     d = Drawing(**drawing_opts)
 
     # draw the curves through the mapped points
+    # XXX: use np.nanquantile to map score colors, ignoring outliers
     cmap = mpl.colormaps.get_cmap(colormap)
     linewidth = logxextrapolate((1, 2), (1000, 0.5), nrow)
     alpha = logxextrapolate((1, 1.0), (1000, 0.25), nrow)

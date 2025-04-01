@@ -1,11 +1,11 @@
 # Changelog
 
-## v0.7.2 (unreleased)
+## v0.7.2 (2025-04-01)
 
 **Breaking Changes**
 
-- When contracting with slices and `strip_exponent` enabled, each slice result is returned with the exponent separatly, rather than matching the first, these are are now combined in [`gather_slices`](cotengra.ContractionTree.gather_slices).
-
+- When contracting with slices and `strip_exponent` enabled, each slice result is returned with the exponent separately, rather than matching the first, these are are now combined in [`gather_slices`](cotengra.ContractionTree.gather_slices).
+- If `check_zero=True`, `strip_exponent=True`, and a zero slice is encountered, the returned exponent will now be `float('-inf')` rather than `0.0` for compatbility with the above.
 
 ## v0.7.1 (2025-02-24)
 
