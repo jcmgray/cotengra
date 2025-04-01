@@ -792,7 +792,7 @@ class Contractor:
                     "max", do("abs", p_array, like=backend), like=backend
                 )
                 if check_zero and float(factor) == 0.0:
-                    return 0.0, 0.0
+                    return 0.0, float("-inf")
                 exponent = exponent + do("log10", factor, like=backend)
                 p_array = p_array / factor
 
