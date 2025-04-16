@@ -2711,15 +2711,27 @@ class ContractionTree:
 
     def get_path(self, order=None):
         """Generate a standard path from the contraction tree."""
-        path = []
-        terms = list(self.gen_leaves())
+        from bisect import bisect_left
 
-        for parent, l, r in self.traverse(order=order):
-            i, j = sorted((terms.index(l), terms.index(r)))
-            terms.pop(j)
-            terms.pop(i)
+        ssa = self.N
+        ssas = list(range(ssa))
+        node_to_ssa = dict(zip(self.gen_leaves(), ssas))
+        path = []
+
+        for parent, left, right in self.traverse(order=order):
+            # map nodes to ssas
+            lssa = node_to_ssa[left]
+            rssa = node_to_ssa[right]
+            # map ssas to linear indices, using bisection
+            i, j = sorted((bisect_left(ssas, lssa), bisect_left(ssas, rssa)))
+            # 'contract' nodes
+            ssas.pop(j)
+            ssas.pop(i)
             path.append((i, j))
-            terms.append(parent)
+            ssas.append(ssa)
+            # update mapping
+            node_to_ssa[parent] = ssa
+            ssa += 1
 
         return tuple(path)
 
