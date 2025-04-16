@@ -830,6 +830,11 @@ def get_symbol_map(inputs):
     return symbol_map
 
 
+Contraction = collections.namedtuple(
+    "Contraction", ("inputs", "output", "shapes", "size_dict")
+)
+
+
 def rand_equation(
     n, reg, n_out=0, n_hyper_in=0, n_hyper_out=0, d_min=2, d_max=3, seed=None
 ):
@@ -907,7 +912,7 @@ def rand_equation(
 
     rng.shuffle(output)
 
-    return inputs, output, shapes, size_dict
+    return Contraction(inputs, output, shapes, size_dict)
 
 
 def tree_equation(
@@ -944,7 +949,7 @@ def tree_equation(
     output = rng.sample(list(size_dict), n_outer)
     shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
 
-    return inputs, output, shapes, size_dict
+    return Contraction(inputs, output, shapes, size_dict)
 
 
 def networkx_graph_to_equation(
@@ -988,7 +993,7 @@ def networkx_graph_to_equation(
     output = []
     shapes = [tuple(size_dict[ix] for ix in term) for term in inputs]
 
-    return inputs, output, shapes, size_dict
+    return Contraction(inputs, output, shapes, size_dict)
 
 
 def randreg_equation(
@@ -1076,7 +1081,7 @@ def perverse_equation(
     n_outer = min(n_outer, num_indices)
     output = rng.sample(indices, n_outer)
 
-    return inputs, output, shapes, size_dict
+    return Contraction(inputs, output, shapes, size_dict)
 
 
 def rand_tree(
@@ -1093,7 +1098,7 @@ def rand_tree(
     """Get a random contraction tree (note, not a tree like equation)."""
     from .interface import array_contract_tree
 
-    inputs, output, _, size_dict = rand_equation(
+    con = rand_equation(
         n,
         reg,
         n_out=n_out,
@@ -1104,7 +1109,9 @@ def rand_tree(
         seed=seed,
     )
 
-    tree = array_contract_tree(inputs, output, size_dict, optimize=optimize)
+    tree = array_contract_tree(
+        con.inputs, con.output, con.size_dict, optimize=optimize
+    )
     return tree
 
 
@@ -1171,7 +1178,7 @@ def lattice_equation(dims, cyclic=False, d_min=2, d_max=None, seed=None):
 
     shapes = tuple(tuple(size_dict[ix] for ix in term) for term in inputs)
 
-    return inputs, output, shapes, size_dict
+    return Contraction(inputs, output, shapes, size_dict)
 
 
 def find_output_str(lhs):

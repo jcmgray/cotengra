@@ -4,7 +4,6 @@ import collections
 import functools
 import itertools
 import math
-import operator
 import warnings
 from dataclasses import dataclass
 from typing import Optional
@@ -550,6 +549,7 @@ class ContractionTree:
                 warnings.warn(
                     "Path was not complete - contracting all remaining. "
                     "You can silence this warning with `autocomplete=True`."
+                    "Or produce an incomplete tree with `autocomplete=False`."
                 )
 
             tree.contract_nodes(nodes, check=check)
@@ -657,35 +657,60 @@ class ContractionTree:
 
     @classmethod
     def from_edge_path(
-        cls, edge_path, inputs, output, size_dict, check=False, **kwargs
+        cls,
+        edge_path,
+        inputs,
+        output,
+        size_dict,
+        optimize="auto-hq",
+        autocomplete="auto",
+        check=False,
+        **kwargs,
     ):
         """Create a ``ContractionTree`` from an edge elimination ordering."""
         tree = cls(inputs, output, size_dict, **kwargs)
-        nodes = list(tree.gen_leaves())
 
-        for e in edge_path:
-            # filter out the subgraph induced by edge `e` (generally a pair)
-            new_terms, merge = [], []
-            for node in nodes:
-                term = union_it(tree.node_to_terms(node))
-                if e in term:
-                    merge.append(node)
-                else:
-                    new_terms.append(node)
+        # for efficiency track which nodes each index appears on
+        indmap = {}
+        for node in tree.gen_leaves():
+            for ix in tree.get_legs(node):
+                indmap.setdefault(ix, oset()).add(node)
 
-            # contract the subgraph
-            if merge:
-                nodes = new_terms + [tree.contract_nodes(merge, check=check)]
+        for ix in edge_path:
+            # get all nodes with index
+            nodes = indmap.pop(ix)
+            if not nodes:
+                # this happens e.g. if index already
+                # contracted alongside another
+                continue
 
-        # make sure we are generating a full contraction tree
-        nt = len(nodes)
-        if nt > 1:
-            # this seems to happen when the initial contraction contains a
-            # scalar? Or disconnected subgraphs?
-            warnings.warn(
-                f"Ended up with {nt} nodes - contracting all remaining."
+            # contract the nodes
+            parent = tree.contract_nodes(
+                nodes,
+                check=check,
+                optimize=optimize,
             )
-            tree.contract_nodes(nodes, check=check)
+
+            # remove children from lookup
+            for node in nodes:
+                for jx in tree.get_legs(node):
+                    if jx != ix:
+                        indmap[jx].remove(node)
+
+            # add new parent to lookup
+            for jx in tree.get_legs(parent):
+                indmap.setdefault(jx, oset()).add(parent)
+
+        if autocomplete and len(tree.children) != tree.N - 1:
+            if autocomplete == "auto":
+                # warn that we are completing
+                warnings.warn(
+                    "Path was not complete - contracting all remaining. "
+                    "You can silence this warning with `autocomplete=True`."
+                    "Or produce an incomplete tree with `autocomplete=False`."
+                )
+
+            tree.contract_nodes(tree.children.keys(), check=check)
 
         return tree
 
@@ -3720,6 +3745,7 @@ class ContractionTreeCompressed(ContractionTree):
                 warnings.warn(
                     "Path was not complete - contracting all remaining. "
                     "You can silence this warning with `autocomplete=True`."
+                    "Or produce an incomplete tree with `autocomplete=False`."
                 )
 
             tree.autocomplete(optimize="greedy-compressed")

@@ -1,4 +1,5 @@
 import pytest
+
 import cotengra as ctg
 
 
@@ -354,3 +355,24 @@ def test_slice_and_restore_preprocessed_inds(seed):
     assert len(tree.preprocessing) == 4
     assert tree.contract(arrays) == pytest.approx(xe)
     assert tree.contract_stats() == stats0
+
+
+@pytest.mark.parametrize("n", [3, 10, 30])
+@pytest.mark.parametrize("seed", range(4))
+def test_tree_from_edge_path(n, seed):
+    import random
+
+    con = ctg.utils.rand_equation(n, 3, 2, 2, 2, seed=seed)
+    indices = list(con.size_dict)
+    rng = random.Random(seed)
+    rng.shuffle(indices)
+
+    tree = ctg.ContractionTree.from_edge_path(
+        indices,
+        con.inputs,
+        con.output,
+        con.size_dict,
+        check=True,
+    )
+
+    assert tree.is_complete()
