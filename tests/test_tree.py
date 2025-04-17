@@ -367,11 +367,11 @@ def test_tree_from_edge_path(n, seed):
     rng = random.Random(seed)
     rng.shuffle(indices)
 
-    tree = ctg.ContractionTree.from_edge_path(
-        indices,
+    tree = ctg.ContractionTree.from_path(
         con.inputs,
         con.output,
         con.size_dict,
+        edge_path=indices,
         check=True,
     )
 

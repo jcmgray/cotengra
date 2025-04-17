@@ -75,6 +75,10 @@ from .pathfinders.path_basic import (
     OptimalOptimizer,
     RandomGreedyOptimizer,
     ReusableRandomGreedyOptimizer,
+    edge_path_to_linear,
+    edge_path_to_ssa,
+    linear_to_ssa,
+    ssa_to_linear,
 )
 from .pathfinders.path_flowcutter import (
     FlowCutterOptimizer,
@@ -147,6 +151,8 @@ __all__ = (
     "ContractionTree",
     "ContractionTreeCompressed",
     "ContractionTreeMulti",
+    "edge_path_to_linear",
+    "edge_path_to_ssa",
     "einsum_expression",
     "einsum_tree",
     "einsum",
@@ -170,6 +176,7 @@ __all__ = (
     "HyperGraph",
     "HyperMultiOptimizer",
     "HyperOptimizer",
+    "linear_to_ssa",
     "list_hyper_functions",
     "ncon",
     "optimal_optimize",
@@ -205,6 +212,7 @@ __all__ = (
     "ReusableHyperOptimizer",
     "ReusableRandomGreedyOptimizer",
     "SliceFinder",
+    "ssa_to_linear",
     "UniformOptimizer",
     "utils",
 )

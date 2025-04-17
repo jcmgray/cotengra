@@ -67,8 +67,8 @@ class FlowCutterOptimizer(PathOptimizer):
                     )
 
         self.compute_edge_path(self.lg)
-        self.tree = ContractionTree.from_edge_path(
-            self.edge_path, inputs, output, size_dict
+        self.tree = ContractionTree.from_path(
+            inputs, output, size_dict, edge_path=self.edge_path
         )
 
         return self.tree

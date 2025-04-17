@@ -104,8 +104,8 @@ class QuickBBOptimizer(PathOptimizer):
             with open(ofile.name, "r") as f:
                 self.outfile = f.read()
 
-        self.tree = ContractionTree.from_edge_path(
-            self.edge_path, inputs, output, size_dict
+        self.tree = ContractionTree.from_path(
+            inputs, output, size_dict, edge_path=self.edge_path
         )
 
         return self.tree

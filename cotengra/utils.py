@@ -1434,7 +1434,20 @@ def find_output_from_inputs(inputs):
     return tuple(once)
 
 
-def canonicalize_inputs(inputs, output=None, shapes=None, size_dict=None):
+def is_edge_path(optimize):
+    """Check if the optimize path is a list of indices or a single string."""
+    return isinstance(optimize, (list, tuple)) and isinstance(
+        optimize[0], (int, str)
+    )
+
+
+def canonicalize_inputs(
+    inputs,
+    output=None,
+    shapes=None,
+    size_dict=None,
+    optimize=None,
+):
     """Return a canonicalized version of the inputs and output, with the
     indices labelled from 'a', 'b', 'c', ... according to the order they appear
     in the equation.
@@ -1490,7 +1503,16 @@ def canonicalize_inputs(inputs, output=None, shapes=None, size_dict=None):
     else:
         new_size_dict = None
 
-    return new_inputs, new_output, new_size_dict
+    if optimize is not None:
+        if is_edge_path(optimize):
+            # edge path, need to update index names
+            new_optimize = tuple(ind_map[ind] for ind in optimize)
+        else:
+            new_optimize = optimize
+    else:
+        new_optimize = None
+
+    return new_inputs, new_output, new_size_dict, new_optimize
 
 
 def convert_from_interleaved(args):

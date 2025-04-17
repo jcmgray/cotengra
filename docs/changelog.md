@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.7.3 (unreleased)
+
+**Enhancements**
+
+- Allow manual path specification as edge path, e.g. `optimize=['b', 'c', 'a']`
+- Add [`edge_path_to_ssa`](cotengra.pathfinders.path_basic.edge_path_to_ssa) and [`edge_path_to_linear`](cotengra.pathfinders.path_basic.edge_path_to_linear) for converting edge paths to SSA and linear paths respectively.
+- [`ContractionTree.from_path`](cotengra.ContractionTree.from_path): allow an `edge_path` argument. Deprecate `ContractionTree.from_edge_path` method in favor of this.
+- Speed up [`ContractionTree.get_path`](cotengra.ContractionTree.get_path) to ~ n log(n).
+
+
 ## v0.7.2 (2025-04-01)
 
 **Breaking Changes**

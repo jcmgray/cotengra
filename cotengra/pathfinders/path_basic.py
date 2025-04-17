@@ -823,13 +823,92 @@ def ssa_to_linear(ssa_path, N=None):
     path = []
     ssa = N
     for scon in ssa_path:
-        con = sorted([bisect.bisect_left(ids, s) for s in scon])
+        con = [bisect.bisect_left(ids, s) for s in scon]
+        con.sort()
         for j in reversed(con):
             ids.pop(j)
         ids.append(ssa)
         path.append(con)
         ssa += 1
     return path
+
+
+def edge_path_to_ssa(edge_path, inputs):
+    """Convert a path specified by a sequence of edge indices to a path with
+    tuples of single static assignment (SSA) indices.
+
+    Parameters
+    ----------
+    edge_path : sequence[str | int]
+        The path specified by a sequence of edge indices.
+    inputs : tuple[tuple[str | int]]
+        The indices of each input tensor.
+
+    Returns
+    -------
+    path : tuple[tuple[int]]
+        The contraction path in static single assignment (SSA) form.
+    """
+
+    N = len(inputs)
+    # record which ssas each index appears on
+    ind_to_ssas = {}
+    # track which indices appear on which term
+    ssa_to_inds = {}
+    # populate maps
+    for i, term in enumerate(inputs):
+        for ix in term:
+            ind_to_ssas.setdefault(ix, set()).add(i)
+        ssa_to_inds[i] = set(term)
+
+    ssa_path = []
+    ssa = N
+    for ix in edge_path:
+        # get ssas containing ix -> contract these
+        scon = ind_to_ssas.pop(ix)
+        if len(scon) < 2:
+            # nothing to contract, e.g. index contracted alongside another
+            continue
+
+        # update map of where indices are
+        new_term = set()
+        for s in scon:
+            for jx in ssa_to_inds.pop(s):
+                # only need to update remaining indices
+                jx_ssas = ind_to_ssas.get(jx, None)
+                if jx_ssas is not None:
+                    # remove children
+                    jx_ssas.remove(s)
+                    # add new parent
+                    jx_ssas.add(ssa)
+                    # calc new term (might have extraneous indices)
+                    new_term.add(jx)
+
+        ssa_to_inds[ssa] = new_term
+        ssa_path.append(tuple(sorted(scon)))
+        ssa += 1
+
+    return tuple(ssa_path)
+
+
+def edge_path_to_linear(edge_path, inputs):
+    """Convert a path specified by a sequence of edge indices to a path with
+    recycled linear ids.
+
+    Parameters
+    ----------
+    edge_path : sequence[str | int]
+        The path specified by a sequence of edge indices.
+    inputs : tuple[tuple[str | int]]
+        The indices of each input tensor.
+
+    Returns
+    -------
+    path : tuple[tuple[int]]
+        The contraction path in recycled linear id format.
+    """
+    ssa_path = edge_path_to_ssa(edge_path, inputs)
+    return ssa_to_linear(ssa_path, len(inputs))
 
 
 def is_ssa_path(path, nterms):
