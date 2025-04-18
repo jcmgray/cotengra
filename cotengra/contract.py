@@ -849,14 +849,11 @@ class CuQuantumContractor:
         self.network = None
 
     def setup(self, *arrays):
-        from cuquantum import cutensornet as cutn
-        from cuquantum import Network, NetworkOptions
+        from cuquantum import Network
 
-        self.handle = cutn.create()
         self.network = Network(
             self.eq,
             *arrays,
-            options=NetworkOptions(handle=self.handle),
         )
         self.network.contract_path(**self.kwargs)
         if self.autotune:
@@ -882,12 +879,8 @@ class CuQuantumContractor:
         return self.network.contract()
 
     def __del__(self):
-        from cuquantum import cutensornet as cutn
-
         if self.network is not None:
             self.network.free()
-        if self.handle is not None:
-            cutn.destroy(self.handle)
 
 
 def make_contractor(
