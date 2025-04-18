@@ -849,7 +849,13 @@ class CuQuantumContractor:
         self.network = None
 
     def setup(self, *arrays):
-        from cuquantum import Network
+        import cuquantum
+        if hasattr(cuquantum, 'bindings'):
+            # cuquantum-python >= 25.03
+            from cuquantum.tensornet import Network
+        else:
+            # for cuquantum < 25.03
+            from cuquantum import Network
 
         self.network = Network(
             self.eq,
