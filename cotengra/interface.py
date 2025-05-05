@@ -34,8 +34,8 @@ def register_preset(
 
     Parameters
     ----------
-    preset : str
-        The name of the preset.
+    preset : str or Sequence[str]
+        The name of the preset, or a sequence of alias names.
     optimizer : callable
         The optimizer function that returns a path.
     optimizer_tree : callable, optional
@@ -45,23 +45,29 @@ def register_preset(
     compressed : bool, optional
         If ``True``, the preset presents a compressed contraction optimizer.
     """
-    if optimizer is not None:
-        _PRESETS_PATH[preset] = optimizer
+    if isinstance(preset, (tuple, list)):
+        presets = preset
+    else:
+        presets = (preset,)
 
-        if register_opt_einsum == "auto":
-            register_opt_einsum = opt_einsum_installed
+    for preset in presets:
+        if optimizer is not None:
+            _PRESETS_PATH[preset] = optimizer
 
-        if register_opt_einsum:
-            try:
-                register_path_fn(preset, optimizer)
-            except KeyError:
-                pass
+            if register_opt_einsum == "auto":
+                register_opt_einsum = opt_einsum_installed
 
-    if optimizer_tree is not None:
-        _PRESETS_TREE[preset] = optimizer_tree
+            if register_opt_einsum:
+                try:
+                    register_path_fn(preset, optimizer)
+                except KeyError:
+                    pass
 
-    if compressed:
-        _COMPRESSED_PRESETS.add(preset)
+        if optimizer_tree is not None:
+            _PRESETS_TREE[preset] = optimizer_tree
+
+        if compressed:
+            _COMPRESSED_PRESETS.add(preset)
 
 
 @functools.lru_cache(None)

@@ -58,9 +58,6 @@ except ImportError:
         yield from dict.fromkeys(it)
 
 
-__all__ = ("groupby", "interleave", "unique")
-
-
 def deprecated(fn, old_name, new_name):
     def new_fn(*args, **kwargs):
         import warnings
@@ -1481,9 +1478,17 @@ def canonicalize_inputs(
         The canonicalized index size dictionary, ``None`` if ``size_dict`` or
         ``shapes`` was not provided.
     """
-    ind_map = collections.defaultdict(
-        map(get_symbol, itertools.count()).__next__
-    )
+
+    if isinstance(optimize, str) and optimize in ("edgesort", "ncon"):
+        # we'll need the new indices to have the same sorted order as
+        # the supplied indices, not sorted by first appearance
+        sorted_inds = sorted({ix for term in inputs for ix in term})
+        ind_map = {ix: get_symbol(i) for i, ix in enumerate(sorted_inds)}
+    else:
+        # we can just populate as the indices appear
+        ind_map = collections.defaultdict(
+            map(get_symbol, itertools.count()).__next__
+        )
 
     new_inputs = tuple(tuple(ind_map[ind] for ind in term) for term in inputs)
 

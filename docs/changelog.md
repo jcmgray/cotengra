@@ -5,6 +5,7 @@
 **Enhancements**
 
 - Allow manual path specification as edge path, e.g. `optimize=['b', 'c', 'a']`
+- Add `optimize="edgesort"` (aliased to `optimize="ncon"` too), which performs a contraction by contracting edges in *sorted* order, thus can be entirely specified by the graph labelling.
 - Add [`edge_path_to_ssa`](cotengra.pathfinders.path_basic.edge_path_to_ssa) and [`edge_path_to_linear`](cotengra.pathfinders.path_basic.edge_path_to_linear) for converting edge paths to SSA and linear paths respectively.
 - [`ContractionTree.from_path`](cotengra.ContractionTree.from_path): allow an `edge_path` argument. Deprecate `ContractionTree.from_edge_path` method in favor of this.
 - Speed up [`ContractionTree.get_path`](cotengra.ContractionTree.get_path) to ~ n log(n).

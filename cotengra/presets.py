@@ -19,6 +19,7 @@ from .pathfinders.path_basic import (
     OptimalOptimizer,
     get_optimize_optimal,
 )
+from .pathfinders.path_edgesort import EdgeSortOptimizer
 
 
 def estimate_optimal_hardness(inputs):
@@ -150,10 +151,6 @@ class AutoHQOptimizer(AutoOptimizer):
 
 auto_optimize = AutoOptimizer()
 auto_hq_optimize = AutoHQOptimizer()
-greedy_optimize = GreedyOptimizer()
-optimal_optimize = OptimalOptimizer()
-optimal_outer_optimize = OptimalOptimizer(search_outer=True)
-
 
 # these names overlap with opt_einsum, but won't override presets there
 register_preset(
@@ -166,26 +163,32 @@ register_preset(
     auto_hq_optimize,
     auto_optimize.search,
 )
+
+greedy_optimize = GreedyOptimizer()
+
 register_preset(
-    "greedy",
+    ["greedy", "eager", "opportunistic"],
     greedy_optimize,
     greedy_optimize.search,
 )
+
+optimal_optimize = OptimalOptimizer()
+
 register_preset(
-    "eager",
-    greedy_optimize,
-    greedy_optimize.search,
+    ["optimal", "dp", "dynamic-programming"],
+    optimal_optimize, optimal_optimize.search
 )
-register_preset(
-    "opportunistic",
-    greedy_optimize,
-    greedy_optimize.search,
-)
-register_preset("optimal", optimal_optimize, optimal_optimize.search)
-register_preset("dp", optimal_optimize, optimal_optimize.search)
-register_preset(
-    "dynamic-programming", optimal_optimize, optimal_optimize.search
-)
+
+optimal_outer_optimize = OptimalOptimizer(search_outer=True)
+
 register_preset(
     "optimal-outer", optimal_outer_optimize, optimal_outer_optimize.search
+)
+
+edgesort_optimize = EdgeSortOptimizer()
+
+register_preset(
+    ["edgesort", "ncon"],
+    edgesort_optimize,
+    edgesort_optimize.search,
 )

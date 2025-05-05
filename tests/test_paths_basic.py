@@ -208,3 +208,28 @@ def test_random_optimize():
         optimize="random",
     )
     assert tree.is_complete()
+
+
+def test_edgesort_optimize():
+    inputs, output, _, size_dict = ctg.utils.lattice_equation(
+        [4, 5], d_max=3, seed=42
+    )
+    tree = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize="edgesort",
+    )
+    assert tree.is_complete()
+
+
+def test_edgesort_optimize_manual_labelled_reverse():
+    # array_contract and friends canonicalize the equation letters by
+    # appearance by default, check the manual override to obey the supplied
+    # ordering works here:
+    tree = ctg.array_contract_tree(
+        inputs=[(3, 2), (2, 1), (1, 0)],
+        size_dict={0: 2, 1: 2, 2: 2, 3: 2},
+        optimize="edgesort",
+    )
+    assert tree.get_path() == ((1, 2), (0, 1))
