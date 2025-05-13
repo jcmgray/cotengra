@@ -168,7 +168,7 @@ def _find_path_explicit_path(inputs, output, size_dict, optimize):
     if isinstance(optimize, list):
         optimize = tuple(optimize)
 
-    if isinstance(optimize[0], (str, int)):
+    if optimize and isinstance(optimize[0], (str, int)):
         from .pathfinders.path_basic import edge_path_to_linear
 
         optimize = edge_path_to_linear(optimize, inputs)
@@ -301,7 +301,7 @@ def array_contract_path(
 
 
 def _find_tree_explicit(inputs, output, size_dict, optimize):
-    if isinstance(optimize[0], (str, int)):
+    if optimize and isinstance(optimize[0], (str, int)):
         return ContractionTree.from_path(
             inputs, output, size_dict, edge_path=optimize
         )

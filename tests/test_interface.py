@@ -161,3 +161,18 @@ def test_slice_and_strip_exponent():
     )
     x3 = x3[0] * 10 ** x3[1]
     np.testing.assert_allclose(x0, x3)
+
+
+def test_null_tree():
+    inputs = ((),)
+    output = ()
+    size_dict = {}
+    optimize = ()
+
+    tree = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict=size_dict,
+        optimize=optimize,
+    )
+    assert tree.N == 1

@@ -1433,8 +1433,10 @@ def find_output_from_inputs(inputs):
 
 def is_edge_path(optimize):
     """Check if the optimize path is a list of indices or a single string."""
-    return isinstance(optimize, (list, tuple)) and isinstance(
-        optimize[0], (int, str)
+    return (
+        isinstance(optimize, (list, tuple))
+        and optimize
+        and isinstance(optimize[0], (int, str))
     )
 
 
