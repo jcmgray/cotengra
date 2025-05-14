@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.4 (2025-05-13)
+
+**Bug fixes**
+
+- Fix and add egde case test for `optimize=()` - {issue}`55`
+
+
 ## v0.7.3 (2025-05-12)
 
 **Enhancements**
@@ -17,6 +24,7 @@
 
 - When contracting with slices and `strip_exponent` enabled, each slice result is returned with the exponent separately, rather than matching the first, these are are now combined in [`gather_slices`](cotengra.ContractionTree.gather_slices).
 - If `check_zero=True`, `strip_exponent=True`, and a zero slice is encountered, the returned exponent will now be `float('-inf')` rather than `0.0` for compatbility with the above.
+
 
 ## v0.7.1 (2025-02-24)
 
