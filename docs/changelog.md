@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.5 (unreleased)
+
+**Enhancements**
+
+- [`ContractionTree.print_contractions`](cotengra.ContractionTree.print_contractions): fix `show_brackets` option, show preprocessing steps with original inputs indices.
+
+
 ## v0.7.4 (2025-05-13)
 
 **Bug fixes**

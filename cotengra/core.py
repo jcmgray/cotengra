@@ -3005,7 +3005,22 @@ class ContractionTree:
 
     def print_contractions(self, sort=None, show_brackets=True):
         """Print each pairwise contraction, with colorized indices (if
-        `colorama` is installed), and other information.
+        `colorama` is installed), and other information. The color codes are:
+
+        - blue: index appears on left and is kept
+        - green: index appears on right and is kept
+        - red: contracted index: appears on left and is removed
+        - pink: batch index: appears on both sides and is kept
+
+        Parameters
+        ----------
+        sort : {'flops', 'size'}, optional
+            Sort the contractions by either the number of floating point
+            operations or the size of the intermediate tensor. By default the
+            contraction are show in the order they are performed.
+        show_brackets : bool, optional
+            Whether to show the brackets around contiguous sections of the same
+            type of indices.
         """
         try:
             from colorama import Fore
@@ -3023,7 +3038,10 @@ class ContractionTree:
 
         if self.has_preprocessing():
             for pi, eq in self.preprocessing.items():
-                print(f"{GREY}preprocessing {pi}: {RESET}{eq}")
+                # eq is with canonical indices, reinsert original inputs
+                replacer = dict(zip(eq.split("->")[0], self.inputs[pi]))
+                eq = "".join(replacer.get(c, c) for c in eq)
+                print(f"{GREY}preprocess input {pi}: {RESET}{eq}")
             print()
 
         for i, (p, l, r) in enumerate(self.traverse()):
@@ -3045,11 +3063,18 @@ class ContractionTree:
             else:
                 type_msg = "einsum"
 
+            kpt_brck_l = "(" if show_brackets else ""
+            kpt_brck_r = ")" if show_brackets else ""
+            con_brck_l = "[" if show_brackets else ""
+            con_brck_r = "]" if show_brackets else ""
+            hyp_brck_l = "{" if show_brackets else ""
+            hyp_brck_r = "}" if show_brackets else ""
+
             pa = (
                 "".join(
-                    PINK + f"{{{ix}}}"
+                    PINK + f"{hyp_brck_l}{ix}{hyp_brck_r}"
                     if (ix in l_legs) and (ix in r_legs)
-                    else GREEN + f"({ix})"
+                    else GREEN + f"{kpt_brck_l}{ix}{kpt_brck_r}"
                     if ix in r_legs
                     else BLUE + ix
                     for ix in p_inds
@@ -3059,9 +3084,9 @@ class ContractionTree:
             )
             la = (
                 "".join(
-                    PINK + f"{{{ix}}}"
+                    PINK + f"{hyp_brck_l}{ix}{hyp_brck_r}"
                     if (ix in p_legs) and (ix in r_legs)
-                    else RED + f"[{ix}]"
+                    else RED + f"{con_brck_l}{ix}{con_brck_r}"
                     if ix in r_legs
                     else BLUE + ix
                     for ix in l_inds
@@ -3071,9 +3096,9 @@ class ContractionTree:
             )
             ra = (
                 "".join(
-                    PINK + f"{{{ix}}}"
+                    PINK + f"{hyp_brck_l}{ix}{hyp_brck_r}"
                     if (ix in p_legs) and (ix in l_legs)
-                    else RED + f"[{ix}]"
+                    else RED + f"{con_brck_l}{ix}{con_brck_r}"
                     if ix in l_legs
                     else GREEN + ix
                     for ix in r_inds
