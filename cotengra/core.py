@@ -3009,8 +3009,11 @@ class ContractionTree:
 
         - blue: index appears on left and is kept
         - green: index appears on right and is kept
-        - red: contracted index: appears on left and is removed
+        - red: contracted index: appears on both sides and is removed
         - pink: batch index: appears on both sides and is kept
+
+        Any trivial indices that appear only on one term and not in the output
+        are removed and shown by the preprocessing steps.
 
         Parameters
         ----------
