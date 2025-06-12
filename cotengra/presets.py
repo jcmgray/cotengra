@@ -1,5 +1,6 @@
 """Preset configured optimizers."""
 
+import functools
 import threading
 
 from .core import ContractionTree
@@ -149,19 +150,50 @@ class AutoHQOptimizer(AutoOptimizer):
         super().__init__(**kwargs)
 
 
-auto_optimize = AutoOptimizer()
-auto_hq_optimize = AutoHQOptimizer()
+@functools.lru_cache(maxsize=None)
+def get_auto_optimizer():
+    """Cache and reuse for speed. But only construct dynamically."""
+    return AutoOptimizer()
+
+
+def auto_optimize(inputs, output, size_dict, **kwargs):
+    optimizer = get_auto_optimizer()
+    return optimizer(inputs, output, size_dict, **kwargs)
+
+
+def auto_optimize_tree(inputs, output, size_dict, **kwargs):
+    """Get a contraction tree using the auto optimizer."""
+    optimizer = get_auto_optimizer()
+    return optimizer.search(inputs, output, size_dict, **kwargs)
+
+
+@functools.lru_cache(maxsize=None)
+def get_auto_hq_optimizer():
+    """Cache and reuse for speed. But only construct dynamically."""
+    return AutoHQOptimizer()
+
+
+def auto_hq_optimize(inputs, output, size_dict, **kwargs):
+    optimizer = get_auto_hq_optimizer()
+    return optimizer(inputs, output, size_dict, **kwargs)
+
+
+def auto_optimize_hq_tree(inputs, output, size_dict, **kwargs):
+    """Get a contraction tree using the auto optimizer."""
+    optimizer = get_auto_hq_optimizer()
+    return optimizer.search(inputs, output, size_dict, **kwargs)
+
 
 # these names overlap with opt_einsum, but won't override presets there
 register_preset(
     "auto",
     auto_optimize,
-    auto_optimize.search,
+    auto_optimize_tree,
 )
 register_preset(
     "auto-hq",
     auto_hq_optimize,
-    auto_optimize.search,
+    auto_optimize_hq_tree,
 )
 
 greedy_optimize = GreedyOptimizer()
@@ -176,7 +208,8 @@ optimal_optimize = OptimalOptimizer()
 
 register_preset(
     ["optimal", "dp", "dynamic-programming"],
-    optimal_optimize, optimal_optimize.search
+    optimal_optimize,
+    optimal_optimize.search,
 )
 
 optimal_outer_optimize = OptimalOptimizer(search_outer=True)

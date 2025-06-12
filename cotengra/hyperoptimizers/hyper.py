@@ -34,8 +34,9 @@ def get_default_hq_methods():
     else:
         methods.append("labels")
         warnings.warn(
-            "Couldn't import `kahypar` - skipping from default "
-            "hyper optimizer and using basic `labels` method instead."
+            "Couldn't import `kahypar` - skipping from default hyper optimizer"
+            " and using basic `labels` method instead. `kahypar` is highly "
+            "recommended for the best quality contraction paths."
         )
     return tuple(methods)
 
@@ -52,9 +53,10 @@ def get_default_optlib_eco():
     else:
         optlib = "random"
         warnings.warn(
-            "Couldn't find `optuna`, `cmaes`, "
-            "or `nevergrad` so will use completely random "
-            "sampling in place of hyper-optimization."
+            "Couldn't find `optuna`, `cmaes`, or `nevergrad` so will use "
+            "completely random sampling in place of hyper-optimization. "
+            "It is recommended to install one of these libraries for higher "
+            "quality contraction paths."
         )
     return optlib
 
@@ -71,9 +73,10 @@ def get_default_optlib():
     else:
         optlib = "random"
         warnings.warn(
-            "Couldn't find `optuna`, `cmaes`, "
-            "or `nevergrad` so will use completely random "
-            "sampling in place of hyper-optimization."
+            "Couldn't find `optuna`, `cmaes`, or `nevergrad` so will use "
+            "completely random sampling in place of hyper-optimization. "
+            "It is recommended to install one of these libraries for higher "
+            "quality hyper-optimization."
         )
     return optlib
 

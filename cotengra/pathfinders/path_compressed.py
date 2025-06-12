@@ -214,12 +214,7 @@ class Node:
         return frozenset(self.hg.nodes)
 
     def __repr__(self):
-        return (
-            f"Node("
-            f"num_nodes={self.hg.num_nodes}, "
-            f"tracker={self.tracker}, "
-            ")"
-        )
+        return f"Node(num_nodes={self.hg.num_nodes}, tracker={self.tracker})"
 
 
 def ssa_path_to_bit_path(path):
@@ -457,14 +452,12 @@ class WindowedOptimizer:
         try:
             for temp in linspace_generator(tstart, tfinal, tsteps, log=True):
                 for _ in range(numiter):
-
                     if select == "random":
                         self.rng.shuffle(ns)
                     elif select == "bounce":
                         ns.reverse()
 
                     for n in ns:
-
                         node_0 = self.nodes[n - 1]
                         node_1 = self.nodes[n]
                         node_2 = self.nodes[n + 1]
