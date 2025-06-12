@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.7.5 (unreleased)
+## v0.7.5 (2025-06-12)
 
 **Enhancements**
 
