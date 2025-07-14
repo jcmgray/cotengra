@@ -703,6 +703,35 @@ class DiskDict:
             # file exists but there is some other error after retrying
             raise e
 
+    def get(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            return default
+
+    def keys(self):
+        if self._directory is None:
+            return self._mem_cache.keys()
+        else:
+            disk_keys = []
+            for p in self._path.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(self._path)
+                    if len(rel.parents) == 1:
+                        # direct child of root path
+                        disk_keys.append(rel.name)
+                    else:
+                        disk_keys.append(tuple(rel.parts))
+            return disk_keys
+
+    def values(self):
+        for k in self.keys():
+            yield self[k]
+
+    def items(self):
+        for k in self.keys():
+            yield (k, self[k])
+
 
 def get_rng(seed=None):
     """Get a source of random numbers.
