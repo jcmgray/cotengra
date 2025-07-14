@@ -635,14 +635,22 @@ class DiskDict:
         self.retry_delay = float(retry_delay)
 
     def clear(self):
+        """Clear the memory cache and delete all value files, but leave
+        directory structure."""
         self._mem_cache.clear()
         if self._directory is not None:
-            for p in self._path.glob("*"):
-                p.unlink()
+            for p in self._path.glob("**/*"):
+                if p.is_file():
+                    p.unlink()
 
     def cleanup(self, delete_dir=False):
+        """Delete all files and subdirectories and optionally delete the root
+        directory."""
         self.clear()
         if delete_dir and (self._directory is not None):
+            for p in self._path.glob("**/*"):
+                if p.is_dir():
+                    p.rmdir()
             self._path.rmdir()
 
     def __contains__(self, k):
@@ -670,6 +678,25 @@ class DiskDict:
             # write file!
             with open(fname, "wb+") as f:
                 pickle.dump(v, f)
+
+    def __delitem__(self, k):
+        found = False
+
+        # delete from memory cache
+        if k in self._mem_cache:
+            del self._mem_cache[k]
+            found = True
+
+        # possibly delete from disk
+        if self._directory is not None:
+            if not isinstance(k, tuple):
+                k = (k,)
+            if self._path.joinpath(*k).exists():
+                self._path.joinpath(*k).unlink()
+                found = True
+
+        if not found:
+            raise KeyError(k)
 
     def __getitem__(self, k):
         try:
