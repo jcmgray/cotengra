@@ -94,8 +94,7 @@ def kahypar_subgraph_find_membership(
         return [
             i
             for k in range(parts)
-            for i in
-            (k,) * ((nv // parts) + (k < (nv % parts)))
+            for i in (k,) * ((nv // parts) + (k < (nv % parts)))
         ]
 
     if compress:

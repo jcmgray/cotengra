@@ -809,7 +809,8 @@ score_matcher = re.compile(
     r"peak-compressed|"
     r"write-compressed|"
     r"combo-compressed"
-    r")-*(\d*)"
+    # optional factor
+    r")([-:](\d*\.?\d*))?"
 )
 
 
@@ -818,7 +819,7 @@ def parse_minimize(minimize):
     if not match:
         raise ValueError(f"No score function '{minimize}' found.")
 
-    which, param = match.groups()
+    which, _, param = match.groups()
     return which, param
 
 
@@ -836,11 +837,21 @@ def _get_score_fn_str_cached(minimize):
         return SizeObjective()
 
     if which == "combo":
-        factor = float(param) if param else DEFAULT_COMBO_FACTOR
+        if not param:
+            factor = DEFAULT_COMBO_FACTOR
+        elif param.isdigit():
+            factor = int(param)
+        else:
+            factor = float(param)
         return ComboObjective(factor=factor)
 
     if which == "limit":
-        factor = float(param) if param else DEFAULT_COMBO_FACTOR
+        if not param:
+            factor = DEFAULT_COMBO_FACTOR
+        elif param.isdigit():
+            factor = int(param)
+        else:
+            factor = float(param)
         return LimitObjective(factor=factor)
 
     if which in ("max-compressed", "size-compressed"):
@@ -872,7 +883,7 @@ def get_score_fn(minimize):
     if callable(minimize):
         # custom objective function
         return minimize
-    raise TypeError("minimize must be a string or callable.")
+    raise TypeError("minimize must be a valid string or callable.")
 # ----------------------- multi-contraction scoring ------------------------- #
 
 

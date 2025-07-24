@@ -281,8 +281,6 @@ def parse_minimize_for_optimal(minimize):
 
     This function is cached for speed.
     """
-    import re
-
     if minimize == "flops":
         return compute_con_cost_flops
     elif minimize == "max":
@@ -292,15 +290,19 @@ def parse_minimize_for_optimal(minimize):
     elif minimize == "write":
         return compute_con_cost_write
 
-    minimize_finder = re.compile(r"(flops|size|write|combo|limit)-*(\d*)")
+    minimize, *maybe_factor = minimize.split("-")
 
-    # parse out a customized value for the combination factor
-    match = minimize_finder.fullmatch(minimize)
-    if match is None:
-        raise ValueError(f"Couldn't parse `minimize` value: {minimize}.")
+    if not maybe_factor:
+        # default factor
+        factor = 64
+    else:
+        fstr, = maybe_factor
+        if fstr.isdigit():
+            # keep integer arithmetic if possible
+            factor = int(fstr)
+        else:
+            factor = float(fstr)
 
-    minimize, custom_factor = match.groups()
-    factor = float(custom_factor) if custom_factor else 64
     if minimize == "combo":
         return functools.partial(compute_con_cost_combo, factor=factor)
     elif minimize == "limit":
