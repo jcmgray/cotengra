@@ -2,7 +2,7 @@ autoray
 cmaes>=0.10
 cotengrust
 coverage
-# kahypar
+kahypar
 matplotlib
 networkx
 nevergrad
