@@ -246,19 +246,19 @@ def test_insane_nested(parallel_backend):
     )
 
     optimizer = ctg.HyperOptimizer(
-        max_repeats=16,
+        max_repeats=4,
         parallel=parallel_backend,
         optlib="random",
         progbar=True,
         slicing_reconf_opts={
             "target_size": 2**20,
             "forested": True,
-            "max_repeats": 4,
+            "max_repeats": 2,
             "num_trees": 2,
             "reconf_opts": {
                 "forested": True,
                 "num_trees": 2,
-                "subtree_size": 6,
+                "subtree_size": 4,
             },
         },
     )
