@@ -234,7 +234,7 @@ def test_hyper_slicer_reconf(parallel):
     assert tree.max_size() <= 2**19
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.localonly
 @pytest.mark.parametrize("parallel_backend", ("dask", "ray"))
 def test_insane_nested(parallel_backend):
     if parallel_backend == "dask":

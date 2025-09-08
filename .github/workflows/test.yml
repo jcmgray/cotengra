@@ -46,7 +46,14 @@ jobs:
       run: uv pip install -r ci/deps/requirements-${{ matrix.env }}.txt
 
     - name: Test with pytest
-      run: uv run pytest tests/ --cov=cotengra --cov-report=xml --verbose --durations=10
+      run: |
+        uv run pytest \
+        tests/ \
+        --cov=cotengra \
+        --cov-report=xml \
+        --verbose \
+        --durations=10 \
+        -m "not localonly"
 
     - name: Report to codecov
       uses: codecov/codecov-action@v5

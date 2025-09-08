@@ -10,7 +10,6 @@ nevergrad
 optuna
 pytest
 pytest-cov
-pytest-timeout
 # ray
 seaborn
 tqdm

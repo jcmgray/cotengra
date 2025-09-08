@@ -10,7 +10,6 @@ opt_einsum
 optuna
 pytest
 pytest-cov
-pytest-timeout
 ray
 seaborn
 tqdm

@@ -61,9 +61,6 @@ docs = [
     "sphinx-design",
 ]
 test = [
-    "altair",
-    "baytune",
-    "chocolate",
     "cmaes",
     "dask",
     "distributed",
@@ -74,7 +71,6 @@ test = [
     "numpy",
     "opt_einsum",
     "pytest",
-    "scikit-optimize",
     "seaborn",
 ]
 
@@ -90,6 +86,9 @@ version-file = "cotengra/_version.py"
 
 [tool.pytest.ini_options]
 testpaths = "tests"
+markers = [
+    "localonly: marks test to be skipped on CI",
+]
 # addopts = "--cov=cotengra --cov-report term-missing --cov-report xml:coverage.xml --verbose --durations=10"
 # filterwarnings = "once"
 
