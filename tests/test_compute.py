@@ -236,7 +236,7 @@ def test_exponent_stripping(autojit, dtype):
     x2 = m * 10**p
     assert x2 == pytest.approx(ex)
 
-    tree.slice_(target_size=64)
+    tree.slice_(target_slices=4)
     assert tree.nslices >= 4
 
     x3 = tree.contract(arrays, autojit=autojit)
