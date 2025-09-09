@@ -102,6 +102,13 @@ def identity(x):
 _HASH_OPTIMIZE_PREPARERS = {}
 
 
+def list_hash_prepare(optimize):
+    if isinstance(optimize[0], tuple):
+        return tuple(optimize)
+    else:
+        return tuple(tuple(c) for c in optimize)
+
+
 def hash_prepare_optimize(optimize):
     """Transform an `optimize` object into a hashable form."""
     cls = optimize.__class__
@@ -109,7 +116,7 @@ def hash_prepare_optimize(optimize):
         h = _HASH_OPTIMIZE_PREPARERS[cls]
     except KeyError:
         if isinstance(optimize, list):
-            h = _HASH_OPTIMIZE_PREPARERS[cls] = tuple
+            h = _HASH_OPTIMIZE_PREPARERS[cls] = list_hash_prepare
         else:
             h = _HASH_OPTIMIZE_PREPARERS[cls] = identity
     return h(optimize)
@@ -778,9 +785,10 @@ def array_contract_expression(
             # unhashable kwargs
             import warnings
 
+            args = (inputs, output, size_dict, optimize, kwargs)
             warnings.warn(
                 "Contraction cache disabled as one of the "
-                f"arguments is not hashable: {kwargs}."
+                f"arguments is not hashable: {args}."
             )
 
             expr = _build_expression(
