@@ -62,12 +62,14 @@ target/
 
 **/.ipynb_checkpoints/
 
-
 # Added by cargo
-
 /target
 Cargo.lock
 
 cotengra/_version.py
 
 experiments
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml

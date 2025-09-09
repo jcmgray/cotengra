@@ -14,40 +14,30 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.9', '3.12']
-        env: [base]
         include:
-        - os: macos-latest
-          python-version: '3.11'
-          env: mac
-        - os: windows-latest
-          python-version: '3.11'
-          env: win
         - os: ubuntu-latest
-          python-version: '3.11'
-          env: minimal
+          env: test-linux-minimal
+
+        - os: ubuntu-latest
+          env: test-linux-pyold
+
+        - os: ubuntu-latest
+          env: test-linux-pynew
+
+        - os: macos-latest
+          env: test-mac
+          
+        - os: windows-latest
+          env: test-windows
 
     steps:
     - uses: actions/checkout@v5
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v6
-      with:
-        version: "latest"
-
-    - name: Install python
-      run: uv python install ${{ matrix.python-version }}
-
-    - name: Setup uv project
-      run: uv sync
-
-    - name: Install dependencies
-      run: uv pip install -r ci/deps/requirements-${{ matrix.env }}.txt
+    - uses: prefix-dev/setup-pixi@v0.9.0
 
     - name: Test with pytest
       run: |
-        uv run pytest \
+        pixi run -e ${{ matrix.env }} pytest \
         tests/ \
         --cov=cotengra \
         --cov-report=xml \

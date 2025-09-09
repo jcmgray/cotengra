@@ -5,18 +5,17 @@ readme = { file = "README.md", content-type = "text/markdown" }
 dynamic = ["version"]
 authors = [{ name = "Johnnie Gray", email = "johnniemcgray@gmail.com" }]
 license = { file = "LICENSE.md" }
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
 keywords = [
@@ -39,9 +38,10 @@ dependencies = ["autoray"]
 [project.optional-dependencies]
 recommended = [
     "cmaes",
-    "cotengrust >= 0.1.3",
+    "cotengrust",
     "cytoolz",
     "kahypar",
+    "matplotlib",
     "networkx",
     "numpy",
     "opt_einsum",
@@ -50,28 +50,15 @@ recommended = [
     "tqdm",
 ]
 docs = [
-    "astroid < 3.0.0",
+    "astroid",
     "furo",
-    "ipython != 8.7.0",
+    "ipython",
     "myst-nb",
     "setuptools_scm",
-    "sphinx >= 2.0",
+    "sphinx",
     "sphinx-autoapi",
     "sphinx-copybutton",
     "sphinx-design",
-]
-test = [
-    "cmaes",
-    "dask",
-    "distributed",
-    "kahypar",
-    "matplotlib",
-    "networkx",
-    "nevergrad",
-    "numpy",
-    "opt_einsum",
-    "pytest",
-    "seaborn",
 ]
 
 [build-system]
@@ -102,9 +89,85 @@ max_line_length = 79
 
 [tool.ruff]
 line-length = 79
-target-version = "py38"
+target-version = "py310"
 lint.ignore = ["E741"]
 
 [tool.black]
 line-length = 79
-target-version = ['py38']
+target-version = ['py310']
+
+# ---------------------------------- pixi ----------------------------------- #
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[tool.pixi.dependencies]
+autoray = ">=0.8.0,<0.9"
+
+[tool.pixi.pypi-dependencies]
+cotengra = { path = ".", editable = true }
+
+[tool.pixi.feature.testminimal]
+platforms = [ "linux-64" ]
+[tool.pixi.feature.testminimal.dependencies]
+cmaes = "*"
+coverage = "*"
+matplotlib = "*"
+networkx = "*"
+nevergrad = "*"
+optuna = "*"
+pytest = "*"
+pytest-cov = "*"
+seaborn = "*"
+tqdm = "*"
+
+[tool.pixi.feature.test.dependencies]
+cmaes = "*"
+coverage = "*"
+matplotlib = "*"
+networkx = "*"
+nevergrad = "*"
+opt_einsum = "*"
+optuna = "*"
+pytest = "*"
+pytest-cov = "*"
+seaborn = "*"
+tqdm = "*"
+[tool.pixi.feature.test.pypi-dependencies]
+cotengrust = "*"
+
+[tool.pixi.feature.pyold.dependencies]
+python = "3.10.*"
+[tool.pixi.feature.pymid.dependencies]
+python = "3.12.*"
+[tool.pixi.feature.pynew.dependencies]
+python = "3.13.*"
+
+[tool.pixi.feature.linux]
+platforms = ["linux-64"]
+pypi-dependencies = { kahypar = "*", ray = "*" }
+[tool.pixi.feature.mac]
+platforms = ["osx-arm64"]
+pypi-dependencies = { kahypar = "*", ray = "*" }
+[tool.pixi.feature.windows]
+platforms = ["win-64"]
+
+[tool.pixi.feature.docs.dependencies]
+astroid = "*"
+furo = "*"
+ipython = "*"
+myst-nb = "*"
+setuptools_scm = "*"
+sphinx = "*"
+sphinx-autoapi = "*"
+sphinx-copybutton = "*"
+sphinx-design = "*"
+
+[tool.pixi.environments]
+test-linux-minimal = { features = ["testminimal"] }
+test-linux-pyold = { features = ["pyold", "test", "linux"] }
+test-linux-pynew = { features = ["pynew", "test", "linux"] }
+test-mac = { features = ["pymid", "test", "mac"] }
+test-windows = { features = ["pymid", "test", "windows"] }
+readthedocs = { features = ["docs"] }
