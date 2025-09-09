@@ -13,20 +13,20 @@ def test_array_contract_path_cache(optimize_type):
     elif optimize_type == "tuple":
         optimize = tuple([(0, 1)] * 9)
 
-    inputs, output, shapes, size_dict = ctg.utils.rand_equation(10, 3)
-    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
+    c = ctg.utils.rand_equation(10, 3)
+    arrays = ctg.utils.make_arrays_from_inputs(c.inputs, c.size_dict)
     pa = ctg.array_contract_path(
-        inputs, output, shapes=shapes, cache=True, optimize=optimize
+        c.inputs, c.output, shapes=c.shapes, cache=True, optimize=optimize
     )
     pb = ctg.array_contract_path(
-        inputs, output, shapes=shapes, cache=True, optimize=optimize
+        c.inputs, c.output, shapes=c.shapes, cache=True, optimize=optimize
     )
     pc = ctg.array_contract_path(
-        inputs, output, shapes=shapes, cache=False, optimize=optimize
+        c.inputs, c.output, shapes=c.shapes, cache=False, optimize=optimize
     )
     assert pa is pb
     assert (pb is not pc) or (optimize_type == "tuple")
-    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    eq = ctg.utils.inputs_output_to_eq(c.inputs, c.output)
     xa = np.einsum(eq, *arrays)
     xb = ctg.einsum(eq, *arrays, optimize=pa)
     assert np.allclose(xa, xb)
@@ -42,35 +42,35 @@ def test_array_contract_expression_cache(optimize_type, strip_exponent):
     elif optimize_type == "tuple":
         optimize = tuple([(0, 1)] * 9)
 
-    inputs, output, shapes, size_dict = ctg.utils.rand_equation(10, 3)
-    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
+    c = ctg.utils.rand_equation(10, 3)
+    arrays = ctg.utils.make_arrays_from_inputs(c.inputs, c.size_dict)
     expra = ctg.array_contract_expression(
-        inputs,
-        output,
-        shapes=shapes,
+        c.inputs,
+        c.output,
+        shapes=c.shapes,
         cache=True,
         optimize=optimize,
         strip_exponent=strip_exponent,
     )
     exprb = ctg.array_contract_expression(
-        inputs,
-        output,
-        shapes=shapes,
+        c.inputs,
+        c.output,
+        shapes=c.shapes,
         cache=True,
         optimize=optimize,
         strip_exponent=strip_exponent,
     )
     exprc = ctg.array_contract_expression(
-        inputs,
-        output,
-        shapes=shapes,
+        c.inputs,
+        c.output,
+        shapes=c.shapes,
         cache=False,
         optimize=optimize,
         strip_exponent=strip_exponent,
     )
     assert expra is exprb
     assert exprb is not exprc
-    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    eq = ctg.utils.inputs_output_to_eq(c.inputs, c.output)
     xa = np.einsum(eq, *arrays)
     xb = expra(*arrays)
     if strip_exponent:

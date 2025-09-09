@@ -57,7 +57,7 @@ def test_contraction_tree_from_path_incomplete(ssa, autocomplete):
 
 
 def test_tree_incomplete():
-    inputs, output, shapes, size_dict = ctg.utils.rand_equation(
+    c = ctg.utils.rand_equation(
         n=10,
         reg=3,
         n_out=1,
@@ -65,7 +65,7 @@ def test_tree_incomplete():
         n_hyper_out=1,
         seed=42,
     )
-    tree = ctg.ContractionTree(inputs, output, size_dict)
+    tree = ctg.ContractionTree(c.inputs, c.output, c.size_dict)
     assert len(tree.info) == 11
     tree.contract_nodes(
         [

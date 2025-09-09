@@ -109,7 +109,7 @@ def test_manual_cases(eq, which):
 @pytest.mark.parametrize("seed", range(10))
 @pytest.mark.parametrize("which", ["greedy", "optimal"])
 def test_basic_rand(seed, which):
-    inputs, output, shapes, size_dict = ctg.utils.rand_equation(
+    c = ctg.utils.rand_equation(
         n=10,
         reg=4,
         n_out=2,
@@ -119,15 +119,17 @@ def test_basic_rand(seed, which):
         d_max=3,
         seed=seed,
     )
-    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    eq = ctg.utils.inputs_output_to_eq(c.inputs, c.output)
 
     path = {
         "greedy": pb.optimize_greedy,
         "optimal": pb.optimize_optimal,
-    }[which](inputs, output, size_dict)
+    }[which](c.inputs, c.output, c.size_dict)
 
-    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-    arrays = [np.random.randn(*s) for s in shapes]
+    tree = ctg.ContractionTree.from_path(
+        c.inputs, c.output, c.size_dict, path=path
+    )
+    arrays = [np.random.randn(*s) for s in c.shapes]
     assert_allclose(
         tree.contract(arrays), np.einsum(eq, *arrays, optimize=True)
     )
@@ -135,7 +137,7 @@ def test_basic_rand(seed, which):
 
 @pytest.mark.parametrize("seed", range(3))
 def test_random_greedy_track_flops(seed):
-    inputs, output, _, size_dict = ctg.utils.lattice_equation(
+    c = ctg.utils.lattice_equation(
         [4, 5],
         d_min=2,
         d_max=3,
@@ -148,8 +150,10 @@ def test_random_greedy_track_flops(seed):
         accel=False,
         parallel=False,
     )
-    path = opt(inputs, output, size_dict)
-    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+    path = opt(c.inputs, c.output, c.size_dict)
+    tree = ctg.ContractionTree.from_path(
+        c.inputs, c.output, c.size_dict, path=path
+    )
     assert tree.contraction_cost(log=10) == pytest.approx(opt.best_flops)
     # check deterministic
     opt2 = ctg.RandomGreedyOptimizer(
@@ -159,7 +163,7 @@ def test_random_greedy_track_flops(seed):
         accel=False,
         parallel=False,
     )
-    opt2(inputs, output, size_dict)
+    opt2(c.inputs, c.output, c.size_dict)
     assert opt.best_ssa_path == opt2.best_ssa_path
     assert opt.best_flops == opt2.best_flops
 
@@ -167,17 +171,17 @@ def test_random_greedy_track_flops(seed):
 @pytest.mark.parametrize("seed", range(10))
 @pytest.mark.parametrize("which", ["greedy", "optimal"])
 def test_basic_perverse(seed, which):
-    inputs, output, shapes, size_dict = ctg.utils.perverse_equation(
-        10, seed=seed
-    )
-    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    c = ctg.utils.perverse_equation(10, seed=seed)
+    eq = ctg.utils.inputs_output_to_eq(c.inputs, c.output)
     print(eq)
     path = {
         "greedy": pb.optimize_greedy,
         "optimal": pb.optimize_optimal,
-    }[which](inputs, output, size_dict)
-    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-    arrays = [np.random.randn(*s) for s in shapes]
+    }[which](c.inputs, c.output, c.size_dict)
+    tree = ctg.ContractionTree.from_path(
+        c.inputs, c.output, c.size_dict, path=path
+    )
+    arrays = [np.random.randn(*s) for s in c.shapes]
     assert_allclose(
         tree.contract(arrays), np.einsum(eq, *arrays, optimize=True)
     )
