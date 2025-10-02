@@ -1427,7 +1427,14 @@ def make_arrays_from_inputs(inputs, size_dict, seed=None, dtype="float64"):
     return arrays
 
 
-def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None, dtype="float64"):
+def make_arrays_from_eq(
+    eq,
+    d_min=2,
+    d_max=3,
+    seed=None,
+    size_dict=None,
+    dtype="float64",
+):
     """Create a set of example arrays to match an einsum equation directly.
 
     Parameters
@@ -1440,6 +1447,9 @@ def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None, dtype="float64"):
         The maximum dimension, by default 3.
     seed : int, optional
         The random seed, by default None.
+    size_dict : dict[str, int], optional
+        The index size dictionary. If supplied this is used instead of
+        generating a random one.
     dtype : {'float32', 'float64', 'complex64', 'complex128'}, optional
         The dtype of the arrays, by default 'float64'.
 
@@ -1449,9 +1459,10 @@ def make_arrays_from_eq(eq, d_min=2, d_max=3, seed=None, dtype="float64"):
         The example arrays.
     """
     inputs, _ = eq_to_inputs_output(eq)
-    size_dict = make_rand_size_dict_from_inputs(
-        inputs, d_min=d_min, d_max=d_max, seed=seed
-    )
+    if size_dict is None:
+        size_dict = make_rand_size_dict_from_inputs(
+            inputs, d_min=d_min, d_max=d_max, seed=seed
+        )
     return make_arrays_from_inputs(inputs, size_dict, seed=seed, dtype=dtype)
 
 
@@ -1528,13 +1539,16 @@ def canonicalize_inputs(
 
     Returns
     -------
-    inputs : tuple[tuple[str]]
+    new_inputs : tuple[tuple[str]]
         The canonicalized input terms.
-    output : tuple[str]
+    new_output : tuple[str]
         The canonicalized output term.
-    size_dict : dict[str, int] or None
+    new_size_dict : dict[str, int] or None
         The canonicalized index size dictionary, ``None`` if ``size_dict`` or
         ``shapes`` was not provided.
+    new_optimize : None or str or Sequence[str] or Sequence[int], optional
+        The canonicalized optimize path, ``None`` if ``optimize`` was not
+        provided.
     """
 
     if isinstance(optimize, str) and optimize in ("edgesort", "ncon"):

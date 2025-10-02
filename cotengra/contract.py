@@ -38,7 +38,7 @@ def default_implementation(impl):
 def _sanitize_equation(eq):
     """Get the input and output indices of an equation, computing the output
     implicitly as the sorted sequence of every index that appears exactly once
-    if it is not  provided.
+    if it is not provided.
     """
     # remove spaces
     eq = eq.replace(" ", "")

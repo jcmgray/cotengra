@@ -13,6 +13,9 @@ from ..reusable import ReusableOptimizer
 from ..utils import GumbelBatchedGenerator, get_rng
 
 
+DEFAULT_MAX_NEIGHBORS = 16
+
+
 def is_simplifiable(legs, appearances):
     """Check if ``legs`` contains any diag (repeated) or reduced (appears
     nowhere else) indices.
@@ -296,7 +299,7 @@ def parse_minimize_for_optimal(minimize):
         # default factor
         factor = 64
     else:
-        fstr, = maybe_factor
+        (fstr,) = maybe_factor
         if fstr.isdigit():
             # keep integer arithmetic if possible
             factor = int(fstr)
@@ -388,10 +391,53 @@ class ContractionProcessor:
         return new
 
     def neighbors(self, i):
-        """Get all neighbors of node ``i``."""
+        """Get all neighbors of node ``i``.
+
+        Parameters
+        ----------
+        i : int
+            The node index to get neighbors of.
+
+        Yields
+        ------
+        j : int
+            The neighboring node index.
+        """
         # only want to yield each neighbor once and not i itself
         for ix, _ in self.nodes[i]:
             for j in self.edges[ix]:
+                if j != i:
+                    yield j
+
+    def neighbors_limit(self, i, max_neighbors):
+        """Get all neighbors of node ``i``, ignoring any index that
+        connects to more than ``max_neighbors`` nodes. This is for greedy
+        optimization where it is useful to avoid combinatorial explosions
+        caused by essentially batch indices.
+
+        Parameters
+        ----------
+        i : int
+            The node index to get neighbors of.
+        max_neighbors : int
+            If non-zero, skip any index that connects to more than this many
+            nodes. This is useful to avoid combinatorial explosions when
+            dealing with essentially batch indices.
+
+        Yields
+        ------
+        j : int
+            The neighboring node index.
+        """
+        # only want to yield each neighbor once and not i itself
+        for ix, _ in self.nodes[i]:
+            ix_nodes = self.edges[ix]
+
+            if max_neighbors and (len(ix_nodes) > max_neighbors):
+                # basically a batch index with too many combinations -> skip
+                continue
+
+            for j in ix_nodes:
                 if j != i:
                     yield j
 
@@ -563,6 +609,7 @@ class ContractionProcessor:
         self,
         costmod=1.0,
         temperature=0.0,
+        max_neighbors=DEFAULT_MAX_NEIGHBORS,
         seed=None,
     ):
         """ """
@@ -591,6 +638,10 @@ class ContractionProcessor:
         contractions = {}
         c = 0
         for ix_nodes in self.edges.values():
+            if max_neighbors and (len(ix_nodes) > max_neighbors):
+                # basically a batch index with too many combinations -> skip
+                continue
+
             for i, j in itertools.combinations(ix_nodes, 2):
                 isize = node_sizes[i]
                 jsize = node_sizes[j]
@@ -618,7 +669,7 @@ class ContractionProcessor:
 
             node_sizes[k] = ksize
 
-            for l in self.neighbors(k):
+            for l in self.neighbors_limit(k, max_neighbors):
                 lsize = node_sizes[l]
                 mlegs = compute_contracted(
                     klegs, self.nodes[l], self.appearances
@@ -628,6 +679,20 @@ class ContractionProcessor:
                 heapq.heappush(queue, (score, c))
                 contractions[c] = (k, l, msize, mlegs)
                 c += 1
+
+            if len(queue) >= 2**14:
+                # eagerly prune if starting to get large
+                new_queue = []
+                for score, cq in queue:
+                    i, j, _, _ = contractions[cq]
+                    if (i in self.nodes) and (j in self.nodes):
+                        # still valid option
+                        new_queue.append((score, cq))
+                    else:
+                        # invalid -> one of nodes already contracted
+                        contractions.pop(cq, None)
+                heapq.heapify(new_queue)
+                queue = new_queue
 
         return True
 
@@ -968,6 +1033,7 @@ def optimize_greedy(
     size_dict,
     costmod=1.0,
     temperature=0.0,
+    max_neighbors=DEFAULT_MAX_NEIGHBORS,
     simplify=True,
     use_ssa=False,
 ):
@@ -995,6 +1061,10 @@ def optimize_greedy(
             score -> sign(score) * log(|score|) - temperature * gumbel()
 
         which implements boltzmann sampling.
+    max_neighbors : int, optional
+        When looking for pairs of nodes to contract, skip any index that
+        connects to more than this many nodes. This is useful to avoid
+        combinatorial explosions when dealing with essentially batch indices.
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
 
@@ -1021,7 +1091,9 @@ def optimize_greedy(
     cp = ContractionProcessor(inputs, output, size_dict)
     if simplify:
         cp.simplify()
-    cp.optimize_greedy(costmod=costmod, temperature=temperature)
+    cp.optimize_greedy(
+        costmod=costmod, temperature=temperature, max_neighbors=max_neighbors
+    )
     # handle disconnected subgraphs
     cp.optimize_remaining_by_size()
     if use_ssa:
@@ -1037,6 +1109,7 @@ def optimize_random_greedy_track_flops(
     costmod=(0.1, 4.0),
     temperature=(0.001, 1.0),
     seed=None,
+    max_neighbors=DEFAULT_MAX_NEIGHBORS,
     simplify=True,
     use_ssa=False,
 ):
@@ -1071,6 +1144,10 @@ def optimize_random_greedy_track_flops(
         the given range.
     seed : int, optional
         The seed for the random number generator.
+    max_neighbors : int, optional
+        When looking for pairs of nodes to contract, skip any index that
+        connects to more than this many nodes. This is useful to avoid
+        combinatorial explosions when dealing with essentially batch indices.
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
 
@@ -1137,6 +1214,7 @@ def optimize_random_greedy_track_flops(
         success = cp.optimize_greedy(
             costmod=_next_costmod(),
             temperature=_next_temperature(),
+            max_neighbors=max_neighbors,
             seed=rng,
         )
 
@@ -1305,6 +1383,7 @@ class GreedyOptimizer(PathOptimizer):
     __slots__ = (
         "costmod",
         "temperature",
+        "max_neighbors",
         "simplify",
         "_optimize_fn",
     )
@@ -1313,11 +1392,13 @@ class GreedyOptimizer(PathOptimizer):
         self,
         costmod=1.0,
         temperature=0.0,
+        max_neighbors=DEFAULT_MAX_NEIGHBORS,
         simplify=True,
         accel="auto",
     ):
         self.costmod = costmod
         self.temperature = temperature
+        self.max_neighbors = max_neighbors
         self.simplify = simplify
         self._optimize_fn = get_optimize_greedy(accel)
 
@@ -1327,6 +1408,7 @@ class GreedyOptimizer(PathOptimizer):
             "costmod": self.costmod,
             "temperature": self.temperature,
             "simplify": self.simplify,
+            "max_neighbors": self.max_neighbors,
         }
         opts.update(kwargs)
         return opts
@@ -1382,6 +1464,10 @@ class RandomGreedyOptimizer(PathOptimizer):
 
         which implements boltzmann sampling. It is sampled log-uniformly from
         the given range.
+    max_neighbors : int, optional
+        When looking for pairs of nodes to contract, skip any index that
+        connects to more than this many nodes. This is useful to avoid
+        combinatorial explosions when dealing with essentially batch indices.
     seed : int, optional
         The seed for the random number generator. Note that deterministic
         behavior is only guaranteed within the python or rust backend
@@ -1421,6 +1507,7 @@ class RandomGreedyOptimizer(PathOptimizer):
         max_repeats=32,
         costmod=(0.1, 4.0),
         temperature=(0.001, 1.0),
+        max_neighbors=DEFAULT_MAX_NEIGHBORS,
         seed=None,
         simplify=True,
         accel="auto",
@@ -1439,6 +1526,7 @@ class RandomGreedyOptimizer(PathOptimizer):
         else:
             self.temperature = tuple(temperature)
 
+        self.max_neighbors = max_neighbors
         self.simplify = simplify
         self.rng = get_rng(seed)
         self.best_ssa_path = None
@@ -1463,6 +1551,7 @@ class RandomGreedyOptimizer(PathOptimizer):
             "costmod": self.costmod,
             "temperature": self.temperature,
             "simplify": self.simplify,
+            "max_neighbors": self.max_neighbors,
         }
         opts.update(kwargs)
         return opts
@@ -1537,6 +1626,8 @@ class RandomGreedyOptimizer(PathOptimizer):
 
 
 class ReusableRandomGreedyOptimizer(ReusableOptimizer):
+    """A reusable random greedy optimizer that caches path per contraction."""
+
     def _get_path_relevant_opts(self):
         """Get a frozenset of the options that are most likely to affect the
         path. These are the options that we use when the directory name is not
@@ -1547,6 +1638,7 @@ class ReusableRandomGreedyOptimizer(ReusableOptimizer):
             ("costmod", (0.1, 4.0)),
             ("temperature", (0.001, 1.0)),
             ("simplify", True),
+            ("max_neighbors", DEFAULT_MAX_NEIGHBORS),
         ]
 
     def _get_suboptimizer(self):
