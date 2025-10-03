@@ -642,23 +642,23 @@ class HyperGraph:
             cents = dict_affine_renorm(cents)
         return cents
 
-    def to_networkx(H, as_tree_leaves=False):
+    def to_networkx(H, as_tree_leaves=None):
         """Convert to a networkx Graph, with hyperedges represented as nodes.
 
         Parameters
         ----------
-        as_tree_leaves : bool, optional
-            If true, then the nodes are converted to 'tree leaf' form, i.e.
-            map node ``i`` to ``frozenset([i])``, to match the nodes in a
-            ``ContractionTree``.
+        as_tree_leaves : callable, optional
+            If supplied this function is used to convert the nodes to 'tree
+            leaf' form, i.e. map node ``i`` to single element subgraphs, to
+            match the nodes in a ``ContractionTree``.
         """
         import networkx as nx
 
         # any_hyper is just a custom attribute
         G = nx.Graph(any_hyper=False)
         for ix, nodes in H.edges.items():
-            if as_tree_leaves:
-                nodes = [frozenset([node]) for node in nodes]
+            if as_tree_leaves is not None:
+                nodes = [as_tree_leaves(node) for node in nodes]
 
             output = ix in H.output
 

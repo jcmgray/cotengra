@@ -49,15 +49,11 @@ from .utils import (
     groupby,
     inputs_output_to_eq,
     interleave,
-    is_valid_node,
-    node_from_seq,
-    node_from_single,
-    node_get_single_el,
-    node_supremum,
     oset,
     prod,
     unique,
 )
+from . import nodeops
 
 
 def cached_node_property(name):
@@ -75,12 +71,6 @@ def cached_node_property(name):
         return getter
 
     return wrapper
-
-
-def union_it(bs):
-    """Non-variadic version of various set type unions."""
-    b0, *bs = bs
-    return b0.union(*bs)
 
 
 def legs_union(legs_seq):
@@ -259,9 +249,12 @@ class ContractionTree:
         # add constant nodes: the leaves
         for leaf in self.gen_leaves():
             self._add_node(leaf)
+            self.info[leaf]["extent"] = 1  # leaf extent is always 1
+
         # and the root or top node
-        self.root = node_supremum(self.N)
+        self.root = nodeops.node_supremum(self.N)
         self._add_node(self.root)
+        self.info[self.root]["extent"] = self.N  # root extent is always N
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -397,17 +390,50 @@ class ContractionTree:
             si.size for si in self.sliced_inds.values() if not si.inner
         )
 
+    def input_to_node(self, i):
+        """Create a node from a single input index, i.e. the subgraph that
+        only contains the input tensor ``i``.
+
+        Parameters
+        ----------
+        i : int
+            The input index.
+
+        Returns
+        -------
+        node : node_type
+        """
+        return nodeops.node_from_single(i)
+
+    def node_to_input(self, node):
+        """Assuming ``node`` has one element, i.e. is a leaf, return the
+        corresponding input index.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to convert.
+
+        Returns
+        -------
+        i : int
+        """
+        return nodeops.node_get_single_el(node)
+
     def node_to_terms(self, node):
         """Turn a node -- a frozen set of ints -- into the corresponding terms
         -- a sequence of sets of str corresponding to input indices.
         """
-        return (self.get_legs(node_from_single(i)) for i in node)
+        return (
+            self.get_legs(self.input_to_node(i))
+            for i in self.get_subgraph(node)
+        )
 
     def gen_leaves(self):
         """Generate the nodes representing leaves of the contraction tree, i.e.
         of size 1 each corresponding to a single input tensor.
         """
-        return map(node_from_single, range(self.N))
+        return map(self.input_to_node, range(self.N))
 
     def get_incomplete_nodes(self):
         """Get the set of current nodes that have no children and the set of
@@ -418,7 +444,7 @@ class ContractionTree:
 
         Returns
         -------
-        groups : dict[frozenet[int], list[frozenset[int]]]
+        groups : dict[node_type, list[node_type]]
             A mapping of childless nodes to the list of parentless nodes are
             beneath them.
 
@@ -430,13 +456,13 @@ class ContractionTree:
             node
             for node in self.info
             # start wth all but leaves
-            if len(node) != 1
+            if self.get_extent(node) != 1
         )
         parentless = dict.fromkeys(
             node
             for node in self.info
             # start with all but root
-            if len(node) != self.N
+            if self.get_extent(node) != self.N
         )
         for p, (l, r) in self.children.items():
             parentless.pop(l)
@@ -447,8 +473,12 @@ class ContractionTree:
         for node in parentless:
             # get the smallest node that contains this node
             ancestor = min(
-                filter(node.issubset, childless),
-                key=len,
+                (
+                    child
+                    for child in childless
+                    if nodeops.node_issubset(node, child)
+                ),
+                key=self.get_extent,
             )
             groups[ancestor].append(node)
 
@@ -706,7 +736,7 @@ class ContractionTree:
                 raise ValueError("There are too many children already.")
             if len(self.children) > self.N - 1:
                 raise ValueError("There are too many branches already.")
-            if not is_valid_node(node):
+            if not nodeops.is_valid_node(node):
                 raise ValueError("{} is not a valid node.".format(node))
 
         self.info.setdefault(node, dict())
@@ -715,13 +745,14 @@ class ContractionTree:
         """Remove ``node`` from this tree and update the flops and maximum size
         if tracking them respectively, as well as input pre-processing.
         """
-        node_extent = len(node)
+        node_extent = self.get_extent(node)
 
         if node_extent == 1:
             # leaf nodes should always exist
             self.info[node].clear()
+            self.info[node]["extent"] = 1  # leaf extent is always 1
             # input: remove any associated preprocessing
-            self.preprocessing.pop(node_get_single_el(node), None)
+            self.preprocessing.pop(nodeops.node_get_single_el(node), None)
         else:
             # only non-leaf nodes contribute to size, flops and write
             if self._track_size:
@@ -737,6 +768,7 @@ class ContractionTree:
             if node_extent == self.N:
                 # root node should always exist
                 self.info[node].clear()
+                self.info[node]["extent"] = self.N  # root extent is always N
             else:
                 del self.info[node]
 
@@ -798,24 +830,72 @@ class ContractionTree:
         """
         return any(ix_count != 2 for ix_count in self.appearances.values())
 
+    @cached_node_property("extent")
+    def get_extent(self, node):
+        """Get the number of input tensors contained in the subgraph
+        represented by ``node``.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to compute the extent of.
+
+        Returns
+        -------
+        extent : int
+        """
+        if node in self.children:
+            l, r = self.children[node]
+            return self.get_extent(l) + self.get_extent(r)
+        else:
+            return len(node)
+
+    @cached_node_property("subgraph")
+    def get_subgraph(self, node):
+        """Get the sequence of input tensors contained in subgraph represented
+        by ``node``.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to compute the subgraph of.
+
+        Returns
+        -------
+        subgraph : tuple[int]
+            The input tensor indices contained in this subgraph.
+        """
+        node_extent = self.get_extent(node)
+        if node_extent == 1:
+            return (nodeops.node_get_single_el(node),)
+        elif node_extent == self.N:
+            return tuple(range(self.N))
+        else:
+            l, r = self.children[node]
+            return self.get_subgraph(l) + self.get_subgraph(r)
+
     @cached_node_property("legs")
     def get_legs(self, node):
         """Get the effective 'outer' indices for the collection of tensors
         in ``node``.
         """
-        node_extent = len(node)
-
-        if node_extent == 1:
-            # leaf legs are inputs
-            return self.compute_leaf_legs(node_get_single_el(node))
-        elif node_extent == self.N:
+        # should this comparison be with self.N for efficiency?
+        if node == self.root:
             # root legs are output, after slicing
             # n.b. the index counts are irrelevant for the output
             return {ix: 0 for ix in self.output if ix not in self.sliced_inds}
 
+        node_extent = self.get_extent(node)
+
+        if node_extent == 1:
+            # leaf legs are inputs
+            return self.compute_leaf_legs(nodeops.node_get_single_el(node))
+
         try:
             involved = self.get_involved(node)
         except KeyError:
+            # this should only happen if directly creating
+            # incomplete nodes e.g. not in a bottom up fashion
             involved = legs_union(self.node_to_terms(node))
 
         return {
@@ -827,7 +907,7 @@ class ContractionTree:
     @cached_node_property("involved")
     def get_involved(self, node):
         """Get all the indices involved in the formation of subgraph ``node``."""
-        if len(node) == 1:
+        if self.get_extent(node) == 1:
             return {}
         sub_legs = map(self.get_legs, self.children[node])
         return legs_union(sub_legs)
@@ -842,7 +922,7 @@ class ContractionTree:
         """Get the FLOPs for the pairwise contraction that will create
         ``node``.
         """
-        if len(node) == 1:
+        if self.get_extent(node) == 1:
             return 0
         involved = self.get_involved(node)
         return compute_size_by_dict(involved, self.size_dict)
@@ -866,7 +946,7 @@ class ContractionTree:
         # NB: self.inputs and self.output contain the full (unsliced) indices
         #     thus we filter even the input legs and output legs
 
-        if len(node) in (1, self.N):
+        if self.get_extent(node) in (1, self.N):
             return "".join(self.get_legs(node))
 
         legs = self.get_legs(node)
@@ -1158,7 +1238,6 @@ class ContractionTree:
         chi=None,
         order="surface_order",
         compress_late=None,
-        accel="auto",
         log=None,
     ):
         """Compute the total size of all intermediate tensors when a
@@ -1261,6 +1340,26 @@ class ContractionTree:
         if self._track_size:
             self._sizes.add(self.get_size(node))
 
+    def _maybe_map_to_nodes(self, nodes, check=False):
+        """Allow intermediate nodes to be specified as sequences of input
+        tensor indices, which are then mapped to the corresponding node in the
+        tree. If the sequence does not correspond to an existing node, a new
+        node is created to represent this subgraph, and the extent and
+        subgraph information is stored since explicitly given.
+        """
+        mapped = []
+        for node in nodes:
+            if not isinstance(node, nodeops.node_type):
+                subgraph = tuple(node)
+                node = nodeops.node_from_seq(node)
+                self._add_node(node, check=check)
+                self.info[node]["extent"] = len(subgraph)
+                self.info[node]["subgraph"] = subgraph
+            else:
+                self._add_node(node, check=check)
+            mapped.append(node)
+        return mapped
+
     def contract_nodes_pair(
         self,
         x,
@@ -1275,9 +1374,9 @@ class ContractionTree:
 
         Parameters
         ----------
-        x : frozenset[int]
+        x : node_type
             The first node to contract.
-        y : frozenset[int]
+        y : node_type
             The second node to contract.
         legs : dict[str, int], optional
             The effective 'legs' of the new node if already known. If not
@@ -1293,21 +1392,21 @@ class ContractionTree:
 
         Returns
         -------
-        parent : frozenset[int]
+        parent : node_type
             The new parent node of ``x`` and ``y``.
         """
-        parent = x.union(y)
+        parent = nodeops.node_union(x, y)
 
         # make sure info entries exist for all (default dict)
         for node in (x, y, parent):
             self._add_node(node, check=check)
 
         # enforce left ordering of 'heaviest' subtrees
-        nx, ny = len(x), len(y)
+        nx, ny = self.get_extent(x), self.get_extent(y)
         if nx == ny:
             # deterministically break ties
-            sortx = -min(x)
-            sorty = -min(y)
+            sortx = nodeops.node_tie_breaker(x)
+            sorty = nodeops.node_tie_breaker(y)
         else:
             sortx = nx
             sorty = ny
@@ -1348,8 +1447,10 @@ class ContractionTree:
         """Contract an arbitrary number of ``nodes`` in the tree to build up a
         subtree. The root of this subtree (a new intermediate) is returned.
         """
+        nodes = self._maybe_map_to_nodes(nodes, check=check)
+
         if len(nodes) == 1:
-            return next(iter(nodes))
+            return nodes[0]
 
         if len(nodes) == 2:
             return self.contract_nodes_pair(*nodes, check=check)
@@ -1357,10 +1458,8 @@ class ContractionTree:
         from .interface import find_path
 
         # create the bottom and top nodes
-        grandparent = union_it(nodes)
+        grandparent = nodeops.node_union_it(nodes)
         self._add_node(grandparent, check=check)
-        for node in nodes:
-            self._add_node(node, check=check)
 
         # if more than two nodes need to find the path to fill in between
         #         \
@@ -1371,8 +1470,27 @@ class ContractionTree:
         #   /  \    /   / \
         #  N0  N1  N2  N3  N4    <- ``nodes``, or, subgraphs
         #  /    \  /   /    \
-        path_inputs = [tuple(self.get_legs(x)) for x in nodes]
-        path_output = tuple(self.get_legs(grandparent))
+        legs_inputs = tuple(map(self.get_legs, nodes))
+        path_inputs = tuple(map(tuple, legs_inputs))
+
+        try:
+            # output legs of the grandparent (after slicing)
+            grand_legs = self.info[grandparent]["legs"]
+        except KeyError:
+            # compute legs directly from children
+            if grandparent == self.root:
+                # special case, need output ordering and sliced indices
+                grand_legs = self.get_legs(grandparent)
+            else:
+                involved = legs_union(legs_inputs)
+                grand_legs = {
+                    ix: ix_count
+                    for ix, ix_count in involved.items()
+                    if ix_count < self.appearances[ix]
+                }
+                self.info[grandparent]["legs"] = grand_legs
+
+        path_output = tuple(grand_legs)
 
         path = find_path(
             path_inputs,
@@ -1406,11 +1524,11 @@ class ContractionTree:
 
         queue = [self.root]
         while queue:
-            x = queue.pop()
-            if len(x) == 1:
+            node = queue.pop()
+            if self.get_extent(node) == 1:
                 continue
             try:
-                queue.extend(self.children[x])
+                queue.extend(self.children[node])
             except KeyError:
                 return False
 
@@ -1458,7 +1576,7 @@ class ContractionTree:
                 node = queue[i]
                 if node not in seen:
                     for child in self.children[node]:
-                        if len(child) > 1:
+                        if self.get_extent(child) > 1:
                             # insert child into queue by score + before parent
                             score = order(child)
                             ci = bisect(scores[:i], score)
@@ -1531,9 +1649,9 @@ class ContractionTree:
                 parent = queue.pop(0)
             l, r = self.children[parent]
             yield parent, l, r
-            if len(l) > 1:
+            if self.get_extent(l) > 1:
                 queue.append(l)
-            if len(r) > 1:
+            if self.get_extent(r) > 1:
                 queue.append(r)
 
     def get_subtree(self, node, size, search="bfs", seed=None):
@@ -1542,7 +1660,7 @@ class ContractionTree:
 
         Parameters
         ----------
-        node : node
+        node : node_type
             The node of the tree to start with.
         size : int
             How many subtree leaves to aim for.
@@ -1558,9 +1676,9 @@ class ContractionTree:
 
         Returns
         -------
-        sub_leaves : tuple[node]
+        sub_leaves : tuple[node_type]
             Nodes which are subtree leaves.
-        branches : tuple[node]
+        branches : tuple[node_type]
             Nodes which are between the subtree leaves and root.
         """
         # nodes which are subtree leaves
@@ -1586,7 +1704,7 @@ class ContractionTree:
                 i = rng.randint(0, len(queue) - 1)
 
             p = queue.pop(i)
-            if len(p) == 1:
+            if self.get_extent(p) == 1:
                 real_leaves.append(p)
                 continue
 
@@ -1632,9 +1750,9 @@ class ContractionTree:
         }
 
         for node, node_info in tree.info.items():
-            if len(node) == 1:
+            if self.get_extent(node) == 1:
                 # handle leaves separately
-                i = node_get_single_el(node)
+                i = nodeops.node_get_single_el(node)
                 term = tree.inputs[i]
                 if ind in term:
                     # n.b. leaves don't contribute to size, flops or write
@@ -1712,7 +1830,7 @@ class ContractionTree:
         for i, term in enumerate(tree.inputs):
             # this is the original term with all indices
             if ind in term:
-                tree._remove_node(node_from_single(i))
+                tree._remove_node(self.input_to_node(i))
                 if all(ix not in tree.sliced_inds for ix in term):
                     # mark this input as not sliced
                     tree.sliced_inputs = tree.sliced_inputs - frozenset([i])
@@ -2684,15 +2802,15 @@ class ContractionTree:
 
         Returns
         -------
-        tuple[frozenset[str]]
+        tuple[node_type]
         """
         if not self.is_complete():
             raise ValueError("Can't order the leaves until tree is complete.")
 
         return tuple(
-            nd
-            for nd in itertools.chain.from_iterable(self.traverse())
-            if len(nd) == 1
+            node
+            for node in itertools.chain.from_iterable(self.traverse())
+            if self.get_extent(node) == 1
         )
 
     def get_path(self, order=None):
@@ -2769,14 +2887,14 @@ class ContractionTree:
     ssa_path = deprecated(get_ssa_path, "ssa_path", "get_ssa_path")
 
     def surface_order(self, node):
-        return (len(node), self.get_centrality(node))
+        return (self.get_extent(node), self.get_centrality(node))
 
     def set_surface_order_from_path(self, ssa_path):
         o = {}
         nodes = list(self.gen_leaves())
         for j, p in enumerate(ssa_path):
             l, r = (nodes[i] for i in p)
-            p = l.union(r)
+            p = nodeops.node_union(l, r)
             nodes.append(p)
             o[p] = j
 
@@ -2833,7 +2951,7 @@ class ContractionTree:
         candidates = [
             {
                 # which intermedate nodes map to which leaf nodes
-                "map": {self.root: node_from_single(l2)},
+                "map": {self.root: self.input_to_node(l2)},
                 # the leaf nodes in the spanning tree
                 "spine": {l1, l2},
             }
@@ -2847,7 +2965,7 @@ class ContractionTree:
                     cand = candidates.pop(0)
 
                     # don't need to do anything for
-                    if len(child) == 1:
+                    if self.get_extent(child) == 1:
                         candidates.append(
                             {
                                 "map": {child: child, **cand["map"]},
@@ -2864,7 +2982,7 @@ class ContractionTree:
                         candidates.append(
                             {
                                 "map": {
-                                    child: node_from_single(l2),
+                                    child: self.input_to_node(l2),
                                     **cand["map"],
                                 },
                                 "spine": cand["spine"] | {l1, l2},
@@ -2966,7 +3084,7 @@ class ContractionTree:
         for p, (l, r) in nodes:
             p_inds, l_inds, r_inds = map(self.get_inds, (p, l, r))
 
-            if make_output_contig and len(p) != self.N:
+            if make_output_contig and self.get_extent(p) != self.N:
                 # sort indices by whether they appear in the left or right
                 # whether this happens before or after the sort below depends
                 # on the order we are processing the nodes
@@ -2984,7 +3102,7 @@ class ContractionTree:
                 # 1. if they are going to be contracted
                 # 2. what order they appear in the parent indices
                 # (but ignore leaf indices)
-                if len(l) != 1:
+                if self.get_extent(l) != 1:
 
                     def lsort(ix):
                         return (r_inds.find(ix), p_inds.find(ix))
@@ -2992,7 +3110,7 @@ class ContractionTree:
                     l_inds = "".join(sorted(self.get_legs(l), key=lsort))
                     self.info[l]["inds"] = l_inds
 
-                if len(r) != 1:
+                if self.get_extent(r) != 1:
 
                     def rsort(ix):
                         return (p_inds.find(ix), l_inds.find(ix))
@@ -3782,11 +3900,12 @@ class ContractionTreeCompressed(ContractionTree):
             ssa_path = linear_to_ssa(path)
 
         tree = cls(inputs, output, size_dict, **kwargs)
-        terms = list(tree.gen_leaves())
+        nodes = list(tree.gen_leaves())
 
         for p in ssa_path:
-            merge = [terms[i] for i in p]
-            terms.append(tree.contract_nodes(merge, check=check))
+            nodes_contract = [nodes[i] for i in p]
+            parent = tree.contract_nodes(nodes_contract, check=check)
+            nodes.append(parent)
 
         tree.set_surface_order_from_path(ssa_path)
 
@@ -3963,13 +4082,13 @@ class PartitionTreeBuilder:
 
         while tree.childless:
             tree_node = next(iter(tree.childless))
-            subgraph = tuple(tree_node)
+            subgraph = tree.get_subgraph(tree_node)
             subsize = len(subgraph)
 
             # skip straight to better method
             if subsize <= cutoff:
                 tree.contract_nodes(
-                    [node_from_single(x) for x in subgraph],
+                    [tree.input_to_node(x) for x in subgraph],
                     optimize=sub_optimize,
                     check=check,
                 )
@@ -3997,7 +4116,7 @@ class PartitionTreeBuilder:
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
-            inputs = tuple(map(tuple, tree.node_to_terms(subgraph)))
+            inputs = tuple(map(tuple, tree.node_to_terms(tree_node)))
             output = tuple(tree.get_legs(tree_node))
             membership = self.partition_fn(
                 inputs,
@@ -4011,22 +4130,26 @@ class PartitionTreeBuilder:
             # divide subgraph up e.g. if we enumerate the subgraph index sets
             # (0, 1, 2, 3, 4, 5, 6, 7, 8, ...) ->
             # ({0, 1, 3, 5, 6}, {2, 4}, {7, 8})
-            new_subgs = tuple(
-                map(node_from_seq, separate(subgraph, membership))
-            )
+            partitions = separate(subgraph, membership)
+            new_nodes = tuple(map(nodeops.node_from_seq, partitions))
 
-            if len(new_subgs) == 1:
-                # no communities found - contract all remaining
+            if len(new_nodes) == 1:
+                # no communities found - contract all remaining leaves
                 tree.contract_nodes(
-                    tuple(map(node_from_single, subgraph)),
+                    tuple(map(self.input_to_node, subgraph)),
                     optimize=sub_optimize,
                     check=check,
                 )
                 continue
 
             # update tree structure with newly contracted subgraphs
+            for node, partition in zip(new_nodes, partitions):
+                tree._add_node(node, check=check)
+                tree.info[node]["extent"] = len(partition)
+                tree.info[node]["subgraph"] = tuple(partition)
+
             tree.contract_nodes(
-                new_subgs, optimize=super_optimize, check=check
+                new_nodes, optimize=super_optimize, check=check
             )
 
         if check:

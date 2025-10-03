@@ -1,14 +1,14 @@
 """Compressed contraction path finding using branch and bound."""
 
-import math
+import collections
 import heapq
 import itertools
-import collections
+import math
 from time import sleep
 
+from ..core import ContractionTreeCompressed, get_hypergraph
 from ..pathfinders.path_basic import ssa_to_linear
 from ..scoring import get_score_fn
-from ..core import get_hypergraph, ContractionTreeCompressed
 
 
 class CompressedExhaustive:
@@ -220,9 +220,7 @@ class CompressedExhaustive:
         if self.progbar:
             pbar.update()
             pbar.set_description(
-                f"[{c}] "
-                f"cands:{len(self.cands)} "
-                f"best:{self.best_score:.2f}",
+                f"[{c}] cands:{len(self.cands)} best:{self.best_score:.2f}",
                 refresh=False,
             )
 

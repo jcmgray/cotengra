@@ -46,9 +46,9 @@ def test_contraction_tree_from_path_incomplete(ssa, autocomplete):
     if not autocomplete:
         assert not tree.is_complete()
         assert tree.get_incomplete_nodes() == {
-            frozenset([0, 1, 2, 3]): [
-                frozenset([0, 1]),
-                frozenset([2, 3]),
+            ctg.nodeops.node_from_seq([0, 1, 2, 3]): [
+                ctg.nodeops.node_from_seq([0, 1]),
+                ctg.nodeops.node_from_seq([2, 3]),
             ],
         }
     else:
@@ -67,12 +67,7 @@ def test_tree_incomplete():
     )
     tree = ctg.ContractionTree(c.inputs, c.output, c.size_dict)
     assert len(tree.info) == 11
-    tree.contract_nodes(
-        [
-            frozenset([3, 6, 8]),
-            frozenset([4, 7]),
-        ]
-    )
+    tree.contract_nodes([[3, 6, 8], [4, 7]])
     assert len(tree.info) == 14
     assert not tree.is_complete()
     groups = tree.get_incomplete_nodes()
@@ -375,4 +370,24 @@ def test_tree_from_edge_path(n, seed):
         check=True,
     )
 
+    assert tree.is_complete()
+
+
+def test_tree_build_divide_labels():
+    con = ctg.utils.lattice_equation([4, 4])
+    tree = ctg.path_labels.labels_to_tree.trial_fn(
+        con.inputs,
+        con.output,
+        con.size_dict,
+    )
+    assert tree.is_complete()
+
+
+def test_tree_build_agglom_labels():
+    con = ctg.utils.lattice_equation([4, 4])
+    tree = ctg.path_labels.labels_to_tree.trial_fn_agglom(
+        con.inputs,
+        con.output,
+        con.size_dict,
+    )
     assert tree.is_complete()

@@ -7,9 +7,6 @@ import operator
 
 from autoray import do, get_lib_fn, infer_backend_multi, shape
 
-from .utils import node_from_single
-
-
 DEFAULT_IMPLEMENTATION = "auto"
 
 
@@ -608,27 +605,39 @@ def extract_contractions(
     """
     contractions = []
 
+    # for compactness we convert nodes to ssa indices
+    ssas = {leaf: i for i, leaf in enumerate(tree.gen_leaves())}
+    ssa = len(ssas)
+
     # pairwise contractions
-    contractions.extend(
-        (p, l, r, False, tree.get_einsum_eq(p), None)
-        if (prefer_einsum or not tree.get_can_dot(p))
-        else (
-            p,
-            l,
-            r,
-            True,
-            tree.get_tensordot_axes(p),
-            tree.get_tensordot_perm(p),
-        )
-        for p, l, r in tree.traverse(order=order)
-    )
+    for p, l, r in tree.traverse(order=order):
+        li = ssas.pop(l)
+        ri = ssas.pop(r)
+        pi = ssas[p] = ssa
+        ssa += 1
+
+        if prefer_einsum or not tree.get_can_dot(p):
+            contractions.append(
+                (pi, li, ri, False, tree.get_einsum_eq(p), None)
+            )
+        else:
+            contractions.append(
+                (
+                    pi,
+                    li,
+                    ri,
+                    True,
+                    tree.get_tensordot_axes(p),
+                    tree.get_tensordot_perm(p),
+                )
+            )
 
     if tree.preprocessing:
         # inplace single term simplifications
         # n.b. these are populated lazily when the other information is
         # computed above, so we do it after
         pre_contractions = (
-            (node_from_single(i), None, None, False, eq, None)
+            (i, None, None, False, eq, None)
             for i, eq in tree.preprocessing.items()
         )
         return (*pre_contractions, *contractions)
@@ -756,10 +765,7 @@ class Contractor:
 
         # temporary storage for intermediates
         N = len(arrays)
-        temps = {
-            leaf: array
-            for leaf, array in zip(map(node_from_single, range(N)), arrays)
-        }
+        temps = dict(enumerate(arrays))
 
         exponent = 0.0 if (strip_exponent is not False) else None
 
@@ -770,15 +776,15 @@ class Contractor:
         else:
             contractions = self.contractions
 
-        for p, l, r, tdot, arg, perm in contractions:
-            if (l is None) and (r is None):
+        for pi, li, ri, tdot, arg, perm in contractions:
+            if (li is None) and (ri is None):
                 # single term simplification, perform inplace with einsum
-                temps[p] = _einsum(arg, temps[p])
+                temps[pi] = _einsum(arg, temps[pi])
                 continue
 
             # get input arrays for this contraction
-            l_array = temps.pop(l)
-            r_array = temps.pop(r)
+            l_array = temps.pop(li)
+            r_array = temps.pop(ri)
 
             if tdot:
                 p_array = _tensordot(l_array, r_array, arg)
@@ -797,7 +803,7 @@ class Contractor:
                 p_array = p_array / factor
 
             # insert the new intermediate array
-            temps[p] = p_array
+            temps[pi] = p_array
 
         if exponent is not None:
             return p_array, exponent

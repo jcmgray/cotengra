@@ -2,8 +2,8 @@
 
 import math
 
-from ..pathfinders.path_basic import ssa_to_linear
 from ..core import ContractionTreeCompressed, get_hypergraph
+from ..pathfinders.path_basic import ssa_to_linear
 from ..utils import GumbelBatchedGenerator
 
 

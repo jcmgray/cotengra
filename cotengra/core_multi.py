@@ -1,6 +1,6 @@
 import math
 
-from .core import ContractionTree, cached_node_property, node_get_single_el
+from .core import ContractionTree, cached_node_property
 
 
 class ContractionTreeMulti(ContractionTree):
@@ -39,8 +39,8 @@ class ContractionTreeMulti(ContractionTree):
     @cached_node_property("node_var_inds")
     def get_node_var_inds(self, node):
         """Get the set of variable indices that a node depends on."""
-        if len(node) == 1:
-            i = node_get_single_el(node)
+        if self.get_extent(node) == 1:
+            i = self.node_to_input(node)
             term = self.inputs[i]
             return {ix: None for ix in term if ix in self.sliced_inds}
 
@@ -61,8 +61,8 @@ class ContractionTreeMulti(ContractionTree):
         variable indices to either of its children, if a node is not bright
         then its children never have to be stored in the cache.
         """
-        if len(node) == 1:
-            i = node_get_single_el(node)
+        if self.get_extent(node) == 1:
+            i = self.node_to_input(node)
             term = self.inputs[i]
             return any(ix in self.sliced_inds for ix in term)
 
@@ -237,9 +237,9 @@ class ContractionTreeMulti(ContractionTree):
                 mem_peak = max(mem_peak, mem_current)
 
                 l, r = con["l"], con["r"]
-                if con["ldel"] and len(l) > 1:
+                if con["ldel"] and self.get_extent(l) > 1:
                     mem_current -= self.get_size(l)
-                if con["rdel"] and len(r) > 1:
+                if con["rdel"] and self.get_extent(r) > 1:
                     mem_current -= self.get_size(r)
 
             # final output of each config is always deletable

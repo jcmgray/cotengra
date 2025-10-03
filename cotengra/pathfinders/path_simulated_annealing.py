@@ -270,14 +270,14 @@ def simulated_anneal_tree(
                 l, r = tree.children[p]
 
                 # check which local moves are possible
-                if len(l) == 1:
-                    if len(r) == 1:
+                if tree.get_extent(l) == 1:
+                    if tree.get_extent(r) == 1:
                         # both are leaves
                         continue
                     else:
                         # left is leaf
                         rule = rng.randint(2, 3)
-                elif len(r) == 1:
+                elif tree.get_extent(r) == 1:
                     # right is leaf
                     rule = rng.randint(0, 1)
                 else:
@@ -362,9 +362,9 @@ def simulated_anneal_tree(
 
                 # check which children to recurse into
                 l, r = tree.children[p]
-                if len(l) > 2:
+                if tree.get_extent(l) > 2:
                     candidates.append(l)
-                if len(r) > 2:
+                if tree.get_extent(r) > 2:
                     candidates.append(r)
 
         if progbar:
