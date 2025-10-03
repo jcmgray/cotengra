@@ -812,7 +812,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e5/48/1549795ba7742c948d2ad169c1c8cdbae65bc450d6cd753d124b17c8cd32/certifi-2025.8.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7e/95/42aa2156235cbc8fa61208aded06ef46111c4d3f0de233107b3f38631803/charset_normalizer-3.4.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/85/32/10bb5764d90a8eee674e9dc6f4db6a0ab47c8c4d0d83c27f7c39ac415a4d/click-8.2.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/00/9c/c5a76e34f55265698bbac00f0508feeb7030aabd1ce664736c0f00a29d30/cotengrust-0.1.4.tar.gz
+      - pypi: https://files.pythonhosted.org/packages/9d/4c/c116cc70ca47faa08254df4e2ce2aaad00ed0195ea42b65483b811d1fe5d/cotengrust-0.2.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/42/14/42b2651a2f46b022ccd948bca9f2d5af0fd8929c4eec235b8d6d844fbe67/filelock-3.19.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bf/9c/8c95d856233c1f82500c2450b8c68576b4cf1c871db3afac5c34ff84e6fd/jsonschema-4.25.1-py3-none-any.whl
@@ -1004,7 +1004,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e5/48/1549795ba7742c948d2ad169c1c8cdbae65bc450d6cd753d124b17c8cd32/certifi-2025.8.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/65/1a/7425c952944a6521a9cfa7e675343f83fd82085b8af2b1373a2409c683dc/charset_normalizer-3.4.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/85/32/10bb5764d90a8eee674e9dc6f4db6a0ab47c8c4d0d83c27f7c39ac415a4d/click-8.2.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/15/f8/e6242cd4341830f37e3e6df432a576009b5860405d6c935e2c80e38d4bea/cotengrust-0.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/66/ea/d104830fccd1f33bfedb7dcaf5ee70ee6e3a5af88789e9e214ecc8377777/cotengrust-0.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/42/14/42b2651a2f46b022ccd948bca9f2d5af0fd8929c4eec235b8d6d844fbe67/filelock-3.19.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bf/9c/8c95d856233c1f82500c2450b8c68576b4cf1c871db3afac5c34ff84e6fd/jsonschema-4.25.1-py3-none-any.whl
@@ -1125,7 +1125,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e5/48/1549795ba7742c948d2ad169c1c8cdbae65bc450d6cd753d124b17c8cd32/certifi-2025.8.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e9/5e/14c94999e418d9b87682734589404a25854d5f5d0408df68bc15b6ff54bb/charset_normalizer-3.4.3-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/85/32/10bb5764d90a8eee674e9dc6f4db6a0ab47c8c4d0d83c27f7c39ac415a4d/click-8.2.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/54/df/212db67e856287640571ddc59e117cdee867257d4abe9e0e8616c2982831/cotengrust-0.1.4-cp312-cp312-macosx_11_0_arm64.whl
+      - pypi: https://files.pythonhosted.org/packages/5c/23/7d918baa2f1608428f5809fa0fb23dafaddde3ab38da5700fc38342e086b/cotengrust-0.2.0-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/42/14/42b2651a2f46b022ccd948bca9f2d5af0fd8929c4eec235b8d6d844fbe67/filelock-3.19.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bf/9c/8c95d856233c1f82500c2450b8c68576b4cf1c871db3afac5c34ff84e6fd/jsonschema-4.25.1-py3-none-any.whl
@@ -1269,7 +1269,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/yaml-0.2.5-h6a83c73_3.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-hbeecb71_2.conda
-      - pypi: https://files.pythonhosted.org/packages/2d/0e/dec49fd6f17f036128be22462eb1d6d1b49abef75eb90d7e5018e7272c03/cotengrust-0.1.4-cp312-none-win_amd64.whl
+      - pypi: https://files.pythonhosted.org/packages/73/3a/91363695dd82a65c0285f7227147307f9e8ea78aec933a9e8a840a08c0b6/cotengrust-0.2.0-cp312-cp312-win_amd64.whl
       - pypi: ./
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -1986,8 +1986,8 @@ packages:
   timestamp: 1756544999757
 - pypi: ./
   name: cotengra
-  version: 0.7.6.dev19+g9cd275395.d20250909
-  sha256: 176ac811def3354d1a58561ee78930d8386a3fef72ce3bc378d879f21a3ecb9d
+  version: 0.7.6.dev25+g643c58c10.d20251003
+  sha256: c8ae0f70f01ed1eeb6010a0d82b4cda7e53b74791b5e281c00305f37b65217d4
   requires_dist:
   - autoray
   - astroid ; extra == 'docs'
@@ -2012,25 +2012,25 @@ packages:
   - tqdm ; extra == 'recommended'
   requires_python: '>=3.10'
   editable: true
-- pypi: https://files.pythonhosted.org/packages/00/9c/c5a76e34f55265698bbac00f0508feeb7030aabd1ce664736c0f00a29d30/cotengrust-0.1.4.tar.gz
+- pypi: https://files.pythonhosted.org/packages/5c/23/7d918baa2f1608428f5809fa0fb23dafaddde3ab38da5700fc38342e086b/cotengrust-0.2.0-cp312-cp312-macosx_11_0_arm64.whl
   name: cotengrust
-  version: 0.1.4
-  sha256: 364a7a272875e53da1cc9020f1ec9a8c043926fd00aec384504b880bfc9fff13
+  version: 0.2.0
+  sha256: 054bf75fb0332b1a520346d78c9928730715dc2b4b241f58a409d71bc053ee49
   requires_python: '>=3.8'
-- pypi: https://files.pythonhosted.org/packages/15/f8/e6242cd4341830f37e3e6df432a576009b5860405d6c935e2c80e38d4bea/cotengrust-0.1.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+- pypi: https://files.pythonhosted.org/packages/66/ea/d104830fccd1f33bfedb7dcaf5ee70ee6e3a5af88789e9e214ecc8377777/cotengrust-0.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   name: cotengrust
-  version: 0.1.4
-  sha256: 38ca883176e72291c21ae6867c4cc2bbe53399b5430e541165fa56fc787f2afd
+  version: 0.2.0
+  sha256: 04c265eebb85778fa5438334e54b38bcd877ab919681ed610dd7d974f867fd00
   requires_python: '>=3.8'
-- pypi: https://files.pythonhosted.org/packages/2d/0e/dec49fd6f17f036128be22462eb1d6d1b49abef75eb90d7e5018e7272c03/cotengrust-0.1.4-cp312-none-win_amd64.whl
+- pypi: https://files.pythonhosted.org/packages/73/3a/91363695dd82a65c0285f7227147307f9e8ea78aec933a9e8a840a08c0b6/cotengrust-0.2.0-cp312-cp312-win_amd64.whl
   name: cotengrust
-  version: 0.1.4
-  sha256: ccffc8b0645311a77dac88cc852ef56d18bd031430bef90e9884e98e4b438afa
+  version: 0.2.0
+  sha256: 337af81b23bb1a35fda2be071ddc7e05e0b6eaad4ab38b984c2c56c06b49a6e7
   requires_python: '>=3.8'
-- pypi: https://files.pythonhosted.org/packages/54/df/212db67e856287640571ddc59e117cdee867257d4abe9e0e8616c2982831/cotengrust-0.1.4-cp312-cp312-macosx_11_0_arm64.whl
+- pypi: https://files.pythonhosted.org/packages/9d/4c/c116cc70ca47faa08254df4e2ce2aaad00ed0195ea42b65483b811d1fe5d/cotengrust-0.2.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   name: cotengrust
-  version: 0.1.4
-  sha256: a9ccf7644a1db943b952eb2d8bdd97b3138ddfe19f16bc161694d9a7f0cd243c
+  version: 0.2.0
+  sha256: 5630cd61395518fa7de9c9a36135185b7c40cab7ac1f3a5c2f1be731988c334f
   requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/coverage-7.10.6-py310h3406613_1.conda
   sha256: 917519990bf711336345ff11642853382a8a83be8dcfb4fbd5084084b4e771ca

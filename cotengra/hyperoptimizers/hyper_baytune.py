@@ -2,7 +2,6 @@
 
 from .hyper import register_hyper_optlib
 
-
 BTB_TYPE_TO_HYPERPARAM = {
     "BOOL": "BooleanHyperParam",
     "INT": "IntHyperParam",

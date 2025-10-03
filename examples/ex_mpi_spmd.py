@@ -3,8 +3,9 @@ finding and sliced contraction computation using SPMD style MPI.
 """
 
 import numpy as np
-import cotengra as ctg
 from mpi4py import MPI
+
+import cotengra as ctg
 
 comm = MPI.COMM_WORLD
 

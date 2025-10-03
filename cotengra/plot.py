@@ -352,6 +352,7 @@ def plot_parameters_parallel(
         The axes containing the plot.
     """
     import matplotlib as mpl
+
     from cotengra.schematic import Drawing
 
     # collect only rows with the same method

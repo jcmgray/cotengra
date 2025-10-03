@@ -1,16 +1,16 @@
 """Quickbb based pathfinder."""
 
 import re
-import time
 import signal
-import tempfile
-import warnings
 import subprocess
+import tempfile
+import time
+import warnings
 
-from ..oe import PathOptimizer
 from ..core import ContractionTree
 from ..hypergraph import LineGraph
 from ..hyperoptimizers.hyper import register_hyper_function
+from ..oe import PathOptimizer
 
 
 class QuickBBOptimizer(PathOptimizer):
@@ -77,11 +77,11 @@ class QuickBBOptimizer(PathOptimizer):
     def build_tree(self, inputs, output, size_dict):
         self.lg = LineGraph(inputs, output)
 
-        with tempfile.NamedTemporaryFile(
-            suffix=".cnf"
-        ) as file, tempfile.NamedTemporaryFile(
-            suffix=".out"
-        ) as sfile, tempfile.NamedTemporaryFile(suffix=".out") as ofile:
+        with (
+            tempfile.NamedTemporaryFile(suffix=".cnf") as file,
+            tempfile.NamedTemporaryFile(suffix=".out") as sfile,
+            tempfile.NamedTemporaryFile(suffix=".out") as ofile,
+        ):
             self.lg.to_cnf_file(file.name)
 
             max_time = self.max_time

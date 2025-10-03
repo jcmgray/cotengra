@@ -1,8 +1,8 @@
 """Objects for defining and customizing the target cost of a contraction."""
 
-import re
-import math
 import functools
+import math
+import re
 
 # the default weighting for comparing flops vs mops
 DEFAULT_COMBO_FACTOR = 64

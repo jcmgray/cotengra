@@ -4,7 +4,7 @@ from .hyper import register_hyper_optlib
 
 
 def convert_param_to_skopt(param, name):
-    from skopt.space import Real, Integer, Categorical
+    from skopt.space import Categorical, Integer, Real
 
     if param["type"] == "BOOL":
         return Categorical([False, True], name=name)

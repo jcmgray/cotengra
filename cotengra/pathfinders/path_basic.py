@@ -12,7 +12,6 @@ from ..parallel import get_n_workers, parse_parallel_arg
 from ..reusable import ReusableOptimizer
 from ..utils import GumbelBatchedGenerator, get_rng
 
-
 DEFAULT_MAX_NEIGHBORS = 16
 
 

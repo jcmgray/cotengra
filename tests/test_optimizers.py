@@ -1,13 +1,12 @@
-import subprocess
 import functools
+import subprocess
 from collections import defaultdict
 
-import pytest
-import numpy as np
 import autoray as ar
+import numpy as np
+import pytest
 
 import cotengra as ctg
-
 
 try:
     subprocess.run(["quickbb_64"])

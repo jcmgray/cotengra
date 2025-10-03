@@ -1,11 +1,11 @@
 """Functionality relating to actually contracting."""
 
+import contextlib
 import functools
 import itertools
 import operator
-import contextlib
 
-from autoray import do, shape, infer_backend_multi, get_lib_fn
+from autoray import do, get_lib_fn, infer_backend_multi, shape
 
 from .utils import node_from_single
 

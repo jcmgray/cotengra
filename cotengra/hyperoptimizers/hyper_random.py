@@ -1,10 +1,10 @@
 """Fake hyper optimization using random sampling."""
 
-import math
 import functools
+import math
 
-from .hyper import register_hyper_optlib
 from ..utils import get_rng
+from .hyper import register_hyper_optlib
 
 
 def sample_bool(rng):

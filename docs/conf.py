@@ -94,8 +94,9 @@ def linkcode_resolve(domain, info):
     """
     Determine the URL corresponding to Python object
     """
-    import cotengra
     import inspect
+
+    import cotengra
 
     if domain != "py":
         return None

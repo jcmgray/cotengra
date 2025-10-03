@@ -267,8 +267,9 @@ class WindowedOptimizer:
     @show_and_close
     @use_neutral_style
     def plot_size_footprint(self, figsize=(8, 3)):
-        import matplotlib.pyplot as plt
         import math
+
+        import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=figsize)
         cs = range(len(self.nodes))
@@ -429,6 +430,7 @@ class WindowedOptimizer:
         progbar=False,
     ):
         import math
+
         from .path_simulated_annealing import linspace_generator
 
         if progbar:

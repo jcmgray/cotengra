@@ -2,10 +2,12 @@
 contraction.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 import jax
 import numpy as np
+
 import cotengra as ctg
-from concurrent.futures import ThreadPoolExecutor
 
 # generate a random contraction
 inputs, output, shapes, size_dict = ctg.utils.rand_equation(

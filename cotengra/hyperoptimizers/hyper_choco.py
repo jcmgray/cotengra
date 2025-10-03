@@ -6,6 +6,7 @@ from .hyper import register_hyper_optlib
 def convert_param_to_choco(param):
     """Convert a single search parameter suitably for ``chocolate``."""
     from math import log10
+
     import chocolate as choco
 
     if param["type"] == "BOOL":

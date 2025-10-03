@@ -1,18 +1,18 @@
 """Flowcutter based pathfinder."""
 
 import re
-import time
 import signal
-import warnings
-import tempfile
 import subprocess
+import tempfile
+import time
+import warnings
 
-from ..oe import PathOptimizer
-from .treedecomp import td_str_to_tree_decomposition, td_to_eo
 from ..core import ContractionTree
 from ..hypergraph import LineGraph
 from ..hyperoptimizers.hyper import register_hyper_function
+from ..oe import PathOptimizer
 from ..utils import get_rng
+from .treedecomp import td_str_to_tree_decomposition, td_to_eo
 
 
 class FlowCutterOptimizer(PathOptimizer):

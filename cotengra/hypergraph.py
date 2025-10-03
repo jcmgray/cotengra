@@ -2,20 +2,18 @@
 contractions.
 """
 
-import math
-import itertools
 import collections
+import itertools
+import math
 
 from .plot import (
     plot_hypergraph,
 )
-
 from .utils import (
     compute_size_by_dict,
     prod,
     unique,
 )
-
 
 try:
     from cotengra.cotengra import HyperGraph as HyperGraphRust

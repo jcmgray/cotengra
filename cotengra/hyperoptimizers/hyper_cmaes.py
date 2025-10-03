@@ -154,8 +154,8 @@ class HyperCMAESSampler:
         exponential_param_power=None,
         **kwargs,
     ):
-        import numpy as np
         import cmaes
+        import numpy as np
 
         self.params = []
         for name, p in space.items():
