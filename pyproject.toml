@@ -133,7 +133,7 @@ pytest-cov = "*"
 seaborn = "*"
 tqdm = "*"
 [tool.pixi.feature.test.pypi-dependencies]
-cotengrust = "*"
+cotengrust = ">=0.2.0"
 
 [tool.pixi.feature.pyold.dependencies]
 python = "3.10.*"
