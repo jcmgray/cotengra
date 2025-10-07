@@ -474,9 +474,9 @@ class ContractionTree:
             # get the smallest node that contains this node
             ancestor = min(
                 (
-                    child
-                    for child in childless
-                    if nodeops.node_issubset(node, child)
+                    possible_parent
+                    for possible_parent in childless
+                    if self.is_descendant(node, possible_parent)
                 ),
                 key=self.get_extent,
             )
@@ -999,6 +999,22 @@ class ContractionTree:
             for i, ix in enumerate(unique(itertools.chain(l_inds, r_inds)))
         }
         return f"{l_inds},{r_inds}->{p_inds}".translate(char_mapping)
+
+    def is_descendant(self, node, ancestor):
+        """Check if ``node`` is a descendant of ``ancestor`` in this tree.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to check.
+        ancestor : node_type
+            The potential ancestor node.
+
+        Returns
+        -------
+        is_descendant : bool
+        """
+        return nodeops.node_issubset(node, ancestor)
 
     def get_peak_size(self, node):
         """Get the peak size for all but only the contractions required to
