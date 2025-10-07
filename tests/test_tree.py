@@ -46,9 +46,9 @@ def test_contraction_tree_from_path_incomplete(ssa, autocomplete):
     if not autocomplete:
         assert not tree.is_complete()
         assert tree.get_incomplete_nodes() == {
-            ctg.nodeops.node_from_seq([0, 1, 2, 3]): [
-                ctg.nodeops.node_from_seq([0, 1]),
-                ctg.nodeops.node_from_seq([2, 3]),
+            tree.nodeops.node_from_seq([0, 1, 2, 3]): [
+                tree.nodeops.node_from_seq([0, 1]),
+                tree.nodeops.node_from_seq([2, 3]),
             ],
         }
     else:

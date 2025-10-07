@@ -2,11 +2,74 @@ from functools import reduce
 from operator import or_
 
 
-NODE_TYPE = (
-    "frozenset[int]"
-    # "BitSetInt"
-    # "intbitset"
-)
+class NodeOpsFrozenset:
+    """Namespace for interacting with frozenset[int] as contraction tree nodes."""
+
+    __slots__ = ()
+
+    def copy(self):
+        return self
+
+    node_type = frozenset
+    """The type used for nodes, to check isinstance with."""
+
+    node_size = len
+    """Function to get the size of a node."""
+
+    node_from_seq = frozenset
+    """From a sequence of integers, make a node (``frozenset``)."""
+
+    @staticmethod
+    def node_from_single(x):
+        """From single integer ``x``, make a node (``frozenset``)."""
+        return frozenset((x,))
+
+    @staticmethod
+    def node_supremum(size):
+        """Return the node containing all elements up to ``size``."""
+        return frozenset(range(size))
+
+    @staticmethod
+    def node_get_single_el(node):
+        """Assuming ``node`` has one element, return it."""
+        return next(iter(node))
+
+    @staticmethod
+    def node_tie_breaker(x):
+        """A tie breaker function for ordering nodes when they are the same
+        size. Returns the negative of the smallest element in the node.
+        Nodes with larger `node_tie_breaker` values get contracted first.
+        """
+        return -min(x)
+
+    @staticmethod
+    def is_valid_node(node):
+        """Check ``node`` is of type ``frozenset[int]``."""
+        try:
+            if not isinstance(node, frozenset):
+                return False
+            el = next(iter(node))
+            if not isinstance(el, int):
+                return False
+            return True
+        except TypeError:
+            return False
+
+    @staticmethod
+    def node_union(x, y):
+        """Return the node given by the union of two nodes."""
+        return x | y
+
+    @staticmethod
+    def node_union_it(bs):
+        """Return the node given by the union of an iterable of nodes."""
+        b0, *bs = bs
+        return b0.union(*bs)
+
+    @staticmethod
+    def node_issubset(x, y):
+        """Check if node ``x`` is a subset of node ``y``."""
+        return x.issubset(y)
 
 
 class BitSetInt(int):
@@ -66,8 +129,6 @@ class BitSetInt(int):
         return np.flatnonzero(bits)
 
     def __iter__(self):
-        raise
-
         n = self.bit_length()
         k = self.bit_count()
 
@@ -120,115 +181,75 @@ class BitSetInt(int):
         return f"BitSetInt({list(self.iter_dense())})"
 
 
-if NODE_TYPE == "frozenset[int]":
-    node_type = frozenset
-    node_size = len
-    node_from_seq = frozenset
+class NodeOpsBitSetInt:
+    """Namespace for interacting with BitSetInt as contraction tree nodes."""
 
-    def node_from_single(x):
-        return frozenset((x,))
+    __slots__ = ()
 
-    def node_supremum(size):
-        return frozenset(range(size))
-
-    def node_get_single_el(node):
-        """Assuming ``node`` has one element, return it."""
-        return next(iter(node))
-
-    def node_tie_breaker(x):
-        return -min(x)
-
-    def is_valid_node(node):
-        """Check ``node`` is of type ``frozenset[int]``."""
-        try:
-            if not isinstance(node, frozenset):
-                return False
-            el = next(iter(node))
-            if not isinstance(el, int):
-                return False
-            return True
-        except TypeError:
-            return False
-
-    def node_union(x, y):
-        return x | y
-
-    def node_union_it(bs):
-        """Non-variadic version of various set type unions."""
-        b0, *bs = bs
-        return b0.union(*bs)
-
-    def node_issubset(x, y):
-        return x.issubset(y)
-
-
-elif NODE_TYPE == "BitSetInt":
-    # the set of functions needed to use BitSetInt as contraction tree nodes
+    def copy(self):
+        return self
 
     node_type = BitSetInt
     node_size = BitSetInt.__len__
     node_from_seq = BitSetInt
 
+    @staticmethod
     def node_from_single(x):
         return BitSetInt(1 << x)
 
+    @staticmethod
     def node_supremum(size):
         return BitSetInt.supremum(size)
 
+    @staticmethod
     def node_get_single_el(node):
         return node.bit_length() - 1
 
+    @staticmethod
     def node_tie_breaker(x):
-        return x
+        return -x
 
+    @staticmethod
     def is_valid_node(node):
         try:
             return isinstance(node, BitSetInt)
         except TypeError:
             return False
 
+    @staticmethod
     def node_union(x, y):
         return BitSetInt(int.__or__(x, y))
 
+    @staticmethod
     def node_union_it(bs):
         b0, *bs = bs
         return b0.union(*bs)
 
+    @staticmethod
     def node_issubset(x, y):
         return (x & y) == x
 
 
-elif NODE_TYPE == "intbitset":
-    from intbitset import intbitset
+nodeops_frozenset = NodeOpsFrozenset()
+nodeops_bitsetint = NodeOpsBitSetInt()
 
-    node_type = intbitset
-    node_size = len
-    node_from_seq = intbitset
 
-    # intbitset could be great, but hash collisions make use in dicts v v slow
+def get_nodeops(node_type_str: str):
+    """Get the node operations namespace for the given node type.
 
-    def node_from_single(x):
-        return intbitset((x,))
+    Parameters
+    ----------
+    node_type_str : str
+        The node type as a string. One of "frozenset[int]", "BitSetInt".
 
-    def node_supremum(size):
-        return intbitset(range(size))
-
-    def node_get_single_el(node):
-        return next(iter(node))
-
-    def is_valid_node(node):
-        try:
-            return isinstance(node, intbitset)
-        except TypeError:
-            return False
-
-    def node_union(x, y):
-        return x.union(y)
-
-    def node_union_it(bs):
-        """Non-variadic version of various set type unions."""
-        b0, *bs = bs
-        return b0.union(*bs)
-
-    def node_issubset(x, y):
-        return x.issubset(y)
+    Returns
+    -------
+    NodeOpsFrozenset or NodeOpsBitSetInt
+        The corresponding node operations namespace.
+    """
+    if node_type_str == "frozenset[int]":
+        return nodeops_frozenset
+    elif node_type_str == "BitSetInt":
+        return nodeops_bitsetint
+    else:
+        raise ValueError(f"Unknown node type: {node_type_str}")

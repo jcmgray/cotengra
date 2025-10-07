@@ -53,7 +53,7 @@ from .utils import (
     prod,
     unique,
 )
-from . import nodeops
+from .nodeops import get_nodeops
 
 
 def cached_node_property(name):
@@ -244,6 +244,7 @@ class ContractionTree:
         self.children = {}
 
         # information about all the nodes
+        self.nodeops = get_nodeops("frozenset[int]")
         self.info = {}
 
         # add constant nodes: the leaves
@@ -252,7 +253,7 @@ class ContractionTree:
             self.info[leaf]["extent"] = 1  # leaf extent is always 1
 
         # and the root or top node
-        self.root = nodeops.node_supremum(self.N)
+        self.root = self.nodeops.node_supremum(self.N)
         self._add_node(self.root)
         self.info[self.root]["extent"] = self.N  # root extent is always N
 
@@ -310,6 +311,7 @@ class ContractionTree:
         for attr in (
             "children",
             "contraction_cores",
+            "nodeops",
             "sliced_inds",
             "preprocessing",
         ):
@@ -403,7 +405,7 @@ class ContractionTree:
         -------
         node : node_type
         """
-        return nodeops.node_from_single(i)
+        return self.nodeops.node_from_single(i)
 
     def node_to_input(self, node):
         """Assuming ``node`` has one element, i.e. is a leaf, return the
@@ -418,7 +420,7 @@ class ContractionTree:
         -------
         i : int
         """
-        return nodeops.node_get_single_el(node)
+        return self.nodeops.node_get_single_el(node)
 
     def node_to_terms(self, node):
         """Turn a node -- a frozen set of ints -- into the corresponding terms
@@ -736,7 +738,7 @@ class ContractionTree:
                 raise ValueError("There are too many children already.")
             if len(self.children) > self.N - 1:
                 raise ValueError("There are too many branches already.")
-            if not nodeops.is_valid_node(node):
+            if not self.nodeops.is_valid_node(node):
                 raise ValueError("{} is not a valid node.".format(node))
 
         self.info.setdefault(node, dict())
@@ -752,7 +754,7 @@ class ContractionTree:
             self.info[node].clear()
             self.info[node]["extent"] = 1  # leaf extent is always 1
             # input: remove any associated preprocessing
-            self.preprocessing.pop(nodeops.node_get_single_el(node), None)
+            self.preprocessing.pop(self.nodeops.node_get_single_el(node), None)
         else:
             # only non-leaf nodes contribute to size, flops and write
             if self._track_size:
@@ -848,7 +850,7 @@ class ContractionTree:
             l, r = self.children[node]
             return self.get_extent(l) + self.get_extent(r)
         else:
-            return nodeops.node_size(node)
+            return self.nodeops.node_size(node)
 
     @cached_node_property("subgraph")
     def get_subgraph(self, node):
@@ -867,7 +869,7 @@ class ContractionTree:
         """
         node_extent = self.get_extent(node)
         if node_extent == 1:
-            return (nodeops.node_get_single_el(node),)
+            return (self.nodeops.node_get_single_el(node),)
         elif node_extent == self.N:
             return tuple(range(self.N))
         else:
@@ -889,7 +891,9 @@ class ContractionTree:
 
         if node_extent == 1:
             # leaf legs are inputs
-            return self.compute_leaf_legs(nodeops.node_get_single_el(node))
+            return self.compute_leaf_legs(
+                self.nodeops.node_get_single_el(node)
+            )
 
         try:
             involved = self.get_involved(node)
@@ -1014,7 +1018,7 @@ class ContractionTree:
         -------
         is_descendant : bool
         """
-        return nodeops.node_issubset(node, ancestor)
+        return self.nodeops.node_issubset(node, ancestor)
 
     def get_peak_size(self, node):
         """Get the peak size for all but only the contractions required to
@@ -1438,9 +1442,9 @@ class ContractionTree:
         """
         mapped = []
         for node in nodes:
-            if not isinstance(node, nodeops.node_type):
+            if not isinstance(node, self.nodeops.node_type):
                 subgraph = tuple(node)
-                node = nodeops.node_from_seq(node)
+                node = self.nodeops.node_from_seq(node)
                 self._add_node(node, check=check)
                 self.info[node]["extent"] = len(subgraph)
                 self.info[node]["subgraph"] = subgraph
@@ -1484,7 +1488,7 @@ class ContractionTree:
         parent : node_type
             The new parent node of ``x`` and ``y``.
         """
-        parent = nodeops.node_union(x, y)
+        parent = self.nodeops.node_union(x, y)
 
         # make sure info entries exist for all (default dict)
         for node in (x, y, parent):
@@ -1494,8 +1498,8 @@ class ContractionTree:
         nx, ny = self.get_extent(x), self.get_extent(y)
         if nx == ny:
             # deterministically break ties
-            sortx = nodeops.node_tie_breaker(x)
-            sorty = nodeops.node_tie_breaker(y)
+            sortx = self.nodeops.node_tie_breaker(x)
+            sorty = self.nodeops.node_tie_breaker(y)
         else:
             sortx = nx
             sorty = ny
@@ -1547,7 +1551,7 @@ class ContractionTree:
         from .interface import find_path
 
         # create the bottom and top nodes
-        grandparent = nodeops.node_union_it(nodes)
+        grandparent = self.nodeops.node_union_it(nodes)
         self._add_node(grandparent, check=check)
 
         # if more than two nodes need to find the path to fill in between
@@ -1842,7 +1846,7 @@ class ContractionTree:
         for node, node_info in tree.info.items():
             if self.get_extent(node) == 1:
                 # handle leaves separately
-                i = nodeops.node_get_single_el(node)
+                i = self.nodeops.node_get_single_el(node)
                 term = tree.inputs[i]
                 if ind in term:
                     # n.b. leaves don't contribute to size, flops or write
@@ -2984,7 +2988,7 @@ class ContractionTree:
         nodes = list(self.gen_leaves())
         for j, p in enumerate(ssa_path):
             l, r = (nodes[i] for i in p)
-            p = nodeops.node_union(l, r)
+            p = self.nodeops.node_union(l, r)
             nodes.append(p)
             o[p] = j
 
@@ -4171,8 +4175,8 @@ class PartitionTreeBuilder:
         dynamic_fix = partition_opts.get("fix_output_nodes", None) == "auto"
 
         while tree.childless:
-            tree_node = next(iter(tree.childless))
-            subgraph = tree.get_subgraph(tree_node)
+            top_node = next(iter(tree.childless))
+            subgraph = tree.get_subgraph(top_node)
             subsize = len(subgraph)
 
             # skip straight to better method
@@ -4206,8 +4210,8 @@ class PartitionTreeBuilder:
 
             # partition! get community membership list e.g.
             # [0, 0, 1, 0, 1, 0, 0, 2, 2, ...]
-            inputs = tuple(map(tuple, tree.node_to_terms(tree_node)))
-            output = tuple(tree.get_legs(tree_node))
+            inputs = tuple(map(tuple, tree.node_to_terms(top_node)))
+            output = tuple(tree.get_legs(top_node))
             membership = self.partition_fn(
                 inputs,
                 output,
@@ -4221,7 +4225,7 @@ class PartitionTreeBuilder:
             # (0, 1, 2, 3, 4, 5, 6, 7, 8, ...) ->
             # ({0, 1, 3, 5, 6}, {2, 4}, {7, 8})
             partitions = separate(subgraph, membership)
-            new_nodes = tuple(map(nodeops.node_from_seq, partitions))
+            new_nodes = tuple(map(tree.nodeops.node_from_seq, partitions))
 
             if len(new_nodes) == 1:
                 # no communities found - contract all remaining leaves
