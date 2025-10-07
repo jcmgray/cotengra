@@ -34,13 +34,6 @@ class BitSetInt(int):
     def __hash__(self):
         return self ^ self.bit_length()
 
-    # def __hash__(self):
-    #     h = int.__hash__(self)
-    #     # Mix with bit_count to spread out power-of-2 values
-    #     bc = self.bit_count()
-    #     h ^= bc * 0x9E3779B97F4A7C15
-    #     return h
-
     @classmethod
     def infimum(cls):
         return super(cls, cls).__new__(cls, 0)
@@ -129,9 +122,8 @@ class BitSetInt(int):
 
 if NODE_TYPE == "frozenset[int]":
     node_type = frozenset
-
-    def node_from_seq(it):
-        return frozenset(it)
+    node_size = len
+    node_from_seq = frozenset
 
     def node_from_single(x):
         return frozenset((x,))
@@ -174,9 +166,8 @@ elif NODE_TYPE == "BitSetInt":
     # the set of functions needed to use BitSetInt as contraction tree nodes
 
     node_type = BitSetInt
-
-    def node_from_seq(it):
-        return BitSetInt(it)
+    node_size = BitSetInt.__len__
+    node_from_seq = BitSetInt
 
     def node_from_single(x):
         return BitSetInt(1 << x)
@@ -211,11 +202,10 @@ elif NODE_TYPE == "intbitset":
     from intbitset import intbitset
 
     node_type = intbitset
+    node_size = len
+    node_from_seq = intbitset
 
     # intbitset could be great, but hash collisions make use in dicts v v slow
-
-    def node_from_seq(it):
-        return intbitset(it)
 
     def node_from_single(x):
         return intbitset((x,))

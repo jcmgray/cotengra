@@ -848,7 +848,7 @@ class ContractionTree:
             l, r = self.children[node]
             return self.get_extent(l) + self.get_extent(r)
         else:
-            return len(node)
+            return nodeops.node_size(node)
 
     @cached_node_property("subgraph")
     def get_subgraph(self, node):
