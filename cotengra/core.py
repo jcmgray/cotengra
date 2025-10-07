@@ -249,13 +249,11 @@ class ContractionTree:
 
         # add constant nodes: the leaves
         for leaf in self.gen_leaves():
-            self._add_node(leaf)
-            self.info[leaf]["extent"] = 1  # leaf extent is always 1
+            self._add_node(leaf, extent=1)  # leaf extent is always 1
 
         # and the root or top node
         self.root = self.nodeops.node_supremum(self.N)
-        self._add_node(self.root)
-        self.info[self.root]["extent"] = self.N  # root extent is always N
+        self._add_node(self.root, extent=self.N)  # root extent is always N
 
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
@@ -732,7 +730,7 @@ class ContractionTree:
             **kwargs,
         )
 
-    def _add_node(self, node, check=False):
+    def _add_node(self, node, check=False, **kwargs):
         if check:
             if len(self.info) > 2 * self.N - 1:
                 raise ValueError("There are too many children already.")
@@ -740,8 +738,12 @@ class ContractionTree:
                 raise ValueError("There are too many branches already.")
             if not self.nodeops.is_valid_node(node):
                 raise ValueError("{} is not a valid node.".format(node))
-
-        self.info.setdefault(node, dict())
+        try:
+            d = self.info[node]
+        except KeyError:
+            d = self.info[node] = {}
+        if kwargs:
+            d.update(kwargs)
 
     def _remove_node(self, node):
         """Remove ``node`` from this tree and update the flops and maximum size
@@ -1445,9 +1447,12 @@ class ContractionTree:
             if not isinstance(node, self.nodeops.node_type):
                 subgraph = tuple(node)
                 node = self.nodeops.node_from_seq(node)
-                self._add_node(node, check=check)
-                self.info[node]["extent"] = len(subgraph)
-                self.info[node]["subgraph"] = subgraph
+                self._add_node(
+                    node,
+                    check=check,
+                    extent=len(subgraph),
+                    subgraph=subgraph,
+                )
             else:
                 self._add_node(node, check=check)
             mapped.append(node)
@@ -4238,9 +4243,12 @@ class PartitionTreeBuilder:
 
             # update tree structure with newly contracted subgraphs
             for node, partition in zip(new_nodes, partitions):
-                tree._add_node(node, check=check)
-                tree.info[node]["extent"] = len(partition)
-                tree.info[node]["subgraph"] = tuple(partition)
+                tree._add_node(
+                    node,
+                    check=check,
+                    extent=len(partition),
+                    subgraph=tuple(partition),
+                )
 
             tree.contract_nodes(
                 new_nodes, optimize=super_optimize, check=check
@@ -4266,8 +4274,6 @@ class PartitionTreeBuilder:
         tree = ContractionTree(inputs, output, size_dict, track_childless=True)
         rand_size_dict = jitter_dict(size_dict, random_strength, seed)
         leaves = tuple(tree.gen_leaves())
-        for node in leaves:
-            tree._add_node(node, check=check)
         output = tuple(tree.output)
 
         while len(leaves) > groupsize:
