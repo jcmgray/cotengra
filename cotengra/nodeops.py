@@ -32,7 +32,7 @@ class BitSetInt(int):
         return super(cls, cls).__new__(cls, i)
 
     def __hash__(self):
-        return self + self.bit_length()
+        return self ^ self.bit_length()
 
     # def __hash__(self):
     #     h = int.__hash__(self)

@@ -391,3 +391,17 @@ def test_tree_build_agglom_labels():
         con.size_dict,
     )
     assert tree.is_complete()
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_tree_peak_size_reorder(seed):
+    tree = ctg.utils.rand_tree(30, 3, seed=seed)
+    pa = tree.peak_size()
+    pb = tree.get_peak_size(tree.root)
+    # local peak size doesn't include inputs
+    assert pb <= pa
+    tree.reorder_for_peak_size()
+    pc = tree.peak_size()
+    pd = tree.get_peak_size(tree.root)
+    assert pd <= pc
+    assert pd <= pb

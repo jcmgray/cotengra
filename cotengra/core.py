@@ -1000,6 +1000,54 @@ class ContractionTree:
         }
         return f"{l_inds},{r_inds}->{p_inds}".translate(char_mapping)
 
+    def get_peak_size(self, node):
+        """Get the peak size for all but only the contractions required to
+        produce ``node``. The value for the root note will be the peak size of
+        the entire contraction.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to compute the peak size of.
+
+        Returns
+        -------
+        peak_size : int
+        """
+        if self.get_extent(node) == 1:
+            # leaf node is input
+            return self.get_size(node)
+
+        l, r = self.children[node]
+        # peak either occured while:
+        # 1. we were forming left intermediate
+        peakleft = self.get_peak_size(l)
+        # 2. we were forming right intermediate (whilst holding left)
+        peakright = self.get_size(l) + self.get_peak_size(r)
+        # 3. or we were performing this contraction, including output
+        peakthis = self.get_size(l) + self.get_size(r) + self.get_size(node)
+
+        return max(peakleft, peakright, peakthis)
+
+    def reorder_for_peak_size(self):
+        """This reorders the depth first traversal of the tree to minimize
+        the peak size of the contraction.
+        """
+        changed = False
+        for p, l, r in self.traverse():
+            sl = self.get_size(l)
+            pl = self.get_peak_size(l)
+            sr = self.get_size(r)
+            pr = self.get_peak_size(r)
+            # peak if hold left while we form right
+            plr = max(pl, sl + pr)
+            # peak if hold right while we form left
+            prl = max(pr, sr + pl)
+            if prl < plr:
+                self.children[p] = r, l
+                changed = True
+        return changed
+
     def get_centrality(self, node):
         try:
             return self.info[node]["centrality"]
@@ -1084,6 +1132,31 @@ class ContractionTree:
             size = math.log(size, log)
 
         return size
+
+    def max_contraction_size(self, log=None):
+        """The maximum size of a single contraction in the tree. This includes
+        the size of the two input tensors and the output tensor, and can be a
+        more practical measure of the peak memory required.
+
+        Parameters
+        ----------
+        log : float, optional
+            If provided, return the log of the size to this base.
+
+        Returns
+        -------
+        size : int or float
+            The maximum size of a single contraction in the tree, or its log.
+        """
+        Y = max(
+            self.get_size(p) + self.get_size(l) + self.get_size(r)
+            for p, (l, r) in self.children.items()
+        )
+
+        if log is not None:
+            Y = math.log(Y, log)
+
+        return Y
 
     def peak_size(self, order=None, log=None):
         """Get the peak concurrent size of tensors needed - this depends on the
@@ -1475,6 +1548,7 @@ class ContractionTree:
 
         try:
             # output legs of the grandparent (after slicing)
+            # we dont' use get_legs since we can do the shortcut below
             grand_legs = self.info[grandparent]["legs"]
         except KeyError:
             # compute legs directly from children
