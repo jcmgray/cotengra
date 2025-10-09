@@ -48,6 +48,7 @@ def test_compressed_agglom():
         methods=[
             "kahypar-agglom",
         ],
+        on_trial_error="raise",
     )
     tree = opt.search(inputs, output, size_dict)
     assert isinstance(tree, ctg.ContractionTreeCompressed)

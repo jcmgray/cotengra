@@ -12,6 +12,7 @@ from autoray import do
 
 from .contract import make_contractor
 from .hypergraph import get_hypergraph
+from .nodeops import get_nodeops
 from .parallel import (
     can_scatter,
     maybe_leave_pool,
@@ -53,7 +54,6 @@ from .utils import (
     prod,
     unique,
 )
-from .nodeops import get_nodeops
 
 
 def cached_node_property(name):
@@ -201,6 +201,7 @@ class ContractionTree:
         track_write=False,
         track_size=False,
         objective=None,
+        nodeops="auto",
     ):
         self.inputs = inputs
         self.output = output
@@ -244,7 +245,7 @@ class ContractionTree:
         self.children = {}
 
         # information about all the nodes
-        self.nodeops = get_nodeops("frozenset[int]")
+        self.nodeops = get_nodeops(nodeops, self.N)
         self.info = {}
 
         # add constant nodes: the leaves
@@ -456,13 +457,13 @@ class ContractionTree:
             node
             for node in self.info
             # start wth all but leaves
-            if self.get_extent(node) != 1
+            if not self.is_leaf(node)
         )
         parentless = dict.fromkeys(
             node
             for node in self.info
             # start with all but root
-            if self.get_extent(node) != self.N
+            if not self.is_root(node)
         )
         for p, (l, r) in self.children.items():
             parentless.pop(l)
@@ -913,7 +914,7 @@ class ContractionTree:
     @cached_node_property("involved")
     def get_involved(self, node):
         """Get all the indices involved in the formation of subgraph ``node``."""
-        if self.get_extent(node) == 1:
+        if self.is_leaf(node):
             return {}
         sub_legs = map(self.get_legs, self.children[node])
         return legs_union(sub_legs)
@@ -928,7 +929,7 @@ class ContractionTree:
         """Get the FLOPs for the pairwise contraction that will create
         ``node``.
         """
-        if self.get_extent(node) == 1:
+        if self.is_leaf(node):
             return 0
         involved = self.get_involved(node)
         return compute_size_by_dict(involved, self.size_dict)
@@ -1006,6 +1007,34 @@ class ContractionTree:
         }
         return f"{l_inds},{r_inds}->{p_inds}".translate(char_mapping)
 
+    def is_leaf(self, node):
+        """Check if ``node`` is a leaf node in this tree.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to check.
+
+        Returns
+        -------
+        is_leaf : bool
+        """
+        return self.nodeops.is_leaf(node)
+
+    def is_root(self, node):
+        """Check if ``node`` is the root node in this tree.
+
+        Parameters
+        ----------
+        node : node_type
+            The node to check.
+
+        Returns
+        -------
+        is_root : bool
+        """
+        return self.nodeops.is_supremum(node, self.N)
+
     def is_descendant(self, node, ancestor):
         """Check if ``node`` is a descendant of ``ancestor`` in this tree.
 
@@ -1036,7 +1065,7 @@ class ContractionTree:
         -------
         peak_size : int
         """
-        if self.get_extent(node) == 1:
+        if self.is_leaf(node):
             # leaf node is input
             return self.get_size(node)
 
@@ -1465,6 +1494,7 @@ class ContractionTree:
         legs=None,
         cost=None,
         size=None,
+        parent=None,
         check=False,
     ):
         """Contract node ``x`` with node ``y`` in the tree to create a new
@@ -1493,14 +1523,18 @@ class ContractionTree:
         parent : node_type
             The new parent node of ``x`` and ``y``.
         """
-        parent = self.nodeops.node_union(x, y)
+        self._add_node(x, check=check)
+        self._add_node(y, check=check)
+        nx, ny = self.get_extent(x), self.get_extent(y)
 
-        # make sure info entries exist for all (default dict)
-        for node in (x, y, parent):
-            self._add_node(node, check=check)
+        if parent is None:
+            if nx + ny == self.N:
+                parent = self.root
+            else:
+                parent = self.nodeops.node_union(x, y)
+        self._add_node(parent, check=check)
 
         # enforce left ordering of 'heaviest' subtrees
-        nx, ny = self.get_extent(x), self.get_extent(y)
         if nx == ny:
             # deterministically break ties
             sortx = self.nodeops.node_tie_breaker(x)
@@ -1539,6 +1573,7 @@ class ContractionTree:
         self,
         nodes,
         optimize="auto-hq",
+        grandparent=None,
         check=False,
         extra_opts=None,
     ):
@@ -1551,12 +1586,15 @@ class ContractionTree:
             return nodes[0]
 
         if len(nodes) == 2:
-            return self.contract_nodes_pair(*nodes, check=check)
+            return self.contract_nodes_pair(
+                *nodes, parent=grandparent, check=check
+            )
 
         from .interface import find_path
 
         # create the bottom and top nodes
-        grandparent = self.nodeops.node_union_it(nodes)
+        if grandparent is None:
+            grandparent = self.nodeops.node_union_it(nodes)
         self._add_node(grandparent, check=check)
 
         # if more than two nodes need to find the path to fill in between
@@ -1601,17 +1639,14 @@ class ContractionTree:
 
         # now we have path create the nodes in between
         temp_nodes = list(nodes)
-        for p in path:
+        for p in path[:-1]:
             to_contract = [temp_nodes.pop(i) for i in sorted(p, reverse=True)]
             temp_nodes.append(self.contract_nodes(to_contract, check=check))
 
-        (parent,) = temp_nodes
+        # want to explicitly specify the grandparent node so do separately
+        self.contract_nodes(temp_nodes, grandparent=grandparent, check=check)
 
-        if check:
-            # final remaining temp input should be the 'grandparent'
-            assert parent == grandparent
-
-        return parent
+        return grandparent
 
     def is_complete(self):
         """Check every node has two children, unless it is a leaf."""
@@ -1624,7 +1659,7 @@ class ContractionTree:
         queue = [self.root]
         while queue:
             node = queue.pop()
-            if self.get_extent(node) == 1:
+            if self.is_leaf(node):
                 continue
             try:
                 queue.extend(self.children[node])
@@ -1803,7 +1838,7 @@ class ContractionTree:
                 i = rng.randint(0, len(queue) - 1)
 
             p = queue.pop(i)
-            if self.get_extent(p) == 1:
+            if self.is_leaf(p):
                 real_leaves.append(p)
                 continue
 
@@ -1849,7 +1884,7 @@ class ContractionTree:
         }
 
         for node, node_info in tree.info.items():
-            if self.get_extent(node) == 1:
+            if self.is_leaf(node):
                 # handle leaves separately
                 i = self.nodeops.node_get_single_el(node)
                 term = tree.inputs[i]
@@ -1938,7 +1973,7 @@ class ContractionTree:
         for p, l, r in tree.traverse():
             if ind in tree.get_legs(l) or ind in tree.get_legs(r):
                 tree._remove_node(p)
-                tree.contract_nodes_pair(l, r)
+                tree.contract_nodes_pair(l, r, parent=p)
 
         # reset caches
         tree.already_optimized.clear()
@@ -2033,9 +2068,9 @@ class ContractionTree:
         subtree_search : {'bfs', 'dfs', 'random'}, optional
             How to build the subtrees:
 
-                - 'bfs': breadth-first-search creating balanced subtrees
-                - 'dfs': depth-first-search creating imbalanced subtrees
-                - 'random': random subtree building
+            - 'bfs': breadth-first-search creating balanced subtrees
+            - 'dfs': depth-first-search creating imbalanced subtrees
+            - 'random': random subtree building
 
         weight_what : {'flops', 'size'}, optional
             When assessing nodes to build and optimize subtrees from whether to
@@ -2048,10 +2083,10 @@ class ContractionTree:
         select : {'max', 'min', 'random'}, optional
             What order to select node subtrees to optimize:
 
-                - 'max': choose the highest score first
-                - 'min': choose the lowest score first
-                - 'random': choose randomly weighted on score -- see
-                  ``weight_pwr``.
+            - 'max': choose the highest score first
+            - 'min': choose the lowest score first
+            - 'random': choose randomly weighted on score -- see
+              ``weight_pwr``.
 
         maxiter : int, optional
             How many subtree optimizations to perform, the algorithm can
@@ -2145,7 +2180,9 @@ class ContractionTree:
                 opt.cost_cap = max(2, current_cost)
 
                 # and reoptimize the leaves
-                tree.contract_nodes(sub_leaves, optimize=opt)
+                tree.contract_nodes(
+                    sub_leaves, optimize=opt, grandparent=sub_root
+                )
                 already_optimized.add(sub_leaves)
 
                 r += 1
@@ -2909,7 +2946,7 @@ class ContractionTree:
         return tuple(
             node
             for node in itertools.chain.from_iterable(self.traverse())
-            if self.get_extent(node) == 1
+            if self.is_leaf(node)
         )
 
     def get_path(self, order=None):
@@ -3064,7 +3101,7 @@ class ContractionTree:
                     cand = candidates.pop(0)
 
                     # don't need to do anything for
-                    if self.get_extent(child) == 1:
+                    if self.is_leaf(child):
                         candidates.append(
                             {
                                 "map": {child: child, **cand["map"]},
@@ -3183,7 +3220,7 @@ class ContractionTree:
         for p, (l, r) in nodes:
             p_inds, l_inds, r_inds = map(self.get_inds, (p, l, r))
 
-            if make_output_contig and self.get_extent(p) != self.N:
+            if make_output_contig and not self.is_root(p):
                 # sort indices by whether they appear in the left or right
                 # whether this happens before or after the sort below depends
                 # on the order we are processing the nodes
@@ -3201,7 +3238,7 @@ class ContractionTree:
                 # 1. if they are going to be contracted
                 # 2. what order they appear in the parent indices
                 # (but ignore leaf indices)
-                if self.get_extent(l) != 1:
+                if not self.is_leaf(l):
 
                     def lsort(ix):
                         return (r_inds.find(ix), p_inds.find(ix))
@@ -3209,7 +3246,7 @@ class ContractionTree:
                     l_inds = "".join(sorted(self.get_legs(l), key=lsort))
                     self.info[l]["inds"] = l_inds
 
-                if self.get_extent(r) != 1:
+                if not self.is_leaf(r):
 
                     def rsort(ix):
                         return (p_inds.find(ix), l_inds.find(ix))
@@ -4163,7 +4200,12 @@ class PartitionTreeBuilder:
         seed=None,
         **partition_opts,
     ):
-        tree = ContractionTree(inputs, output, size_dict, track_childless=True)
+        tree = ContractionTree(
+            inputs,
+            output,
+            size_dict,
+            track_childless=True,
+        )
 
         rng = get_rng(seed)
         rand_size_dict = jitter_dict(size_dict, random_strength, rng)
@@ -4188,6 +4230,7 @@ class PartitionTreeBuilder:
             if subsize <= cutoff:
                 tree.contract_nodes(
                     [tree.input_to_node(x) for x in subgraph],
+                    grandparent=top_node,
                     optimize=sub_optimize,
                     check=check,
                 )
@@ -4236,6 +4279,7 @@ class PartitionTreeBuilder:
                 # no communities found - contract all remaining leaves
                 tree.contract_nodes(
                     tuple(map(self.input_to_node, subgraph)),
+                    grandparent=top_node,
                     optimize=sub_optimize,
                     check=check,
                 )
@@ -4251,7 +4295,10 @@ class PartitionTreeBuilder:
                 )
 
             tree.contract_nodes(
-                new_nodes, optimize=super_optimize, check=check
+                new_nodes,
+                grandparent=top_node,
+                optimize=super_optimize,
+                check=check,
             )
 
         if check:
@@ -4266,12 +4313,17 @@ class PartitionTreeBuilder:
         size_dict,
         random_strength=0.01,
         groupsize=4,
-        check=False,
         sub_optimize="greedy",
+        check=False,
         seed=None,
         **partition_opts,
     ):
-        tree = ContractionTree(inputs, output, size_dict, track_childless=True)
+        tree = ContractionTree(
+            inputs,
+            output,
+            size_dict,
+            track_childless=True,
+        )
         rand_size_dict = jitter_dict(size_dict, random_strength, seed)
         leaves = tuple(tree.gen_leaves())
         output = tuple(tree.output)

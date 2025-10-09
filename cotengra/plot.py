@@ -921,7 +921,7 @@ def plot_tree(
             if span is True:
                 span = tree.get_spans()[0]
             for node in G_tree.nodes:
-                if tree.get_extent(node) == 1:
+                if tree.is_leaf(node):
                     continue
                 raw_pos = pos[span[node]]
                 pos[node] = (
@@ -1744,7 +1744,7 @@ def plot_tree_flat(
     # position of each node
     pos = {}
     for i, (p, l, r) in enumerate(tree.traverse(), 1):
-        if tree.get_extent(l) == 1:
+        if tree.is_leaf(l):
             # left is a leaf
             xyl = pos[l] = (leaf_order[l], i - 1)
             tid = tree.node_to_input(l)
@@ -1753,7 +1753,7 @@ def plot_tree_flat(
         else:
             xyl = pos[l]
 
-        if tree.get_extent(r) == 1:
+        if tree.is_leaf(r):
             # right is a leaf
             xyr = pos[r] = (leaf_order[r], i - 1)
             tid = tree.node_to_input(r)
@@ -1919,7 +1919,7 @@ def plot_tree_circuit(
         pos[r] = (px - 1, py - 1)
         pos[l] = (px - tree.get_extent(r), py)
 
-        if tree.get_extent(l) > 1:
+        if not tree.is_leaf(l):
             queue.append(l)
         else:
             i = tree.node_to_input(l)
@@ -1933,7 +1933,7 @@ def plot_tree_circuit(
                 va="center",
                 family="monospace",
             )
-        if tree.get_extent(r) > 1:
+        if not tree.is_leaf(r):
             queue.append(r)
         else:
             i = tree.node_to_input(r)

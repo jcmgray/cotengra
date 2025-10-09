@@ -307,14 +307,14 @@ def array_contract_path(
     return path
 
 
-def _find_tree_explicit(inputs, output, size_dict, optimize):
+def _find_tree_explicit(inputs, output, size_dict, optimize, **kwargs):
     if optimize and isinstance(optimize[0], (str, int)):
         return ContractionTree.from_path(
-            inputs, output, size_dict, edge_path=optimize
+            inputs, output, size_dict, edge_path=optimize, **kwargs
         )
     else:
         return ContractionTree.from_path(
-            inputs, output, size_dict, path=optimize
+            inputs, output, size_dict, path=optimize, **kwargs
         )
 
 

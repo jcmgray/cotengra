@@ -3,16 +3,33 @@ import pytest
 import cotengra as ctg
 
 
-def test_contraction_tree_equivalency():
+@pytest.mark.parametrize("nodeops", ["frozenset[int]", "BitSetInt"])
+def test_contraction_tree_equivalency(nodeops):
     eq = "a,ab,bc,c->"
     shapes = [(4,), (4, 2), (2, 5), (5,)]
+    inputs, output = ctg.utils.eq_to_inputs_output(eq)
+    size_dict = ctg.utils.shapes_inputs_to_size_dict(shapes, inputs)
     # optimal contraction is like:
     #    o
     #   / \
     #  o   o
     # / \ / \
-    ct1 = ctg.einsum_tree(eq, *shapes, optimize=[(0, 1), (0, 1), (0, 1)])
-    ct2 = ctg.einsum_tree(eq, *shapes, optimize=[(2, 3), (0, 1), (0, 1)])
+    path1 = [(0, 1), (0, 1), (0, 1)]
+    path2 = [(2, 3), (0, 1), (0, 1)]
+    ct1 = ctg.ContractionTree.from_path(
+        inputs,
+        output,
+        size_dict,
+        path=path1,
+        nodeops=nodeops,
+    )
+    ct2 = ctg.ContractionTree.from_path(
+        inputs,
+        output,
+        size_dict,
+        path=path2,
+        nodeops=nodeops,
+    )
     assert ct1.total_flops() == ct2.total_flops() == 20
     assert ct1.children == ct2.children
     assert ct1.is_complete()
@@ -21,7 +38,8 @@ def test_contraction_tree_equivalency():
 
 @pytest.mark.parametrize("ssa", [False, True])
 @pytest.mark.parametrize("autocomplete", [False, True, "auto"])
-def test_contraction_tree_from_path_incomplete(ssa, autocomplete):
+@pytest.mark.parametrize("nodeops", ["frozenset[int]", "BitSetInt", "ssa"])
+def test_contraction_tree_from_path_incomplete(ssa, autocomplete, nodeops):
     inputs = ["a", "ab", "bc", "c"]
     output = ""
     size_dict = {"a": 4, "b": 2, "c": 5}
@@ -36,27 +54,35 @@ def test_contraction_tree_from_path_incomplete(ssa, autocomplete):
             size_dict,
             ssa_path=ssa_path,
             autocomplete=autocomplete,
+            nodeops=nodeops,
         )
     else:
         path = [(0, 1), (0, 1)]
         tree = ctg.ContractionTree.from_path(
-            inputs, output, size_dict, path=path, autocomplete=autocomplete
+            inputs,
+            output,
+            size_dict,
+            path=path,
+            autocomplete=autocomplete,
+            nodeops=nodeops,
         )
 
     if not autocomplete:
-        assert not tree.is_complete()
-        assert tree.get_incomplete_nodes() == {
-            tree.nodeops.node_from_seq([0, 1, 2, 3]): [
-                tree.nodeops.node_from_seq([0, 1]),
-                tree.nodeops.node_from_seq([2, 3]),
-            ],
-        }
+        if nodeops != "ssa":
+            assert not tree.is_complete()
+            assert tree.get_incomplete_nodes() == {
+                tree.nodeops.node_from_seq([0, 1, 2, 3]): [
+                    tree.nodeops.node_from_seq([0, 1]),
+                    tree.nodeops.node_from_seq([2, 3]),
+                ],
+            }
     else:
         assert tree.is_complete()
         assert tree.get_incomplete_nodes() == {}
 
 
-def test_tree_incomplete():
+@pytest.mark.parametrize("nodeops", ["frozenset[int]", "BitSetInt", "ssa"])
+def test_tree_incomplete(nodeops):
     c = ctg.utils.rand_equation(
         n=10,
         reg=3,
@@ -65,7 +91,13 @@ def test_tree_incomplete():
         n_hyper_out=1,
         seed=42,
     )
-    tree = ctg.ContractionTree(c.inputs, c.output, c.size_dict)
+
+    if nodeops == "ssa":
+        pytest.xfail("SSA does not support incomplete trees")
+
+    tree = ctg.ContractionTree(
+        c.inputs, c.output, c.size_dict, nodeops=nodeops
+    )
     assert len(tree.info) == 11
     tree.contract_nodes([[3, 6, 8], [4, 7]])
     assert len(tree.info) == 14
@@ -326,7 +358,7 @@ def test_slice_and_restore_preprocessed_inds(seed):
     inputs, output = ctg.utils.eq_to_inputs_output(eq)
     size_dict = ctg.utils.make_rand_size_dict_from_inputs(inputs, seed=seed)
     arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
-    tree = ctg.ContractionTree(inputs, output, size_dict)
+    tree = ctg.ContractionTree(inputs, output, size_dict, nodeops="BitSetInt")
     tree.autocomplete()
     stats0 = tree.contract_stats()
     xe = np.einsum(eq, *arrays)

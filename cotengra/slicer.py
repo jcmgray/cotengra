@@ -107,7 +107,7 @@ class ContractionCosts:
             )
             for node in contraction_tree.info
             # ignore leaf nodes
-            if contraction_tree.get_extent(node) != 1
+            if not contraction_tree.is_leaf(node)
         )
         return cls(contractions, size_dict, **kwargs)
 

@@ -71,6 +71,14 @@ class NodeOpsFrozenset:
         """Check if node ``x`` is a subset of node ``y``."""
         return x.issubset(y)
 
+    @staticmethod
+    def is_leaf(node):
+        return len(node) == 1
+
+    @staticmethod
+    def is_supremum(node, N):
+        return len(node) == N
+
 
 class BitSetInt(int):
     """A bitset for keeping track of dense sets of integers. Subclass of
@@ -229,12 +237,77 @@ class NodeOpsBitSetInt:
     def node_issubset(x, y):
         return (x & y) == x
 
+    @staticmethod
+    def is_leaf(node):
+        return node.bit_count() == 1
+
+    @staticmethod
+    def is_supremum(node, N):
+        return node == BitSetInt.supremum(N)
+
+
+class NodeOpsSSA:
+    __slots__ = ("ssa", "N")
+
+    def __init__(self, N):
+        self.ssa = N + 1
+        self.N = N
+
+    def copy(self):
+        new = object.__new__(NodeOpsSSA)
+        new.ssa = self.ssa
+        new.N = self.N
+        return new
+
+    def get_next_ssa(self):
+        p = self.ssa
+        self.ssa += 1
+        return p
+
+    node_type = int
+
+    def node_size(self, node):
+        raise NotImplementedError
+
+    def node_from_seq(self, seq):
+        raise NotImplementedError
+
+    def node_from_single(self, x):
+        return x
+
+    def node_supremum(self, size):
+        return size
+
+    def node_get_single_el(self, node):
+        return node
+
+    def node_tie_breaker(self, x):
+        return -x
+
+    def is_valid_node(self, node):
+        return isinstance(node, int)
+
+    def node_union(self, x, y):
+        return self.get_next_ssa()
+
+    def node_union_it(self, bs):
+        raise NotImplementedError
+
+    def node_issubset(self, x, y):
+        raise NotImplementedError
+
+    def is_leaf(self, node):
+        return 0 <= node < self.N
+
+    def is_supremum(self, node, N):
+        return node == N
+
 
 nodeops_frozenset = NodeOpsFrozenset()
 nodeops_bitsetint = NodeOpsBitSetInt()
 
 
-def get_nodeops(node_type_str: str):
+def get_nodeops(node_type_str: str, N=None):
     """Get the node operations namespace for the given node type.
 
     Parameters
@@ -247,9 +320,14 @@ def get_nodeops(node_type_str: str):
     NodeOpsFrozenset or NodeOpsBitSetInt
         The corresponding node operations namespace.
     """
+    if node_type_str == "auto":
+        node_type_str = "frozenset[int]"
+
     if node_type_str == "frozenset[int]":
         return nodeops_frozenset
     elif node_type_str == "BitSetInt":
         return nodeops_bitsetint
+    elif node_type_str == "ssa":
+        return NodeOpsSSA(N)
     else:
         raise ValueError(f"Unknown node type: {node_type_str}")

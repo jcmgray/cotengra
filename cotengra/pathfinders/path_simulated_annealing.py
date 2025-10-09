@@ -270,14 +270,14 @@ def simulated_anneal_tree(
                 l, r = tree.children[p]
 
                 # check which local moves are possible
-                if tree.get_extent(l) == 1:
-                    if tree.get_extent(r) == 1:
+                if tree.is_leaf(l) == 1:
+                    if tree.is_leaf(r) == 1:
                         # both are leaves
                         continue
                     else:
                         # left is leaf
                         rule = rng.randint(2, 3)
-                elif tree.get_extent(r) == 1:
+                elif tree.is_leaf(r) == 1:
                     # right is leaf
                     rule = rng.randint(0, 1)
                 else:
@@ -352,6 +352,7 @@ def simulated_anneal_tree(
                         legs=new_legs1,
                         cost=new_cost1,
                         size=new_size1,
+                        parent=p,  # reuse top node label
                     )
 
                     if progbar:
