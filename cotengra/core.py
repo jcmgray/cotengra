@@ -4278,7 +4278,7 @@ class PartitionTreeBuilder:
             if len(new_nodes) == 1:
                 # no communities found - contract all remaining leaves
                 tree.contract_nodes(
-                    tuple(map(self.input_to_node, subgraph)),
+                    tuple(map(tree.input_to_node, subgraph)),
                     grandparent=top_node,
                     optimize=sub_optimize,
                     check=check,
