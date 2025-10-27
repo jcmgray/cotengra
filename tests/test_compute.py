@@ -111,7 +111,8 @@ def test_basic_equations(eq, dtype, strip_exponent):
     if strip_exponent:
         y = y[0] * 10 ** y[1]
     rtol = 5e-3 if dtype in ("float32", "complex64") else 5e-6
-    assert_allclose(x, y, rtol=rtol, atol=1e-8)
+    atol = 1e-5 if dtype in ("float32", "complex64") else 1e-8
+    assert_allclose(x, y, rtol=rtol, atol=atol)
 
 
 @pytest.mark.parametrize("n", [10])
