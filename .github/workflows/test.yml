@@ -31,7 +31,7 @@ jobs:
           env: test-windows
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
 
     - uses: prefix-dev/setup-pixi@v0.9.1
       with:
