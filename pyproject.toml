@@ -149,6 +149,8 @@ sphinx = "*"
 sphinx-autoapi = "*"
 sphinx-copybutton = "*"
 sphinx-design = "*"
+[tool.pixi.feature.docs.pypi-dependencies]
+squeaky = "*"
 
 [tool.pixi.environments]
 testminimal = { features = ["pymid", "basic", "tests"] }
@@ -168,8 +170,22 @@ pytest \
     -m "not localonly"
 """
 cwd = "."
+default-environment = "testpymid"
 
 [tool.pixi.feature.docs.tasks]
 docs = { cmd = "sphinx-build -b html docs docs/_build/html", cwd = "." }
 docs-clean = { cmd = "rm -rf docs/_build", cwd = "." }
 docs-serve = { cmd = "python -m http.server -d docs/_build/html 8000", cwd = "." }
+lint = { cmd = """
+    ruff check --select I
+    && ruff format --check
+""", cwd = "." }
+format = { cmd = """
+    ruff check --select I --fix
+    && ruff format
+""", cwd = "." }
+format-all = { cmd = """
+    ruff check --select I --fix
+    && ruff format
+    && find . -name "*.ipynb" -print0 | xargs -0 squeaky
+""", cwd = "." }

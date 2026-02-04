@@ -5,6 +5,8 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -96,6 +98,8 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -228,6 +232,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstandard-0.25.0-py313h54dd161_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
+      - pypi: https://files.pythonhosted.org/packages/75/19/f519ef8aa2f379935a44212c5744e2b3a46173bf04e0110fb7f4af4028c9/scour-0.38.2.tar.gz
+      - pypi: https://files.pythonhosted.org/packages/b6/3a/3ca6127c4987482f0cfc3e9f8ca71b6de85647979a3f115bb12c261558a8/squeaky-0.7.0-py3-none-any.whl
       - pypi: ./
       osx-64:
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -353,6 +359,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstandard-0.25.0-py313hcb05632_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstd-1.5.7-h3eecb57_6.conda
+      - pypi: https://files.pythonhosted.org/packages/75/19/f519ef8aa2f379935a44212c5744e2b3a46173bf04e0110fb7f4af4028c9/scour-0.38.2.tar.gz
+      - pypi: https://files.pythonhosted.org/packages/b6/3a/3ca6127c4987482f0cfc3e9f8ca71b6de85647979a3f115bb12c261558a8/squeaky-0.7.0-py3-none-any.whl
       - pypi: ./
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -477,6 +485,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstandard-0.25.0-py313h9734d34_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
+      - pypi: https://files.pythonhosted.org/packages/75/19/f519ef8aa2f379935a44212c5744e2b3a46173bf04e0110fb7f4af4028c9/scour-0.38.2.tar.gz
+      - pypi: https://files.pythonhosted.org/packages/b6/3a/3ca6127c4987482f0cfc3e9f8ca71b6de85647979a3f115bb12c261558a8/squeaky-0.7.0-py3-none-any.whl
       - pypi: ./
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -600,12 +610,16 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstandard-0.25.0-py313h5fd188c_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
+      - pypi: https://files.pythonhosted.org/packages/75/19/f519ef8aa2f379935a44212c5744e2b3a46173bf04e0110fb7f4af4028c9/scour-0.38.2.tar.gz
+      - pypi: https://files.pythonhosted.org/packages/b6/3a/3ca6127c4987482f0cfc3e9f8ca71b6de85647979a3f115bb12c261558a8/squeaky-0.7.0-py3-none-any.whl
       - pypi: ./
   testminimal:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -1104,6 +1118,8 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -1642,6 +1658,8 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -2179,6 +2197,8 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -3629,8 +3649,8 @@ packages:
   timestamp: 1762525633181
 - pypi: ./
   name: cotengra
-  version: 0.7.6.dev38+gfdc402d68.d20251204
-  sha256: 5ad9e8898b6901568f32652f6519c31ef52a34e91b0c2b74c871abd5c97004be
+  version: 0.7.6.dev47+gef5e8371e.d20260204
+  sha256: 027d5f5b421a0d8bec00ceae16a281b448873fe2d9aa9321741f768e0deafed3
   requires_dist:
   - autoray
   - astroid ; extra == 'docs'
@@ -3654,7 +3674,6 @@ packages:
   - ray ; extra == 'recommended'
   - tqdm ; extra == 'recommended'
   requires_python: '>=3.10'
-  editable: true
 - pypi: https://files.pythonhosted.org/packages/36/5a/6f251cf63d1a21d785b3fed9daffa7beb48a8fd81a2ceb7547b4f22f2e05/cotengrust-0.2.0-cp313-cp313-win_amd64.whl
   name: cotengrust
   version: 0.2.0
@@ -12957,6 +12976,12 @@ packages:
   - pkg:pypi/scipy?source=hash-mapping
   size: 15041825
   timestamp: 1763221689706
+- pypi: https://files.pythonhosted.org/packages/75/19/f519ef8aa2f379935a44212c5744e2b3a46173bf04e0110fb7f4af4028c9/scour-0.38.2.tar.gz
+  name: scour
+  version: 0.38.2
+  sha256: 6881ec26660c130c5ecd996ac6f6b03939dd574198f50773f2508b81a68e0daf
+  requires_dist:
+  - six>=1.9.0
 - conda: https://conda.anaconda.org/conda-forge/noarch/seaborn-0.13.2-hd8ed1ab_3.conda
   noarch: python
   sha256: ea29a69b14dd6be5cdeeaa551bf50d78cafeaf0351e271e358f9b820fcab4cb0
@@ -13400,6 +13425,14 @@ packages:
   - pkg:pypi/sqlalchemy?source=hash-mapping
   size: 3603290
   timestamp: 1760114795152
+- pypi: https://files.pythonhosted.org/packages/b6/3a/3ca6127c4987482f0cfc3e9f8ca71b6de85647979a3f115bb12c261558a8/squeaky-0.7.0-py3-none-any.whl
+  name: squeaky
+  version: 0.7.0
+  sha256: f9810e459e394dc0a66115fd2a7a508ded2c8f11fe2e856bc5c48339739fd48a
+  requires_dist:
+  - nbformat
+  - scour
+  requires_python: '>=3.7'
 - conda: https://conda.anaconda.org/conda-forge/noarch/stack_data-0.6.3-pyhd8ed1ab_1.conda
   sha256: 570da295d421661af487f1595045760526964f41471021056e993e73089e9c41
   md5: b1b505328da7a6b246787df4b5a49fbc
