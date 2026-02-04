@@ -1,4 +1,23 @@
-# ensure cotengra appears as a python project on github
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Standard to msysgit
+*.doc	 diff=astextplain
+*.DOC	 diff=astextplain
+*.docx diff=astextplain
+*.DOCX diff=astextplain
+*.dot  diff=astextplain
+*.DOT  diff=astextplain
+*.pdf  diff=astextplain
+*.PDF	 diff=astextplain
+*.rtf	 diff=astextplain
+*.RTF	 diff=astextplain
+
+# include the version number in git archive
+cotengra/_version.py export-subst
+
+# make cotengra appear as a python project on github
 *.ipynb linguist-language=Python
+
 # SCM syntax highlighting & preventing 3-way merges
 pixi.lock merge=binary linguist-language=YAML linguist-generated=true
