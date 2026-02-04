@@ -76,25 +76,15 @@ testpaths = "tests"
 markers = [
     "localonly: marks test to be skipped on CI",
 ]
-# addopts = "--cov=cotengra --cov-report term-missing --cov-report xml:coverage.xml --verbose --durations=10"
-# filterwarnings = "once"
 
 [tool.coverage.run]
 omit = ["*/cotengra/experimental/*"]
 source = ["cotengra"]
 
-[tool.pylama]
-ignore = "C901"
-max_line_length = 79
-
 [tool.ruff]
 line-length = 79
 target-version = "py310"
 lint.ignore = ["E741"]
-
-[tool.black]
-line-length = 79
-target-version = ['py310']
 
 # ---------------------------------- pixi ----------------------------------- #
 
