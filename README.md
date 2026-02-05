@@ -2,10 +2,10 @@
 
 [![tests](https://github.com/jcmgray/cotengra/actions/workflows/test.yml/badge.svg)](https://github.com/jcmgray/cotengra/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/jcmgray/cotengra/branch/main/graph/badge.svg?token=Q5evNiuT9S)](https://codecov.io/gh/jcmgray/cotengra)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/84f825f5a7044762be62600c0650473d)](https://app.codacy.com/gh/jcmgray/cotengra/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Docs](https://readthedocs.org/projects/cotengra/badge/?version=latest)](https://cotengra.readthedocs.io)
 [![PyPI](https://img.shields.io/pypi/v/cotengra?color=teal)](https://pypi.org/project/cotengra/)
 [![Anaconda-Server Badge](https://anaconda.org/conda-forge/cotengra/badges/version.svg)](https://anaconda.org/conda-forge/cotengra)
+[![Pixi Badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/prefix-dev/pixi/main/assets/badge/v0.json)](https://pixi.sh)
 
 `cotengra` is a python library for contracting tensor networks or einsum
 expressions involving large numbers of tensors - the main docs can be found
