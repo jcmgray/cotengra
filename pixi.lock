@@ -3649,8 +3649,8 @@ packages:
   timestamp: 1762525633181
 - pypi: ./
   name: cotengra
-  version: 0.7.6.dev48+g4aa88f6e5.d20260204
-  sha256: f1fb395f4d9ecde14cb01109591725517c736b873d0dd160a39c0aca141d2036
+  version: 0.7.6.dev49+gb596141fa.d20260205
+  sha256: e4463ce5796f9fe29c4901c00096bb753307111b86bca7dd266b714499f9a8e2
   requires_dist:
   - autoray
   - astroid ; extra == 'docs'

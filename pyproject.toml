@@ -161,21 +161,49 @@ pytest \
 """
 cwd = "."
 default-environment = "testpymid"
+description = "Run the test suite."
 
-[tool.pixi.feature.docs.tasks]
-docs = { cmd = "sphinx-build -b html docs docs/_build/html", cwd = "." }
-docs-clean = { cmd = "rm -rf docs/_build", cwd = "." }
-docs-serve = { cmd = "python -m http.server -d docs/_build/html 8000", cwd = "." }
-lint = { cmd = """
+[tool.pixi.feature.docs.tasks.docs]
+cmd = "sphinx-build -b html docs docs/_build/html"
+cwd = "."
+description = "Build the HTML documentation."
+
+[tool.pixi.feature.docs.tasks.readthedocs]
+cmd = "sphinx-build -T -b html docs $READTHEDOCS_OUTPUT/html"
+cwd = "."
+description = "Specific task for building docs on ReadTheDocs."
+
+[tool.pixi.feature.docs.tasks.docs-clean]
+cmd = "rm -rf docs/_build"
+cwd = "."
+description = "Remove documentation build artifacts."
+
+[tool.pixi.feature.docs.tasks.docs-serve]
+cmd = "python -m http.server -d docs/_build/html 8000"
+cwd = "."
+description = "Serve the documentation locally."
+
+[tool.pixi.feature.docs.tasks.lint]
+cmd = """
     ruff check --select I
     && ruff format --check
-""", cwd = "." }
-format = { cmd = """
+"""
+cwd = "."
+description = "Check code formatting and imports with ruff."
+
+[tool.pixi.feature.docs.tasks.format]
+cmd = """
     ruff check --select I --fix
     && ruff format
-""", cwd = "." }
-format-all = { cmd = """
+"""
+cwd = "."
+description = "Apply code formatting and fix imports with ruff."
+
+[tool.pixi.feature.docs.tasks.format-all]
+cmd = """
     ruff check --select I --fix
     && ruff format
     && find . -name "*.ipynb" -print0 | xargs -0 squeaky
-""", cwd = "." }
+"""
+cwd = "."
+description = "Format all files including notebooks with squeaky."
