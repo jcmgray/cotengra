@@ -1139,7 +1139,7 @@ class ContractionTree:
             raise ValueError(f"Unknown dtype {dtype}")
 
         if log is not None:
-            C = math.log(C, log)
+            C = math.log(max(C, 1), log)
 
         return C
 
@@ -1258,9 +1258,9 @@ class ContractionTree:
             self._track_flops = self._track_write = self._track_size = True
 
         return {
-            "flops": self.multiplicity * self._flops,
-            "write": self.multiplicity * self._write,
-            "size": self._sizes.max(),
+            "flops": max(self.multiplicity * self._flops, 1),
+            "write": max(self.multiplicity * self._write, 1),
+            "size": max(self._sizes.max(), 1),
         }
 
     def arithmetic_intensity(self):
@@ -1279,6 +1279,38 @@ class ContractionTree:
     def contraction_cost(self, log=None):
         """Get the total number of scalar operations ~ time complexity."""
         return self.total_flops(dtype=None, log=log)
+
+    def naive_cost(self, log=None):
+        """Get the naive cost of performing this contraction as a single
+        einsum summation, without any intermediate contractions. This is given
+        the as product of the size of all indices.
+
+        Parameters
+        ----------
+        log : float, optional
+            If provided, return log of the cost to this base.
+        """
+        if log is None:
+            return prod(self.size_dict[ix] for ix in self.appearances)
+        else:
+            return sum(
+                math.log(self.size_dict[ix], log) for ix in self.appearances
+            )
+
+    def speedup(self, log=None):
+        """Speedup compared to naive summation.
+
+        Parameters
+        ----------
+        log : float, optional
+            If provided, return log of the speedup to this base.
+        """
+        if log is None:
+            return self.naive_cost() / self.contraction_cost()
+        else:
+            logc = self.contraction_cost(log=log)
+            logn = self.naive_cost(log=log)
+            return logn - logc
 
     def contraction_width(self, log=2):
         """Get log2 of the size of the largest tensor."""

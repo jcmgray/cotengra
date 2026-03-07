@@ -5,8 +5,12 @@ from numpy.testing import assert_allclose
 import cotengra as ctg
 import cotengra.pathfinders.path_basic as pb
 
-# these are taken from opt_einsum
 test_case_eqs = [
+    "a->a",
+    "ab->ab",
+    "ab->a",
+    "ab->ba",
+    # these are taken from opt_einsum
     # Test scalar-like operations
     "a,->a",
     "ab,->ab",

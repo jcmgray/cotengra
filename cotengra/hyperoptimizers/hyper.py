@@ -126,7 +126,20 @@ def list_hyper_functions():
 
 
 def base_trial_fn(inputs, output, size_dict, method, **kwargs):
-    tree = _PATH_FNS[method](inputs, output, size_dict, **kwargs)
+
+    # NOTE: for 1 or 2 inputs there is no optimization to be done, so we
+    # shortcut here. We might even sooner in `search`, but then we wouldn't
+    # generate any 'trials', even if they are identical.
+    N = len(inputs)
+    if N == 1:
+        tree = ContractionTree(inputs, output, size_dict)
+    elif N == 2:
+        tree = ContractionTree.from_path(
+            inputs, output, size_dict, path=[(0, 1)]
+        )
+    else:
+        tree = _PATH_FNS[method](inputs, output, size_dict, **kwargs)
+
     return {"tree": tree}
 
 

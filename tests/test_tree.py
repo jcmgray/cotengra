@@ -478,8 +478,6 @@ def test_tree_single_input_simp(path, slice):
         )
     if slice:
         tree.remove_ind_(slice)
-    else:
-        assert tree.has_preprocessing()
     assert tree.is_complete()
     assert tree.get_path() == ()
     arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)

@@ -1,4 +1,3 @@
-import functools
 import subprocess
 from collections import defaultdict
 
@@ -51,57 +50,75 @@ def contraction_20_5():
     return eq, shapes, size_dict, views
 
 
-@pytest.mark.parametrize(
-    ("opt", "requires"),
-    [
-        (functools.partial(ctg.UniformOptimizer, methods="greedy"), ""),
-        (
-            functools.partial(
-                ctg.UniformOptimizer, methods="greedy-compressed"
-            ),
-            "",
-        ),
-        (functools.partial(ctg.UniformOptimizer, methods="greedy-span"), ""),
-        (functools.partial(ctg.UniformOptimizer, methods="labels"), ""),
-        (
-            functools.partial(ctg.UniformOptimizer, methods="kahypar"),
-            "kahypar",
-        ),
-        (
-            functools.partial(ctg.UniformOptimizer, methods="kahypar-agglom"),
-            "kahypar",
-        ),
-        (
-            functools.partial(ctg.UniformOptimizer, methods="betweenness"),
-            "igraph",
-        ),
-        (
-            functools.partial(ctg.UniformOptimizer, methods="labelprop"),
-            "igraph",
-        ),
-        (
-            functools.partial(ctg.UniformOptimizer, methods="spinglass"),
-            "igraph",
-        ),
-        (
-            functools.partial(ctg.UniformOptimizer, methods="walktrap"),
-            "igraph",
-        ),
-    ],
-)
-def test_basic(contraction_20_5, opt, requires):
-    pytest.importorskip("opt_einsum")
+methods_requires = [
+    ("greedy", ""),
+    ("greedy-compressed", ""),
+    ("greedy-span", ""),
+    ("labels", ""),
+    ("kahypar", "kahypar"),
+    ("kahypar-agglom", "kahypar"),
+    ("betweenness", "igraph"),
+    ("labelprop", "igraph"),
+    ("spinglass", "igraph"),
+    ("walktrap", "igraph"),
+]
 
-    import opt_einsum as oe
+single_term_cases = [
+    ([("a",)], ("a",), {"a": 2}),
+    ([("a",)], (), {"a": 2}),
+    ([("a", "b")], ("a",), {"a": 2, "b": 3}),
+    ([("a", "b")], ("a", "b"), {"a": 2, "b": 3}),
+    ([("a", "b")], ("b", "a"), {"a": 2, "b": 3}),
+]
 
+
+@pytest.mark.parametrize(("method", "requires"), methods_requires)
+def test_basic(contraction_20_5, method, requires):
     if requires:
         pytest.importorskip(requires)
 
+    opt = ctg.UniformOptimizer(
+        methods=method, max_repeats=16, on_trial_error="raise"
+    )
     eq, _, _, arrays = contraction_20_5
-    optimizer = opt(max_repeats=16)
+    shapes = [a.shape for a in arrays]
 
-    _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
-    assert path_info.speedup > 1
+    tree = ctg.einsum_tree(eq, *shapes, optimize=opt)
+    assert tree.speedup() > 1
+
+
+@pytest.mark.parametrize(
+    ("inputs", "output", "size_dict"),
+    single_term_cases,
+)
+@pytest.mark.parametrize(("method", "requires"), methods_requires)
+def test_single_term_uniform(inputs, output, size_dict, method, requires):
+    if requires:
+        pytest.importorskip(requires)
+
+    opt = ctg.UniformOptimizer(
+        methods=method, max_repeats=16, on_trial_error="raise", parallel=False,
+    )
+    tree = ctg.array_contract_tree(inputs, output, size_dict, optimize=opt)
+    tree.describe()
+
+
+
+@pytest.mark.parametrize(
+    ("inputs", "output", "size_dict"),
+    single_term_cases,
+)
+@pytest.mark.parametrize(("method", "requires"), methods_requires)
+def test_single_term_direct(inputs, output, size_dict, method, requires):
+    if requires:
+        pytest.importorskip(requires)
+
+    opt = ctg.UniformOptimizer(
+        methods=method, max_repeats=16, on_trial_error="raise", parallel=False,
+    )
+    tree = opt.search(inputs, output, size_dict)
+    tree.describe()
+
 
 
 @pytest.mark.parametrize(
@@ -118,18 +135,16 @@ def test_basic(contraction_20_5, opt, requires):
 def test_hyper(contraction_20_5, optlib, requires, parallel):
     pytest.importorskip("kahypar")
     pytest.importorskip(requires)
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
 
     eq, _, _, arrays = contraction_20_5
+    shapes = [a.shape for a in arrays]
     optimizer = ctg.HyperOptimizer(
         max_repeats=32,
         parallel=parallel,
         optlib=optlib,
     )
-    _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
-    assert path_info.speedup > 1
+    tree = ctg.einsum_tree(eq, *shapes, optimize=optimizer)
+    assert tree.speedup() > 1
     assert {x[0] for x in optimizer.get_trials()} == {"greedy", "kahypar"}
     optimizer.print_trials()
 
@@ -153,14 +168,11 @@ def test_hyper(contraction_20_5, optlib, requires, parallel):
     ],
 )
 def test_binaries(contraction_20_5, optimize):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
     eq, _, _, arrays = contraction_20_5
+    shapes = [a.shape for a in arrays]
     optimizer = optimize(max_time=1)
-    _, path_info = oe.contract_path(eq, *arrays, optimize=optimizer)
-    assert path_info.speedup > 1
+    tree = ctg.einsum_tree(eq, *shapes, optimize=optimizer)
+    assert tree.speedup() > 1
 
 
 @pytest.mark.parametrize("parallel", [False, True])
