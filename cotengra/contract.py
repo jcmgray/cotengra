@@ -753,6 +753,11 @@ class Contractor:
 
         if implementation == "cotengra":
             _einsum, _tensordot = einsum, tensordot
+        elif implementation == "pytblis":
+            import pytblis
+
+            _einsum = pytblis.einsum
+            _tensordot = pytblis.tensordot
         elif implementation == "autoray":
             try:
                 _einsum = get_lib_fn(backend, "einsum")
