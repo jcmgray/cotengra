@@ -33,8 +33,6 @@ from .hypergraph import (
     get_hypergraph,
 )
 from .hyperoptimizers import (
-    hyper_baytune,
-    hyper_choco,
     hyper_cmaes,
     hyper_nevergrad,
     hyper_optuna,
@@ -123,13 +121,6 @@ UniformOptimizer = functools.partial(HyperOptimizer, optlib="random")
 no optimization library.
 """
 
-QuasiRandOptimizer = functools.partial(
-    HyperOptimizer, optlib="chocolate", sampler="QuasiRandom"
-)
-"""Does no gaussian process tuning by default, just randomly samples but in a
-more 'even' way than purely random - requires ``chocolate``.
-"""
-
 contract_expression = einsum_expression
 """Alias for :func:`cotengra.einsum_expression`."""
 
@@ -164,8 +155,6 @@ __all__ = (
     "greedy_optimize",
     "GreedyOptimizer",
     "hash_contraction",
-    "hyper_baytune",
-    "hyper_choco",
     "hyper_cmaes",
     "hyper_nevergrad",
     "hyper_optimize",

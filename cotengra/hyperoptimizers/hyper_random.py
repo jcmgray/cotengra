@@ -4,7 +4,7 @@ import functools
 import math
 
 from ..utils import get_rng
-from .hyper import register_hyper_optlib
+from .hyper import HyperOptLib, register_hyper_optlib
 
 
 def sample_bool(rng):
@@ -76,34 +76,31 @@ class RandomSampler:
         return method, params
 
 
-def random_init_optimizers(
-    self,
-    methods,
-    space,
-    seed=None,
-):
-    """Initialize a completely random sampling optimizer.
+class RandomOptLib(HyperOptLib):
+    """Completely random sampling optimizer."""
 
-    Parameters
-    ----------
-    space : dict[str, dict[str, dict]]
-        The search space.
-    """
-    self.sampler = RandomSampler(methods, space, seed=seed)
+    def setup(self, methods, space, optimizer=None, seed=None, **kwargs):
+        """Initialize random sampling.
+
+        Parameters
+        ----------
+        methods : list[str]
+            The list of contraction methods to sample from.
+        space : dict[str, dict[str, dict]]
+            The search space.
+        optimizer : HyperOptimizer, optional
+            The parent optimizer instance.
+        seed : None or int, optional
+            Random seed.
+        """
+        self.sampler = RandomSampler(methods, space, seed=seed)
+
+    def get_setting(self):
+        method, params = self.sampler.ask()
+        return {"method": method, "params": params}
+
+    def report_result(self, setting, trial, score):
+        pass
 
 
-def random_get_setting(self):
-    method, params = self.sampler.ask()
-    return {"method": method, "params": params}
-
-
-def random_report_result(*_, **__):
-    pass
-
-
-register_hyper_optlib(
-    "random",
-    random_init_optimizers,
-    random_get_setting,
-    random_report_result,
-)
+register_hyper_optlib("random", RandomOptLib)

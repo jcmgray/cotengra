@@ -97,11 +97,13 @@ def test_single_term_uniform(inputs, output, size_dict, method, requires):
         pytest.importorskip(requires)
 
     opt = ctg.UniformOptimizer(
-        methods=method, max_repeats=16, on_trial_error="raise", parallel=False,
+        methods=method,
+        max_repeats=16,
+        on_trial_error="raise",
+        parallel=False,
     )
     tree = ctg.array_contract_tree(inputs, output, size_dict, optimize=opt)
     tree.describe()
-
 
 
 @pytest.mark.parametrize(
@@ -114,21 +116,22 @@ def test_single_term_direct(inputs, output, size_dict, method, requires):
         pytest.importorskip(requires)
 
     opt = ctg.UniformOptimizer(
-        methods=method, max_repeats=16, on_trial_error="raise", parallel=False,
+        methods=method,
+        max_repeats=16,
+        on_trial_error="raise",
+        parallel=False,
     )
     tree = opt.search(inputs, output, size_dict)
     tree.describe()
 
 
-
 @pytest.mark.parametrize(
     ("optlib", "requires"),
     [
-        ("baytune", "btb"),
-        ("chocolate", "chocolate"),
         ("nevergrad", "nevergrad"),
         ("skopt", "skopt"),
         ("cmaes", "cmaes"),
+        ("optuna", "optuna"),
     ],
 )
 @pytest.mark.parametrize("parallel", [False, True])

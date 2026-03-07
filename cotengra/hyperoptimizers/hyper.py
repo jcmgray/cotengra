@@ -64,10 +64,10 @@ def get_default_optlib_eco():
 @functools.lru_cache(maxsize=None)
 def get_default_optlib():
     """Get the default optimizer balancing quality and speed."""
-    if importlib.util.find_spec("optuna"):
-        optlib = "optuna"
-    elif importlib.util.find_spec("cmaes"):
+    if importlib.util.find_spec("cmaes"):
         optlib = "cmaes"
+    elif importlib.util.find_spec("optuna"):
+        optlib = "optuna"
     elif importlib.util.find_spec("nevergrad"):
         optlib = "nevergrad"
     else:
@@ -95,8 +95,67 @@ def get_hyper_constants():
     return _HYPER_CONSTANTS
 
 
-def register_hyper_optlib(name, init_optimizers, get_setting, report_result):
-    _OPTLIB_FNS[name] = (init_optimizers, get_setting, report_result)
+class HyperOptLib:
+    """Base class for hyper-optimization library interfaces.
+
+    Subclasses should implement ``setup``, ``get_setting``, and
+    ``report_result``.
+    """
+
+    def setup(self, methods, space, optimizer=None, **kwargs):
+        """Initialize the optimizer state.
+
+        Parameters
+        ----------
+        methods : list[str]
+            The list of contraction methods to optimize over.
+        space : dict[str, dict[str, dict]]
+            The search space for each method.
+        optimizer : HyperOptimizer, optional
+            The parent ``HyperOptimizer`` instance, for accessing
+            attributes like ``max_repeats``.
+        kwargs
+            Extra options specific to the optimizer library.
+        """
+        raise NotImplementedError
+
+    def get_setting(self):
+        """Suggest the next setting to trial.
+
+        Returns
+        -------
+        setting : dict
+            Must contain at least ``{"method": str, "params": dict}``.
+            May also include tokens for reporting.
+        """
+        raise NotImplementedError
+
+    def report_result(self, setting, trial, score):
+        """Report the result of a trial.
+
+        Parameters
+        ----------
+        setting : dict
+            The setting dict returned by ``get_setting``.
+        trial : dict
+            The trial result dict.
+        score : float
+            The scalar score for this trial.
+        """
+        raise NotImplementedError
+
+
+def register_hyper_optlib(name, cls):
+    """Register a hyper-optimization library backend.
+
+    Parameters
+    ----------
+    name : str
+        The name of the backend.
+    cls : type
+        A ``HyperOptLib`` subclass.
+    """
+    _OPTLIB_FNS[name] = cls
 
 
 def register_hyper_function(name, ssa_func, space, constants=None):
@@ -326,7 +385,7 @@ class ComputeScore:
         try:
             trial = self.fn(*args, **kwargs)
             trial["score"] = self.score_fn(trial) ** self.score_compression
-            # random smudge is for baytune/scikit-learn nan/inf bug
+            # random smudge is for scikit-learn nan/inf bug
             trial["score"] += self.rng.gauss(0.0, self.score_smudge)
         except BadTrial:
             trial = {
@@ -498,11 +557,10 @@ class HyperOptimizer(PathOptimizer):
         if space is None:
             space = get_hyper_space()
 
-        self._optimizer = dict(
-            zip(["init", "get_setting", "report_result"], _OPTLIB_FNS[optlib])
+        self._optimizer = _OPTLIB_FNS[optlib]()
+        self._optimizer.setup(
+            self._methods, space, optimizer=self, **optlib_opts
         )
-
-        self._optimizer["init"](self, self._methods, space, **optlib_opts)
 
     @property
     def minimize(self):
@@ -607,7 +665,7 @@ class HyperOptimizer(PathOptimizer):
         )
 
         if should_report:
-            self._optimizer["report_result"](self, setting, trial, score)
+            self._optimizer.report_result(setting, trial, score)
 
         self.method_choices.append(setting["method"])
         self.param_choices.append(setting["params"])
@@ -622,7 +680,7 @@ class HyperOptimizer(PathOptimizer):
         constants = get_hyper_constants()
 
         for _ in repeats:
-            setting = self._optimizer["get_setting"](self)
+            setting = self._optimizer.get_setting()
             method = setting["method"]
 
             trial = trial_fn(
@@ -653,7 +711,7 @@ class HyperOptimizer(PathOptimizer):
         self._futures = []
 
         for _ in repeats:
-            setting = self._optimizer["get_setting"](self)
+            setting = self._optimizer.get_setting()
             method = setting["method"]
 
             future = submit(
@@ -992,7 +1050,7 @@ class HyperCompressedOptimizer(HyperOptimizer):
         If supplied, once a trial contraction path is found, try subtree
         reconfiguation with the given options, and then update the flops and
         size of the trial with the reconfigured versions.
-    optlib : {'baytune', 'nevergrad', 'chocolate', 'skopt'}, optional
+    optlib : {'cmaes', 'optuna', 'nevergrad', 'skopt', ...}, optional
         Which optimizer to sample and train with.
     space : dict, optional
         The hyper space to search, see ``get_hyper_space`` for the default.

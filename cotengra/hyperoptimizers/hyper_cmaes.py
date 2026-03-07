@@ -7,7 +7,7 @@ https://github.com/CyberAgentAILab/cmaes.
 import math
 
 from ..utils import get_rng
-from .hyper import register_hyper_optlib
+from .hyper import HyperOptLib, register_hyper_optlib
 
 
 class LCBOptimizer:
@@ -229,53 +229,54 @@ class HyperCMAESSampler:
             self._batch.clear()
 
 
-def cmaes_init_optimizers(
-    self,
-    methods,
-    space,
-    sigma=1.0,
-    lr_adapt=True,
-    method_exploration=1.0,
-    method_temperature=1.0,
-    exponential_param_power=None,
-    **cmaes_opts,
-):
-    self._method_chooser = LCBOptimizer(
-        options=methods,
-        exploration=method_exploration,
-        temperature=method_temperature,
-    )
-    self._optimizers = {
-        method: HyperCMAESSampler(
-            space[method],
-            sigma=sigma,
-            lr_adapt=lr_adapt,
-            exponential_param_power=exponential_param_power,
-            **cmaes_opts,
+class CMAESOptLib(HyperOptLib):
+    """Hyper-optimization using CMA-ES with per-method optimizers and
+    a Lower Confidence Bound method selector.
+    """
+
+    def setup(
+        self,
+        methods,
+        space,
+        optimizer=None,
+        sigma=1.0,
+        lr_adapt=True,
+        method_exploration=1.0,
+        method_temperature=1.0,
+        exponential_param_power=None,
+        **cmaes_opts,
+    ):
+        self._method_chooser = LCBOptimizer(
+            options=methods,
+            exploration=method_exploration,
+            temperature=method_temperature,
         )
-        for method in methods
-    }
+        self._optimizers = {
+            method: HyperCMAESSampler(
+                space[method],
+                sigma=sigma,
+                lr_adapt=lr_adapt,
+                exponential_param_power=exponential_param_power,
+                **cmaes_opts,
+            )
+            for method in methods
+        }
+
+    def get_setting(self):
+        method = self._method_chooser.ask()
+        params_token, params = self._optimizers[method].ask()
+
+        return {
+            "method": method,
+            "params_token": params_token,
+            "params": params,
+        }
+
+    def report_result(self, setting, trial, score):
+        self._method_chooser.tell(setting["method"], score)
+        self._optimizers[setting["method"]].tell(
+            setting["params_token"], score
+        )
 
 
-def cmaes_get_setting(self):
-    method = self._method_chooser.ask()
-    params_token, params = self._optimizers[method].ask()
-
-    return {
-        "method": method,
-        "params_token": params_token,
-        "params": params,
-    }
-
-
-def cmaes_report_result(self, settings, trial, score):
-    self._method_chooser.tell(settings["method"], score)
-    self._optimizers[settings["method"]].tell(settings["params_token"], score)
-
-
-register_hyper_optlib(
-    "cmaes",
-    cmaes_init_optimizers,
-    cmaes_get_setting,
-    cmaes_report_result,
-)
+register_hyper_optlib("cmaes", CMAESOptLib)
