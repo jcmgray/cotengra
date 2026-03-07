@@ -437,3 +437,76 @@ def test_tree_peak_size_reorder(seed):
     pd = tree.get_peak_size(tree.root)
     assert pd <= pc
     assert pd <= pb
+
+
+@pytest.mark.parametrize("path", [None, [], [(0,)]])
+@pytest.mark.parametrize("slice", [False, "a"])
+def test_tree_single_input_nosimp(path, slice):
+    inputs = [("a",)]
+    output = ("a",)
+    size_dict = {"a": 4, "b": 2}
+
+    if path is None:
+        tree = ctg.ContractionTree(inputs, output, size_dict)
+    else:
+        tree = ctg.ContractionTree.from_path(
+            inputs, output, size_dict, path=path
+        )
+    if slice:
+        tree.remove_ind_(slice)
+    assert not tree.has_preprocessing()
+    assert tree.is_complete()
+    assert tree.get_path() == ()
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    assert tree.contract(arrays) == pytest.approx(arrays[0])
+
+
+@pytest.mark.parametrize("path", [None, [], [(0,)]])
+@pytest.mark.parametrize("slice", [False, "a", "b"])
+def test_tree_single_input_simp(path, slice):
+    import numpy as np
+
+    inputs = [("a", "b")]
+    output = ("a",)
+    size_dict = {"a": 4, "b": 2}
+
+    if path is None:
+        tree = ctg.ContractionTree(inputs, output, size_dict)
+    else:
+        tree = ctg.ContractionTree.from_path(
+            inputs, output, size_dict, path=path
+        )
+    if slice:
+        tree.remove_ind_(slice)
+    else:
+        assert tree.has_preprocessing()
+    assert tree.is_complete()
+    assert tree.get_path() == ()
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    assert tree.contract(arrays) == pytest.approx(np.sum(arrays[0], axis=1))
+
+
+@pytest.mark.parametrize("path", [None, [], [(0,)]])
+@pytest.mark.parametrize("slice", [False, "a", "b"])
+def test_tree_single_input_transpose(path, slice):
+    import numpy as np
+
+    inputs = [("a", "b")]
+    output = (
+        "b",
+        "a",
+    )
+    size_dict = {"a": 4, "b": 2}
+    if path is None:
+        tree = ctg.ContractionTree(inputs, output, size_dict)
+    else:
+        tree = ctg.ContractionTree.from_path(
+            inputs, output, size_dict, path=path
+        )
+    if slice:
+        tree.remove_ind_(slice)
+    assert not tree.has_preprocessing()
+    assert tree.is_complete()
+    assert tree.get_path() == ()
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    assert tree.contract(arrays) == pytest.approx(np.transpose(arrays[0]))

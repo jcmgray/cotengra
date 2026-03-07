@@ -603,6 +603,17 @@ def extract_contractions(
         If both ``l`` and ``r`` are ``None``, the the operation is a single
         term simplification performed with ``einsum``.
     """
+    if tree.N == 1:
+        # trivial 'contraction', single input maps directly to output
+        # possibly with reductions/transpose, setting l but not r flags this
+        pi = 1
+        li = 0
+        ri = None
+        tdot = False
+        arg = tree.get_eq_sliced()
+        perm = None
+        return [(pi, li, ri, tdot, arg, perm)]
+
     contractions = []
 
     # for compactness we convert nodes to ssa indices
@@ -617,20 +628,15 @@ def extract_contractions(
         ssa += 1
 
         if prefer_einsum or not tree.get_can_dot(p):
-            contractions.append(
-                (pi, li, ri, False, tree.get_einsum_eq(p), None)
-            )
+            tdot = False
+            arg = tree.get_einsum_eq(p)
+            perm = None
         else:
-            contractions.append(
-                (
-                    pi,
-                    li,
-                    ri,
-                    True,
-                    tree.get_tensordot_axes(p),
-                    tree.get_tensordot_perm(p),
-                )
-            )
+            tdot = True
+            arg = tree.get_tensordot_axes(p)
+            perm = tree.get_tensordot_perm(p)
+
+        contractions.append((pi, li, ri, tdot, arg, perm))
 
     if tree.preprocessing:
         # inplace single term simplifications
@@ -777,10 +783,18 @@ class Contractor:
             contractions = self.contractions
 
         for pi, li, ri, tdot, arg, perm in contractions:
-            if (li is None) and (ri is None):
-                # single term simplification, perform inplace with einsum
-                temps[pi] = _einsum(arg, temps[pi])
-                continue
+            if ri is None:
+                if li is None:
+                    # single term simplification, perform inplace with einsum
+                    temps[pi] = _einsum(arg, temps[pi])
+                    continue
+                else:
+                    # trivial 'contraction', single input maps directly to
+                    # output, possibly with reductions/transpose via einsum
+                    p_array = _einsum(arg, temps[li])
+                    if strip_exponent:
+                        return p_array, 0.0
+                    return p_array
 
             # get input arrays for this contraction
             l_array = temps.pop(li)

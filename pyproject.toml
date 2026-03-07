@@ -149,6 +149,14 @@ testpymid = { features = ["pymid", "basic", "full", "tests"] }
 testpyold = { features = ["pyold", "basic", "full", "tests"] }
 docs = { features = ["pynew", "docs"] }
 
+# ---------------------------------- tasks ---------------------------------- #
+
+[tool.pixi.tasks.pytest]
+default-environment = "testpymid"
+cmd = "pytest"
+cwd = "."
+description = "Run pytest."
+
 [tool.pixi.tasks.test]
 cmd = """
 pytest \

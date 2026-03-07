@@ -366,15 +366,16 @@ class SliceFinder:
         while not already_satisfied:
             ix = max(
                 cost.size_dict,
-                key=lambda ix:
-                # the base score
-                self.minimize.score_slice_index(cost, ix)
-                -
-                # a smudge that replicates boltzmann sampling
-                temperature * log(-log(self.rng.random()))
-                -
-                # penalize forbidden (outer) indices
-                (0 if ix not in self.forbidden else float("inf")),
+                key=lambda ix: (
+                    # the base score
+                    self.minimize.score_slice_index(cost, ix)
+                    -
+                    # a smudge that replicates boltzmann sampling
+                    temperature * log(-log(self.rng.random()))
+                    -
+                    # penalize forbidden (outer) indices
+                    (0 if ix not in self.forbidden else float("inf"))
+                ),
             )
             if ix in self.forbidden:
                 raise RuntimeError("Ran out of valid indices to slice.")

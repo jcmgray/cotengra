@@ -256,6 +256,10 @@ class ContractionTree:
         self.root = self.nodeops.node_supremum(self.N)
         self._add_node(self.root, extent=self.N)  # root extent is always N
 
+        if self.N == 1:
+            # trivial 'contraction', single input maps directly to output,
+            self.children[self.root] = (leaf,)
+
         # whether to keep track of dangling nodes/subgraphs
         self.track_childless = track_childless
         if self.track_childless:
@@ -1650,6 +1654,9 @@ class ContractionTree:
 
     def is_complete(self):
         """Check every node has two children, unless it is a leaf."""
+        if self.N == 1:
+            return True
+
         too_many_nodes = len(self.info) > 2 * self.N - 1
         too_many_branches = len(self.children) > self.N - 1
 
@@ -3137,7 +3144,7 @@ class ContractionTree:
 
         combine = {
             "mean": lambda x, y: (x + y) / 2,
-            "sum": lambda x, y: (x + y),
+            "sum": lambda x, y: x + y,
             "max": max,
             "min": min,
         }.get(combine, combine)
