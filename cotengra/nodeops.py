@@ -269,9 +269,6 @@ class NodeOpsSSA:
     def node_size(self, node):
         raise NotImplementedError
 
-    def node_from_seq(self, seq):
-        raise NotImplementedError
-
     def node_from_single(self, x):
         return x
 
@@ -288,6 +285,11 @@ class NodeOpsSSA:
         return isinstance(node, int)
 
     def node_union(self, x, y):
+        # rely on tree for tracking associated subgraph
+        return self.get_next_ssa()
+
+    def node_from_seq(self, seq):
+        # rely on tree for tracking associated subgraph
         return self.get_next_ssa()
 
     def node_union_it(self, bs):
@@ -322,6 +324,7 @@ def get_nodeops(node_type_str: str, N=None):
     """
     if node_type_str == "auto":
         node_type_str = "frozenset[int]"
+        # node_type_str = "ssa"
 
     if node_type_str == "frozenset[int]":
         return nodeops_frozenset

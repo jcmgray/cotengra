@@ -860,7 +860,7 @@ class ContractionTree:
             return self.nodeops.node_size(node)
 
     @cached_node_property("subgraph")
-    def get_subgraph(self, node):
+    def get_subgraph(self, node) -> tuple[int, ...]:
         """Get the sequence of input tensors contained in subgraph represented
         by ``node``.
 
@@ -1511,13 +1511,23 @@ class ContractionTree:
         for node in nodes:
             if not isinstance(node, self.nodeops.node_type):
                 subgraph = tuple(node)
-                node = self.nodeops.node_from_seq(node)
-                self._add_node(
-                    node,
-                    check=check,
-                    extent=len(subgraph),
-                    subgraph=subgraph,
-                )
+
+                if len(subgraph) == 1:
+                    # leaf node, for ssa we don't want to generate a new node
+                    (i,) = subgraph
+                    node = self.nodeops.node_from_single(i)
+                elif len(subgraph) == self.N:
+                    # root node, for ssa we don't want to generate a new node
+                    node = self.root
+                else:
+                    # intermedate
+                    node = self.nodeops.node_from_seq(node)
+                    self._add_node(
+                        node,
+                        check=check,
+                        extent=len(subgraph),
+                        subgraph=subgraph,
+                    )
             else:
                 self._add_node(node, check=check)
             mapped.append(node)
@@ -4312,9 +4322,8 @@ class PartitionTreeBuilder:
             # (0, 1, 2, 3, 4, 5, 6, 7, 8, ...) ->
             # ({0, 1, 3, 5, 6}, {2, 4}, {7, 8})
             partitions = separate(subgraph, membership)
-            new_nodes = tuple(map(tree.nodeops.node_from_seq, partitions))
 
-            if len(new_nodes) == 1:
+            if len(partitions) == 1:
                 # no communities found - contract all remaining leaves
                 tree.contract_nodes(
                     tuple(map(tree.input_to_node, subgraph)),
@@ -4324,17 +4333,23 @@ class PartitionTreeBuilder:
                 )
                 continue
 
-            # update tree structure with newly contracted subgraphs
-            for node, partition in zip(new_nodes, partitions):
-                tree._add_node(
-                    node,
-                    check=check,
-                    extent=len(partition),
-                    subgraph=tuple(partition),
-                )
+            # # XXX: make new nodes with subgraph set to avoid node_from_seq
+            # new_nodes = tuple(
+            #     tree.nodeops.node_from_seq(partition)
+            #     for partition in partitions
+            # )
+
+            # # update tree structure with newly contracted subgraphs
+            # for node, partition in zip(new_nodes, partitions):
+            #     tree._add_node(
+            #         node,
+            #         check=check,
+            #         extent=len(partition),
+            #         subgraph=tuple(partition),
+            #     )
 
             tree.contract_nodes(
-                new_nodes,
+                partitions,
                 grandparent=top_node,
                 optimize=super_optimize,
                 check=check,
