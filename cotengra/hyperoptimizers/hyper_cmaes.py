@@ -4,144 +4,13 @@ https://github.com/CyberAgentAILab/cmaes.
 
 """
 
-import math
-
-from ..utils import get_rng
+from ._param_mapping import (
+    LCBOptimizer,
+    build_params,
+    convert_raw,
+    num_params,
+)
 from .hyper import HyperOptLib, register_hyper_optlib
-
-
-class LCBOptimizer:
-    """Lower Confidence Bound Optimizer.
-
-    This optimizer selects the option with the lowest lower confidence bound.
-    """
-
-    def __init__(self, options, exploration=1.0, temperature=1.0, seed=None):
-        self.options = tuple(options)
-        self.index = {o: i for i, o in enumerate(self.options)}
-        self.nopt = len(self.options)
-        self.counts = [0] * self.nopt
-        self.values = [float("inf")] * self.nopt
-        self.total = 0
-        self.exploration = exploration
-        self.temperature = temperature
-        self.rng = get_rng(seed)
-
-    def ask(self):
-        """Suggest an option based on the lower confidence bound."""
-        best_option = best_lcb = None
-        for option, ci, vi in zip(self.options, self.counts, self.values):
-            if ci < 1:
-                # need to gather initial samples
-                return option
-
-            # modify lcb to include exploration term
-            lcb = (
-                vi
-                # exploration term to favor less sampled options
-                - math.sqrt(2 * self.exploration * math.log(self.total) / ci)
-                # thermal (via gumbel trick) term to add noise
-                - self.temperature * math.log(-math.log(self.rng.random()))
-            )
-
-            if best_lcb is None or lcb < best_lcb:
-                best_lcb = lcb
-                best_option = option
-
-        return best_option
-
-    def tell(self, option, score):
-        i = self.index[option]
-        self.counts[i] += 1
-        self.values[i] = min(score, self.values[i])
-        self.total += 1
-
-
-class Param:
-    """A basic parameter class for mapping various types of parameters to
-    and from uniform optimization space of [-1, 1].
-    """
-
-    def __init__(self, name):
-        self.name = name
-        self.size = 1
-
-    def get_raw_bounds(self):
-        raise NotImplementedError()
-
-    def convert_raw(self, vi):
-        raise NotImplementedError()
-
-
-class ParamFloat(Param):
-    def __init__(self, min, max, **kwargs):
-        self.min = min
-        self.max = max
-        super().__init__(**kwargs)
-
-    def convert_raw(self, x):
-        x += 1.0
-        x /= 2.0
-        x *= self.max - self.min
-        x += self.min
-        return x
-
-
-class ParamFloatExp(ParamFloat):
-    """An exponentially distributed (i.e. uniform in logspace) parameter."""
-
-    def __init__(self, min, max, power=0.5, **kwargs):
-        self.power = power
-
-        if self.power is None:
-            mn = math.log(min)
-            mx = math.log(max)
-        else:
-            mn = min**self.power
-            mx = max**self.power
-
-        super().__init__(min=mn, max=mx, **kwargs)
-
-    def convert_raw(self, x):
-        if self.power is None:
-            return math.exp(super().convert_raw(x))
-        else:
-            return super().convert_raw(x) ** (1 / self.power)
-
-
-class ParamInt(Param):
-    def __init__(self, min, max, **kwargs):
-        self.min = min
-        self.max = max
-        super().__init__(**kwargs)
-
-    def convert_raw(self, x):
-        x += 1.0
-        x /= 2.0
-        x *= self.max - self.min + 1
-        x += self.min
-        return min(int(x), self.max)
-
-
-class ParamString(Param):
-    def __init__(self, options, name):
-        self.options = tuple(options)
-        self.size = len(self.options)
-        self.name = name
-
-    def convert_raw(self, x):
-        i = max(range(len(self.options)), key=lambda i: x[i])
-        return self.options[i]
-
-
-class ParamBool(Param):
-    def __init__(self, name):
-        super().__init__(name)
-        self.size = 2
-        self.name = name
-
-    def convert_raw(self, x):
-        return x[0] > x[1]
 
 
 class HyperCMAESSampler:
@@ -157,29 +26,10 @@ class HyperCMAESSampler:
         import cmaes
         import numpy as np
 
-        self.params = []
-        for name, p in space.items():
-            if p["type"] == "FLOAT":
-                self.params.append(ParamFloat(p["min"], p["max"], name=name))
-            elif p["type"] == "FLOAT_EXP":
-                self.params.append(
-                    ParamFloatExp(
-                        p["min"],
-                        p["max"],
-                        power=exponential_param_power,
-                        name=name,
-                    )
-                )
-            elif p["type"] == "INT":
-                self.params.append(ParamInt(p["min"], p["max"], name=name))
-            elif p["type"] == "STRING":
-                self.params.append(ParamString(p["options"], name=name))
-            elif p["type"] == "BOOL":
-                self.params.append(ParamBool(name=name))
-            else:
-                raise ValueError(f"Unknown parameter type {p['type']}")
-
-        num_params = sum(p.size for p in self.params)
+        self.params = build_params(
+            space, exponential_param_power=exponential_param_power
+        )
+        ndim = num_params(self.params)
 
         if separable:
             CMA = cmaes.SepCMA
@@ -188,9 +38,9 @@ class HyperCMAESSampler:
             kwargs["lr_adapt"] = lr_adapt
 
         self.opt = CMA(
-            mean=np.zeros(num_params),
+            mean=np.zeros(ndim),
             sigma=sigma,
-            bounds=np.array([(-1.0, 1.0)] * num_params),
+            bounds=np.array([(-1.0, 1.0)] * ndim),
             **kwargs,
         )
 
@@ -207,17 +57,7 @@ class HyperCMAESSampler:
         self._trial_store[trial_number] = x
         self._trial_counter += 1
 
-        params = {}
-        i = 0
-        for p in self.params:
-            if p.size == 1:
-                params[p.name] = p.convert_raw(x[i])
-                i += 1
-            else:
-                params[p.name] = p.convert_raw(x[i : i + p.size])
-                i += p.size
-
-        return trial_number, params
+        return trial_number, convert_raw(self.params, x)
 
     def tell(self, trial_number, value):
         # retrieve raw vector

@@ -119,6 +119,7 @@ def plot_scatter(
     self,
     x="size",
     y="flops",
+    ylim=None,
     cumulative_time=False,
     plot_best=False,
     figsize=(5, 5),
@@ -241,6 +242,9 @@ def plot_scatter(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+
     return fig, ax
 
 
@@ -359,6 +363,9 @@ def plot_parameters_parallel(
     columns = {"score": []}
     for m, p, s in zip(self.method_choices, self.param_choices, self.scores):
         if m != method:
+            continue
+        if not math.isfinite(s):
+            # ignore nan and inf
             continue
         for k, v in p.items():
             try:

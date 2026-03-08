@@ -499,12 +499,13 @@ class HyperOptimizer(PathOptimizer):
         slicing_reconf_opts=None,
         reconf_opts=None,
         optlib=None,
+        optlib_opts=None,
         space=None,
         score_compression=0.75,
         on_trial_error="warn",
         max_training_steps=None,
         progbar=False,
-        **optlib_opts,
+        **kwargs,
     ):
         self.max_repeats = max_repeats
         self._repeats_start = 0
@@ -557,6 +558,7 @@ class HyperOptimizer(PathOptimizer):
         if space is None:
             space = get_hyper_space()
 
+        optlib_opts = kwargs | (optlib_opts or {})
         self._optimizer = _OPTLIB_FNS[optlib]()
         self._optimizer.setup(
             self._methods, space, optimizer=self, **optlib_opts
