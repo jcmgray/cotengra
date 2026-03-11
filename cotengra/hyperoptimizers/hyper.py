@@ -144,6 +144,13 @@ class HyperOptLib:
         """
         raise NotImplementedError
 
+    def cleanup(self):
+        """Clean up any resources (threads, connections, etc.).
+
+        Called at the end of each ``HyperOptimizer._search()`` run.
+        The default implementation does nothing.
+        """
+
 
 def register_hyper_optlib(name, cls):
     """Register a hyper-optimization library backend.
@@ -384,12 +391,19 @@ class ComputeScore:
         ti = time.time()
         try:
             trial = self.fn(*args, **kwargs)
-            trial["score"] = self.score_fn(trial) ** self.score_compression
-            # random smudge is for scikit-learn nan/inf bug
-            trial["score"] += self.rng.gauss(0.0, self.score_smudge)
+            score = self.score_fn(trial)
+            trial["score"] = score
+            # modify score to tell to the optimizer slightly:
+            trial["score_optimize"] = (
+                # compression controls exploration/exploitation
+                (score**self.score_compression)
+                # random smudge is for scikit-learn nan/inf bug
+                + self.rng.gauss(0.0, self.score_smudge)
+            )
         except BadTrial:
             trial = {
                 "score": float("inf"),
+                "score_optimize": float("inf"),
                 "flops": float("inf"),
                 "write": float("inf"),
                 "size": float("inf"),
@@ -405,6 +419,7 @@ class ComputeScore:
                 )
             trial = {
                 "score": float("inf"),
+                "score_optimize": float("inf"),
                 "flops": float("inf"),
                 "write": float("inf"),
                 "size": float("inf"),
@@ -667,7 +682,9 @@ class HyperOptimizer(PathOptimizer):
         )
 
         if should_report:
-            self._optimizer.report_result(setting, trial, score)
+            # this has compression and smudge applied
+            score_optimize = trial["score_optimize"]
+            self._optimizer.report_result(setting, trial, score_optimize)
 
         self.method_choices.append(setting["method"])
         self.param_choices.append(setting["params"])
@@ -809,6 +826,7 @@ class HyperOptimizer(PathOptimizer):
             pbar.close()
 
         self._maybe_cancel_futures()
+        self._optimizer.cleanup()
 
     def search(self, inputs, output, size_dict):
         """Run this optimizer and return the ``ContractionTree`` for the best
