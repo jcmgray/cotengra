@@ -34,9 +34,12 @@ from .hypergraph import (
 )
 from .hyperoptimizers import (
     hyper_cmaes,
+    hyper_es,
+    hyper_neldermead,
     hyper_nevergrad,
     hyper_optuna,
     hyper_random,
+    hyper_sbplex,
     hyper_skopt,
 )
 from .hyperoptimizers.hyper import (
@@ -157,10 +160,13 @@ __all__ = (
     "hash_contraction",
     "hyper_cmaes",
     "hyper_nevergrad",
+    "hyper_neldermead",
     "hyper_optimize",
     "hyper_optuna",
     "hyper_random",
+    "hyper_es",
     "hyper_skopt",
+    "hyper_sbplex",
     "HyperCompressedOptimizer",
     "HyperGraph",
     "HyperMultiOptimizer",

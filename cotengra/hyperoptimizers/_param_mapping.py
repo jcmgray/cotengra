@@ -211,3 +211,47 @@ def convert_raw(params, x):
 def num_params(params):
     """Return the total number of raw dimensions for a list of params."""
     return sum(p.size for p in params)
+
+
+def generate_lhs_points(ndim, n, rng):
+    """Generate ``n`` Latin Hypercube Sampled points in ``[-1, 1]^ndim``.
+
+    Each dimension is divided into ``n`` equal strata and exactly one
+    sample is drawn uniformly within each stratum. The stratum-to-sample
+    assignment is independently permuted per dimension, ensuring good
+    marginal coverage with no external dependencies.
+
+    Parameters
+    ----------
+    ndim : int
+        Number of raw dimensions.
+    n : int
+        Number of points to generate.
+    rng : random.Random
+        Random number generator instance.
+
+    Returns
+    -------
+    points : list[list[float]]
+        ``n`` points, each a list of ``ndim`` floats in ``[-1, 1]``.
+    """
+    if ndim == 0 or n <= 0:
+        return []
+
+    # build a permutation of strata indices for each dimension
+    perms = []
+    for _ in range(ndim):
+        order = list(range(n))
+        rng.shuffle(order)
+        perms.append(order)
+
+    points = []
+    for i in range(n):
+        point = []
+        for d in range(ndim):
+            stratum = perms[d][i]
+            lo = -1.0 + 2.0 * stratum / n
+            hi = -1.0 + 2.0 * (stratum + 1) / n
+            point.append(rng.uniform(lo, hi))
+        points.append(point)
+    return points

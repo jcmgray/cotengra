@@ -53,7 +53,7 @@ def get_default_optlib_eco():
     else:
         optlib = "random"
         warnings.warn(
-            "Couldn't find `optuna`, `cmaes`, or `nevergrad` so will use "
+            "Couldn't find `cmaes`, `nevergrad`, or `optuna` so will use "
             "completely random sampling in place of hyper-optimization. "
             "It is recommended to install one of these libraries for higher "
             "quality contraction paths."
@@ -64,10 +64,10 @@ def get_default_optlib_eco():
 @functools.lru_cache(maxsize=None)
 def get_default_optlib():
     """Get the default optimizer balancing quality and speed."""
-    if importlib.util.find_spec("cmaes"):
-        optlib = "cmaes"
-    elif importlib.util.find_spec("optuna"):
+    if importlib.util.find_spec("optuna"):
         optlib = "optuna"
+    elif importlib.util.find_spec("cmaes"):
+        optlib = "cmaes"
     elif importlib.util.find_spec("nevergrad"):
         optlib = "nevergrad"
     else:
@@ -83,6 +83,7 @@ def get_default_optlib():
 
 _PATH_FNS = {}
 _OPTLIB_FNS = {}
+_OPTLIB_DEFAULTS = {}
 _HYPER_SEARCH_SPACE = {}
 _HYPER_CONSTANTS = {}
 
@@ -152,7 +153,7 @@ class HyperOptLib:
         """
 
 
-def register_hyper_optlib(name, cls):
+def register_hyper_optlib(name, cls, defaults=None):
     """Register a hyper-optimization library backend.
 
     Parameters
@@ -163,6 +164,7 @@ def register_hyper_optlib(name, cls):
         A ``HyperOptLib`` subclass.
     """
     _OPTLIB_FNS[name] = cls
+    _OPTLIB_DEFAULTS[name] = defaults or {}
 
 
 def register_hyper_function(name, ssa_func, space, constants=None):
@@ -478,6 +480,8 @@ class HyperOptimizer(PathOptimizer):
         size of the trial with the reconfigured versions.
     optlib : {'optuna', 'cmaes', 'nevergrad', 'skopt', ...}, optional
         Which optimizer to sample and train with.
+    optlib_opts
+        Supplied to the hyper-optimizer library initialization.
     space : dict, optional
         The hyper space to search, see ``get_hyper_space`` for the default.
     score_compression : float, optional
@@ -493,10 +497,12 @@ class HyperOptimizer(PathOptimizer):
         The maximum number of trials to train the optimizer with. Setting this
         can be helpful when the optimizer itself becomes costly to train (e.g.
         for Gaussian Processes).
+    constants : dict[dict], optional
+        A dict mapping method name to a dict of constant parameters to pass to
+        the trial function for that method. Any parameters specified here will
+        override those in the search space.
     progbar : bool, optional
         Show live progress of the best contraction found so far.
-    optlib_opts
-        Supplied to the hyper-optimizer library initialization.
     """
 
     compressed = False
@@ -519,6 +525,7 @@ class HyperOptimizer(PathOptimizer):
         score_compression=0.75,
         on_trial_error="warn",
         max_training_steps=None,
+        constants=None,
         progbar=False,
         **kwargs,
     ):
@@ -541,6 +548,15 @@ class HyperOptimizer(PathOptimizer):
             self._methods = [methods]
         else:
             self._methods = list(methods)
+
+        if constants is None:
+            self._constants = {method: {} for method in self._methods}
+        else:
+            self._constants = dict(constants)
+
+        for method in self._methods:
+            for k, v in _HYPER_CONSTANTS[method].items():
+                self._constants[method].setdefault(k, v)
 
         if optlib is None:
             optlib = get_default_optlib()
@@ -573,10 +589,13 @@ class HyperOptimizer(PathOptimizer):
         if space is None:
             space = get_hyper_space()
 
-        optlib_opts = kwargs | (optlib_opts or {})
         self._optimizer = _OPTLIB_FNS[optlib]()
+        optlib_opts = _OPTLIB_DEFAULTS[optlib] | kwargs | (optlib_opts or {})
         self._optimizer.setup(
-            self._methods, space, optimizer=self, **optlib_opts
+            self._methods,
+            space,
+            optimizer=self,
+            **optlib_opts,
         )
 
     @property
@@ -696,18 +715,18 @@ class HyperOptimizer(PathOptimizer):
         self.times.append(trial["time"])
 
     def _gen_results(self, repeats, trial_fn, trial_args):
-        constants = get_hyper_constants()
 
         for _ in repeats:
             setting = self._optimizer.get_setting()
             method = setting["method"]
 
-            trial = trial_fn(
-                *trial_args,
-                method=method,
+            trial_kwargs = {
+                "method": method,
                 **setting["params"],
-                **constants[method],
-            )
+                **self._constants[method],
+            }
+
+            trial = trial_fn(*trial_args, **trial_kwargs)
 
             self._maybe_report_result(setting, trial)
 

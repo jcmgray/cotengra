@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import cotengra as ctg
+from cotengra.hyperoptimizers.hyper_sbplex import HyperSbplexSampler
 
 try:
     subprocess.run(["quickbb_64"])
@@ -71,6 +72,10 @@ single_term_cases = [
     ([("a", "b")], ("b", "a"), {"a": 2, "b": 3}),
 ]
 
+SBPLEX_TEST_SPACE = {
+    "x": {"type": "FLOAT", "min": -1.0, "max": 1.0},
+}
+
 
 @pytest.mark.parametrize(("method", "requires"), methods_requires)
 def test_basic(contraction_20_5, method, requires):
@@ -132,12 +137,16 @@ def test_single_term_direct(inputs, output, size_dict, method, requires):
         ("skopt", "skopt"),
         ("cmaes", "cmaes"),
         ("optuna", "optuna"),
+        ("es", ""),
+        ("neldermead", ""),
+        ("sbplex", ""),
     ],
 )
 @pytest.mark.parametrize("parallel", [False, True])
 def test_hyper(contraction_20_5, optlib, requires, parallel):
     pytest.importorskip("kahypar")
-    pytest.importorskip(requires)
+    if requires:
+        pytest.importorskip(requires)
 
     eq, _, _, arrays = contraction_20_5
     shapes = [a.shape for a in arrays]
@@ -150,6 +159,111 @@ def test_hyper(contraction_20_5, optlib, requires, parallel):
     assert tree.speedup() > 1
     assert {x[0] for x in optimizer.get_trials()} == {"greedy", "kahypar"}
     optimizer.print_trials()
+
+
+def test_hyper_sbplex_restart_patience_triggers_local_restart():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE,
+        seed=1,
+        n_initial=0,
+        restart_patience=2,
+        explore_prob=0.0,
+        convergence_tol=1e-3,
+    )
+    sampler._best_x = [0.25]
+    sampler._best_score = 1.0
+    sampler._step = [0.4]
+
+    sampler._x = [0.1]
+    sampler._x_at_cycle_start = [0.0]
+    sampler._best_score_at_cycle_start = sampler._best_score
+    sampler._finish_cycle()
+
+    assert sampler._restart_count == 0
+    assert sampler._cycles_since_improvement == 1
+
+    sampler._x = [0.2]
+    sampler._x_at_cycle_start = [0.0]
+    sampler._best_score_at_cycle_start = sampler._best_score
+    sampler._finish_cycle()
+
+    assert sampler._restart_count == 1
+    assert sampler._stagnant_restart_count == 1
+    assert 0.0 < abs(sampler._step[0]) < 0.4
+
+
+def test_hyper_sbplex_repeated_restarts_escalate_to_global_restart():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE,
+        seed=2,
+        n_initial=0,
+        restart_patience=1,
+        explore_prob=0.0,
+        convergence_tol=1e-3,
+        initial_scale=0.5,
+    )
+    sampler._best_x = [0.0]
+    sampler._best_score = 1.0
+    sampler._step = [0.4]
+
+    sampler._x = [0.1]
+    sampler._x_at_cycle_start = [0.0]
+    sampler._best_score_at_cycle_start = sampler._best_score
+    sampler._finish_cycle()
+
+    assert sampler._restart_count == 1
+    assert abs(sampler._step[0]) < 0.4
+
+    sampler._x_at_cycle_start = [sampler._x[0] - 0.1]
+    sampler._best_score_at_cycle_start = sampler._best_score
+    sampler._finish_cycle()
+
+    assert sampler._restart_count == 2
+    assert sampler._stagnant_restart_count == 2
+    assert sampler._step == [sampler.initial_scale]
+
+
+def test_hyper_sbplex_improvement_resets_restart_counters():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE,
+        seed=3,
+        n_initial=0,
+        restart_patience=2,
+        explore_prob=0.0,
+    )
+    sampler._best_score = 10.0
+    sampler._cycles_since_improvement = 4
+    sampler._stagnant_restart_count = 3
+    sampler._trial_map[0] = ("filler", None, None, [0.5])
+
+    sampler.tell(0, 1.0)
+
+    assert sampler._best_score == 1.0
+    assert sampler._best_x == [0.5]
+    assert sampler._cycles_since_improvement == 0
+    assert sampler._stagnant_restart_count == 0
+
+
+def test_hyper_sbplex_stale_nm_results_ignored_after_restart():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE,
+        seed=4,
+        n_initial=0,
+        restart_patience=1,
+        explore_prob=0.0,
+    )
+
+    stale_trial, _ = sampler.ask()
+    sampler._restart("global")
+    current_trial, _ = sampler.ask()
+
+    assert stale_trial != current_trial
+    assert sampler._sub_nm_id is not None
+    assert 0 in sampler._sub_nm._token_map
+
+    sampler.tell(stale_trial, 123.0)
+
+    assert 0 in sampler._sub_nm._token_map
 
 
 @pytest.mark.parametrize(

@@ -108,14 +108,13 @@ tqdm = "*"
 
 [tool.pixi.feature.full.dependencies]
 opt_einsum = "*"
+distributed = "*"
 [tool.pixi.feature.full.pypi-dependencies]
 cotengrust = ">=0.2.0"
 [tool.pixi.feature.full.target.linux-64.pypi-dependencies]
 kahypar = "*"
-ray = "*"
 [tool.pixi.feature.full.target.osx-arm64.pypi-dependencies]
 kahypar = "*"
-ray = "*"
 
 [tool.pixi.feature.tests.dependencies]
 coverage = "*"
@@ -127,7 +126,7 @@ python = "3.10.*"
 [tool.pixi.feature.pymid.dependencies]
 python = "3.12.*"
 [tool.pixi.feature.pynew.dependencies]
-python = "3.13.*"
+python = "3.14.*"
 
 [tool.pixi.feature.docs.dependencies]
 astroid = "*"

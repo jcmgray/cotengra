@@ -884,6 +884,8 @@ def get_score_fn(minimize):
         # custom objective function
         return minimize
     raise TypeError("minimize must be a valid string or callable.")
+
+
 # ----------------------- multi-contraction scoring ------------------------- #
 
 

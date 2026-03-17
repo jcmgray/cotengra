@@ -53,7 +53,7 @@ class SkoptOptLib(HyperOptLib):
         method_sampler_opts=None,
         **kwargs,
     ):
-        """Initialize the ``skopt`` optimizer.
+        """Initialize the ``scikit-optimize`` optimizer.
 
         Parameters
         ----------
@@ -64,11 +64,16 @@ class SkoptOptLib(HyperOptLib):
         optimizer : HyperOptimizer, optional
             The parent optimizer instance.
         sampler : str, optional
-            The regressor to use to optimize each method's search
-            space.
+            The regressor to use to optimize each method's search space, valid
+            options are:
+
+            - "et": Extra Trees Regressor
+            - "rf": Random Forest Regressor
+            - "gbrt": Gradient Boosting Regressor
+            - "gp": Gaussian Process Regressor
+
         method_sampler : str, optional
-            Meta-optimizer to use to select which overall method to
-            use.
+            Meta-optimizer to use to select which overall method to use.
         sampler_opts : dict, optional
             Options to supply to the per-method optimizer.
         method_sampler_opts : dict, optional
