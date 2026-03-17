@@ -4367,7 +4367,7 @@ class PartitionTreeBuilder:
         parts=2,
         parts_decay=0.5,
         sub_optimize="greedy",
-        super_optimize="auto-hq",
+        super_optimize="random-greedy-128",
         check=False,
         seed=None,
         **partition_opts,
