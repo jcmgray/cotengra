@@ -110,16 +110,60 @@ def test_tree_incomplete(nodeops):
     assert len(tree.info) == 19
 
 
+@pytest.mark.parametrize("select", ["descend", "random", "max", "min"])
+@pytest.mark.parametrize("minimize", ["flops", "combo", "size"])
+def test_reconfigure(select, minimize):
+
+    inputs, output, _, size_dict = ctg.utils.rand_equation(
+        30, reg=5, seed=42, d_max=3
+    )
+
+    path_gr = ctg.array_contract_path(
+        inputs, output, size_dict, optimize="greedy"
+    )
+
+    tree_gr = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize=path_gr,
+    )
+
+    if minimize == "flops":
+        initial_score = tree_gr.total_flops()
+    elif minimize == "combo":
+        initial_score = tree_gr.combo_cost()
+    elif minimize == "size":
+        initial_score = tree_gr.max_size()
+
+    tree_gr.subtree_reconfigure_(
+        subtree_size=6,
+        maxiter=100,
+        select=select,
+        minimize=minimize,
+        progbar=True,
+    )
+
+    if minimize == "flops":
+        final_score = tree_gr.total_flops()
+    elif minimize == "combo":
+        final_score = tree_gr.combo_cost()
+    elif minimize == "size":
+        final_score = tree_gr.max_size()
+
+    assert final_score < initial_score
+
+
 @pytest.mark.parametrize(
-    ("forested", "parallel", "requires"),
+    ("parallel", "requires"),
     [
-        (False, False, ""),
-        (True, False, ""),
-        (True, "dask", "distributed"),
-        (True, "ray", "ray"),
+        (False, ""),
+        (True, ""),
+        ("dask", "distributed"),
+        ("ray", "ray"),
     ],
 )
-def test_reconfigure(forested, parallel, requires):
+def test_reconfigure_forested(parallel, requires):
     if requires:
         pytest.importorskip(requires)
 
@@ -139,13 +183,9 @@ def test_reconfigure(forested, parallel, requires):
     )
 
     initial_cost = tree_gr.total_flops()
-
-    if forested:
-        tree_gr.subtree_reconfigure_forest_(
-            num_trees=2, subtree_size=6, progbar=True, parallel=parallel
-        )
-    else:
-        tree_gr.subtree_reconfigure_(progbar=True)
+    tree_gr.subtree_reconfigure_forest_(
+        num_trees=2, subtree_size=6, progbar=True, parallel=parallel
+    )
 
     assert tree_gr.total_flops() < initial_cost
 

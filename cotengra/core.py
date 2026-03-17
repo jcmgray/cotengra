@@ -2074,6 +2074,7 @@ class ContractionTree:
     unslice_all_ = functools.partialmethod(unslice_all, inplace=True)
 
     def calc_subtree_candidates(self, pwr=2, what="flops"):
+        # get all intermediate nodes
         candidates = list(self.children)
 
         if what == "size":
@@ -2082,10 +2083,12 @@ class ContractionTree:
         elif what == "flops":
             weights = [self.get_flops(x) for x in candidates]
 
-        max_weight = max(weights)
-
-        # can be bigger than numpy int/float allows
-        weights = [float(w / max_weight) ** (1 / pwr) for w in weights]
+        if pwr == "log":
+            weights = [math.log2(max(2, w)) for w in weights]
+        else:
+            max_weight = max(weights)
+            # can be bigger than numpy int/float allows
+            weights = [float(w / max_weight) ** (1 / pwr) for w in weights]
 
         # sort by descending score
         candidates, weights = zip(
@@ -2093,6 +2096,164 @@ class ContractionTree:
         )
 
         return list(candidates), list(weights)
+
+    def _subtree_remove_and_optimize(
+        self,
+        sub_root,
+        sub_leaves,
+        sub_branches,
+        already_optimized,
+        node_cost,
+        minimize,
+        opt,
+        pbar,
+    ):
+        current_cost = node_cost(self, sub_root)
+        for node in sub_branches:
+            # these are the intermediates *between* leaves and sub-root
+            if minimize == "size":
+                current_cost = max(current_cost, node_cost(self, node))
+            else:
+                current_cost += node_cost(self, node)
+            self._remove_node(node)
+
+        # make the optimizer more efficient by supplying accurate cap
+        opt.cost_cap = max(2, current_cost)
+
+        # and reoptimize the leaves
+        self.contract_nodes(sub_leaves, optimize=opt, grandparent=sub_root)
+        already_optimized.add(sub_leaves)
+
+        if pbar is not None:
+            pbar.update()
+            pbar.set_description(_describe_tree(self), refresh=False)
+
+    def _subtree_reconfigure_descend(
+        self,
+        subtree_size,
+        subtree_search,
+        maxiter,
+        seed,
+        minimize,
+        opt,
+        already_optimized,
+        node_cost,
+        pbar,
+    ):
+        candidates = [self.root]
+        any_modified = False
+
+        def _possibly_add_children(sub_root, any_modified):
+            if self.get_extent(sub_root) > subtree_size:
+                # possibly extend with node children, if not close to bottom
+                lnode, rnode = self.children[sub_root]
+                if self.get_extent(lnode) >= 2:
+                    candidates.append(lnode)
+                if self.get_extent(rnode) >= 2:
+                    candidates.append(rnode)
+
+            if len(candidates) == 0:
+                # exhausted queue
+                if any_modified:
+                    # but have made *any* changes -> go again from top
+                    candidates.append(self.root)
+                    any_modified = False
+
+            return any_modified
+
+        r = 0
+        while candidates and r < maxiter:
+            sub_root = candidates.pop(0)
+
+            # get a subtree to possibly reconfigure
+            sub_leaves, sub_branches = self.get_subtree(
+                sub_root, size=subtree_size, search=subtree_search, seed=seed
+            )
+
+            # check if its already been optimized
+            sub_leaves = frozenset(sub_leaves)
+            if sub_leaves in already_optimized:
+                any_modified = _possibly_add_children(sub_root, any_modified)
+                continue
+
+            # else remove the branches, keeping track of current cost
+            self._subtree_remove_and_optimize(
+                sub_root,
+                sub_leaves,
+                sub_branches,
+                already_optimized,
+                node_cost,
+                minimize,
+                opt,
+                pbar,
+            )
+            any_modified = _possibly_add_children(sub_root, True)
+            r += 1
+
+    def _subtree_reconfigure_rand_select(
+        self,
+        subtree_size,
+        subtree_search,
+        weight_what,
+        weight_pwr,
+        select,
+        maxiter,
+        seed,
+        minimize,
+        opt,
+        already_optimized,
+        node_cost,
+        pbar,
+    ):
+        if select == "random":
+            rng = get_rng(seed)
+        else:
+            rng = None
+            if select == "max":
+                i = 0
+            elif select == "min":
+                i = -1
+
+        candidates, weights = self.calc_subtree_candidates(
+            pwr=weight_pwr, what=weight_what
+        )
+
+        r = 0
+        while candidates and r < maxiter:
+            if rng is not None:
+                (i,) = rng.choices(range(len(candidates)), weights=weights)
+
+            weights.pop(i)
+            sub_root = candidates.pop(i)
+
+            # get a subtree to possibly reconfigure
+            sub_leaves, sub_branches = self.get_subtree(
+                sub_root, size=subtree_size, search=subtree_search, seed=seed
+            )
+
+            # check if its already been optimized
+            sub_leaves = frozenset(sub_leaves)
+            if sub_leaves in already_optimized:
+                continue
+
+            # else remove the branches, keeping track of current cost
+            self._subtree_remove_and_optimize(
+                sub_root,
+                sub_leaves,
+                sub_branches,
+                already_optimized,
+                node_cost,
+                minimize,
+                opt,
+                pbar,
+            )
+
+            # if we have reconfigured simply re-add all candidates
+            candidates, weights = self.calc_subtree_candidates(
+                pwr=weight_pwr, what=weight_what
+            )
+
+            r += 1
 
     def subtree_reconfigure(
         self,
@@ -2129,13 +2290,15 @@ class ContractionTree:
             scale their score into a probability: ``score**(1 / weight_pwr)``.
             The larger this is the more explorative the algorithm is when
             ``select='random'``.
-        select : {'max', 'min', 'random'}, optional
+        select : {'descend', 'max', 'min', 'random'}, optional
             What order to select node subtrees to optimize:
 
+            - 'descend': start from the root and then descend into children. In
+              this case the weights and weight_pwr are ignored since this is a
+              deterministic order.
             - 'max': choose the highest score first
             - 'min': choose the lowest score first
-            - 'random': choose randomly weighted on score -- see
-              ``weight_pwr``.
+            - 'random': choose randomly weighted on score - see ``weight_pwr``.
 
         maxiter : int, optional
             How many subtree optimizations to perform, the algorithm can
@@ -2161,89 +2324,49 @@ class ContractionTree:
         if minimize is None:
             minimize = self.get_default_objective()
         scorer = get_score_fn(minimize)
+        node_cost = getattr(scorer, "cost_local_tree_node", lambda _: 2)
 
         if optimize is None:
             from .pathfinders.path_basic import OptimalOptimizer
 
-            opt = OptimalOptimizer(
-                minimize=scorer.get_dynamic_programming_minimize()
-            )
+            minimize = scorer.get_dynamic_programming_minimize()
+            opt = OptimalOptimizer(minimize=minimize)
         else:
             opt = optimize
-
-        node_cost = getattr(scorer, "cost_local_tree_node", lambda _: 2)
 
         # different caches as we might want to reconfigure one before other
         tree.already_optimized.setdefault(minimize, set())
         already_optimized = tree.already_optimized[minimize]
-
-        if select == "random":
-            rng = get_rng(seed)
-        else:
-            if select == "max":
-                i = 0
-            elif select == "min":
-                i = -1
-            rng = None
-
-        candidates, weights = tree.calc_subtree_candidates(
-            pwr=weight_pwr, what=weight_what
-        )
 
         if progbar:
             import tqdm
 
             pbar = tqdm.tqdm()
             pbar.set_description(_describe_tree(tree), refresh=False)
+        else:
+            pbar = None
 
-        r = 0
         try:
-            while candidates and r < maxiter:
-                if rng is not None:
-                    (i,) = rng.choices(range(len(candidates)), weights=weights)
+            reconf_kwargs = {
+                "subtree_size": subtree_size,
+                "subtree_search": subtree_search,
+                "maxiter": maxiter,
+                "seed": seed,
+                "minimize": minimize,
+                "opt": opt,
+                "already_optimized": already_optimized,
+                "node_cost": node_cost,
+                "pbar": pbar,
+            }
 
-                weights.pop(i)
-                sub_root = candidates.pop(i)
+            if select == "descend":
+                tree._subtree_reconfigure_descend(**reconf_kwargs)
+            else:
+                reconf_kwargs["weight_what"] = weight_what
+                reconf_kwargs["weight_pwr"] = weight_pwr
+                reconf_kwargs["select"] = select
+                tree._subtree_reconfigure_rand_select(**reconf_kwargs)
 
-                # get a subtree to possibly reconfigure
-                sub_leaves, sub_branches = tree.get_subtree(
-                    sub_root, size=subtree_size, search=subtree_search
-                )
-
-                sub_leaves = frozenset(sub_leaves)
-
-                # check if its already been optimized
-                if sub_leaves in already_optimized:
-                    continue
-
-                # else remove the branches, keeping track of current cost
-                current_cost = node_cost(tree, sub_root)
-                for node in sub_branches:
-                    if minimize == "size":
-                        current_cost = max(current_cost, node_cost(tree, node))
-                    else:
-                        current_cost += node_cost(tree, node)
-                    tree._remove_node(node)
-
-                # make the optimizer more efficient by supplying accurate cap
-                opt.cost_cap = max(2, current_cost)
-
-                # and reoptimize the leaves
-                tree.contract_nodes(
-                    sub_leaves, optimize=opt, grandparent=sub_root
-                )
-                already_optimized.add(sub_leaves)
-
-                r += 1
-
-                if progbar:
-                    pbar.update()
-                    pbar.set_description(_describe_tree(tree), refresh=False)
-
-                # if we have reconfigured simply re-add all candidates
-                candidates, weights = tree.calc_subtree_candidates(
-                    pwr=weight_pwr, what=weight_what
-                )
         finally:
             if progbar:
                 pbar.close()
