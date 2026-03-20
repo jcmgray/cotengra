@@ -1155,6 +1155,7 @@ def plot_contractions(
     color_size=(0.6, 0.4, 0.7),
     color_cost=(0.3, 0.7, 0.5),
     figsize=(8, 3),
+    ax=None,
 ):
     import matplotlib.pyplot as plt
 
@@ -1169,12 +1170,15 @@ def plot_contractions(
         sz -= tree.get_size(l)
         sz -= tree.get_size(r)
         sizes.append(math.log2(tree.get_size(p)))
+
         costs.append(math.log10(tree.get_flops(p)))
 
     cons = list(range(len(peaks)))
 
-    fig, ax = plt.subplots(figsize=figsize)
-
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = None
     ax.set_xlabel("contraction")
 
     ax.plot(
@@ -1561,8 +1565,6 @@ def plot_tree_rubberband(
     tree,
     order=None,
     colormap="Spectral",
-    with_edge_labels=None,
-    with_node_labels=None,
     highlight=(),
     centrality=False,
     layout="auto",
@@ -1607,6 +1609,7 @@ def plot_tree_rubberband(
         figsize=figsize,
         info=info,
         show_and_close=False,
+        ax=ax,
     )
     pos = info["pos"]
     r0 = info["node_size"]
@@ -1656,6 +1659,7 @@ def plot_tree_flat(
     node_labels_font_family="monospace",
     show_sliced=True,
     figsize=None,
+    ax=None,
 ):
     """Plot a ``ContractionTree`` as a flat, 2D diagram, including all indices
     at every intermediate contraction. This can be useful for small
@@ -1729,7 +1733,7 @@ def plot_tree_flat(
         family=node_labels_font_family,
     )
 
-    d = Drawing(figsize=figsize)
+    d = Drawing(ax=ax, figsize=figsize)
 
     # order the leaves are contracted in
     leaf_order = {leaf: i for i, leaf in enumerate(tree.get_leaves_ordered())}
@@ -1884,6 +1888,7 @@ def plot_tree_circuit(
     node_colormap="YlOrRd",
     node_max_size=None,
     figsize=None,
+    ax=None,
 ):
     import matplotlib as mpl
 
@@ -1892,7 +1897,7 @@ def plot_tree_circuit(
     if figsize is None:
         figsize = (tree.N**0.75, tree.N**0.75)
 
-    d = Drawing(figsize=figsize)
+    d = Drawing(ax=ax, figsize=figsize)
 
     # edge coloring -> node size
     if edge_max_width is None:
