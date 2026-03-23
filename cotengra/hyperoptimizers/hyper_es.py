@@ -28,7 +28,7 @@ def _reflect(x):
 
 
 class SteadyStateES:
-    """A steady-state diagonal evolutionary strategy operating in raw
+    """A steady-state diagonal evolutionary strategy  (SSES) operating in raw
     ``[-1, 1]`` parameter space.
 
     Unlike a generational ES, this sampler has no synchronization barrier.
@@ -484,4 +484,4 @@ class ESOptLib(HyperOptLib):
         )
 
 
-register_hyper_optlib("es", ESOptLib)
+register_hyper_optlib("sses", ESOptLib)

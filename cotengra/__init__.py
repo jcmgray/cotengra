@@ -39,7 +39,7 @@ from .hyperoptimizers import (
     hyper_nevergrad,
     hyper_optuna,
     hyper_random,
-    hyper_sbplex,
+    hyper_sbplx,
     hyper_skopt,
 )
 from .hyperoptimizers.hyper import (
@@ -166,7 +166,7 @@ __all__ = (
     "hyper_random",
     "hyper_es",
     "hyper_skopt",
-    "hyper_sbplex",
+    "hyper_sbplx",
     "HyperCompressedOptimizer",
     "HyperGraph",
     "HyperMultiOptimizer",

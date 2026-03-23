@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 
 import cotengra as ctg
-from cotengra.hyperoptimizers.hyper_sbplex import HyperSbplexSampler
+from cotengra.hyperoptimizers.hyper import _OPTLIB_DEFAULTS
+from cotengra.hyperoptimizers.hyper_neldermead import _NMCore
+from cotengra.hyperoptimizers.hyper_sbplx import HyperSbplexSampler
 
 try:
     subprocess.run(["quickbb_64"])
@@ -76,6 +78,10 @@ SBPLEX_TEST_SPACE = {
     "x": {"type": "FLOAT", "min": -1.0, "max": 1.0},
 }
 
+SBPLEX_TEST_SPACE_6D = {
+    name: {"type": "FLOAT", "min": -1.0, "max": 1.0} for name in "abcdef"
+}
+
 
 @pytest.mark.parametrize(("method", "requires"), methods_requires)
 def test_basic(contraction_20_5, method, requires):
@@ -137,9 +143,9 @@ def test_single_term_direct(inputs, output, size_dict, method, requires):
         ("skopt", "skopt"),
         ("cmaes", "cmaes"),
         ("optuna", "optuna"),
-        ("es", ""),
+        ("sses", ""),
         ("neldermead", ""),
-        ("sbplex", ""),
+        ("sbplx", ""),
     ],
 )
 @pytest.mark.parametrize("parallel", [False, True])
@@ -190,6 +196,84 @@ def test_hyper_sbplex_restart_patience_triggers_local_restart():
     assert sampler._restart_count == 1
     assert sampler._stagnant_restart_count == 1
     assert 0.0 < abs(sampler._step[0]) < 0.4
+
+
+def test_hyper_sbplex_partition_uses_goodness_heuristic():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE_6D,
+        seed=1,
+        n_initial=0,
+        nsmin=2,
+        nsmax=5,
+        partition="goodness",
+        explore_prob=0.0,
+    )
+    sampler._step = [5.0, 4.0, 3.0, 1.0, 1.0, 1.0]
+
+    sampler._partition_dims()
+
+    assert sampler._subspaces == [[0, 1], [2, 3, 4, 5]]
+
+
+def test_hyper_sbplex_partition_greedy_equal_chunks():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE_6D,
+        seed=1,
+        n_initial=0,
+        nsmin=2,
+        nsmax=3,
+        partition="greedy",
+        explore_prob=0.0,
+    )
+    sampler._step = [5.0, 4.0, 3.0, 1.0, 1.0, 1.0]
+
+    sampler._partition_dims()
+
+    # greedy: two equal chunks of 3 (sorted by magnitude)
+    assert len(sampler._subspaces) == 2
+    assert len(sampler._subspaces[0]) == 3
+    assert len(sampler._subspaces[1]) == 3
+
+
+def test_hyper_sbplex_cycle_step_scaling_clamped_by_omega():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE_6D,
+        seed=1,
+        n_initial=0,
+        explore_prob=0.0,
+        convergence_tol=1e-3,
+    )
+    sampler._subspaces = [[0, 1, 2], [3, 4, 5]]
+    sampler._x_at_cycle_start = [0.0] * 6
+    sampler._step_at_cycle_start = [1.0] * 6
+    sampler._x = [100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    sampler._update_steps_after_cycle()
+
+    assert sampler._step[0] == 10.0
+    assert sampler._step[1:] == [-10.0] * 5
+
+
+def test_hyper_sbplex_cycle_convergence_is_relative_to_scale():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE,
+        seed=1,
+        n_initial=0,
+        explore_prob=0.0,
+        convergence_tol=1e-4,
+    )
+    sampler._x_at_cycle_start = [1000.0]
+    sampler._x = [1000.05]
+    sampler._step = [0.1]
+
+    assert sampler._cycle_converged()
+
+
+def test_hyper_defaults_use_nonadaptive_variants():
+    assert _OPTLIB_DEFAULTS["sbplx"]["adaptive"] is False
+    assert _OPTLIB_DEFAULTS["neldermead"]["adaptive"] is False
+    assert _OPTLIB_DEFAULTS["sbplex-adapt"]["adaptive"] is True
+    assert _OPTLIB_DEFAULTS["neldermead-adapt"]["adaptive"] is True
 
 
 def test_hyper_sbplex_repeated_restarts_escalate_to_global_restart():
@@ -264,6 +348,223 @@ def test_hyper_sbplex_stale_nm_results_ignored_after_restart():
     sampler.tell(stale_trial, 123.0)
 
     assert 0 in sampler._sub_nm._token_map
+
+
+def test_nmcore_inject_vertex_diameter_gate_accepts_nearby():
+    core = _NMCore(
+        ndim=2,
+        center=[0.0, 0.0],
+        scales=[0.5, 0.5],
+        convergence_tol=1e-6,
+        inject_diameter_fraction=1.0,
+    )
+    # manually set up a sorted simplex
+    core._vertices = [[0.0, 0.0], [0.1, 0.0], [0.0, 0.1]]
+    core._scores = [1.0, 2.0, 3.0]
+    core._state = "reflect"
+
+    # point close to the simplex — should be accepted
+    accepted = core.inject_vertex([0.05, 0.05], 2.5)
+    assert accepted
+    assert core._pending_injection is not None
+
+
+def test_nmcore_inject_vertex_diameter_gate_rejects_far():
+    core = _NMCore(
+        ndim=2,
+        center=[0.0, 0.0],
+        scales=[0.5, 0.5],
+        convergence_tol=1e-6,
+        inject_diameter_fraction=1.0,
+    )
+    core._vertices = [[0.0, 0.0], [0.1, 0.0], [0.0, 0.1]]
+    core._scores = [1.0, 2.0, 3.0]
+    core._state = "reflect"
+
+    # point far from the simplex — should be rejected
+    accepted = core.inject_vertex([0.9, 0.9], 2.5)
+    assert not accepted
+    assert core._pending_injection is None
+
+
+def test_nmcore_inject_vertex_early_convergence_signal():
+    core = _NMCore(
+        ndim=2,
+        center=[0.0, 0.0],
+        scales=[0.5, 0.5],
+        convergence_tol=1e-6,
+        inject_diameter_fraction=1.0,
+    )
+    core._vertices = [[0.0, 0.0], [0.1, 0.0], [0.0, 0.1]]
+    core._scores = [1.0, 2.0, 3.0]
+    core._best_score = 1.0
+    core._state = "reflect"
+    core._tell_count = 10
+
+    # point far away but dramatically better (< 0.5 * best_score)
+    accepted = core.inject_vertex([0.9, 0.9], 0.3)
+    assert not accepted
+    assert core._converged
+
+
+def test_nmcore_inject_vertex_inf_diameter_fraction():
+    core = _NMCore(
+        ndim=2,
+        center=[0.0, 0.0],
+        scales=[0.5, 0.5],
+        convergence_tol=1e-6,
+        inject_diameter_fraction=float("inf"),
+    )
+    core._vertices = [[0.0, 0.0], [0.1, 0.0], [0.0, 0.1]]
+    core._scores = [1.0, 2.0, 3.0]
+    core._state = "reflect"
+
+    # even a far point should be accepted with inf fraction
+    accepted = core.inject_vertex([0.9, 0.9], 2.5)
+    assert accepted
+
+
+def test_nm_sampler_adaptive_filler_scale():
+    from cotengra.hyperoptimizers.hyper_neldermead import (
+        HyperNelderMeadSampler,
+    )
+
+    sampler = HyperNelderMeadSampler(
+        SBPLEX_TEST_SPACE,
+        seed=42,
+        n_initial=0,
+        filler_scale=0.01,
+        explore_prob=0.0,
+    )
+    assert sampler._core is not None
+
+    # manually populate the core so it has a real diameter
+    sampler._core._vertices = [[0.0], [0.5]]
+    sampler._core._scores = [1.0, 2.0]
+    sampler._core._state = "reflect"
+    sampler._core._initial_simplex_diameter = 0.5
+
+    diameter = sampler._core._simplex_diameter()
+    assert diameter > 0.01  # bigger than filler_scale floor
+
+    # ask a filler — effective scale should be max(0.5*0.5, 0.01) = 0.25
+    trial_number, params = sampler._ask_filler()
+    assert trial_number >= 0
+
+    # filler should center on core's best vertex, not global best
+    sampler._core._best_vertex = [0.8]
+    sampler._best_x = [-0.9]
+    rng = sampler.rng
+    samples = [sampler._ask_filler()[1][0] for _ in range(200)]
+    mean_sample = sum(samples) / len(samples)
+    # centered on 0.8, not -0.9 — mean should be close to 0.8
+    assert abs(mean_sample - 0.8) < 0.15
+
+
+def test_sbplex_sampler_adaptive_filler_scale():
+    sampler = HyperSbplexSampler(
+        SBPLEX_TEST_SPACE,
+        seed=42,
+        n_initial=0,
+        filler_scale=0.01,
+        explore_prob=0.0,
+    )
+    # set up cycling state with a step vector
+    sampler._step = [0.4]
+    sampler._sub_nm = _NMCore(
+        ndim=1,
+        center=[0.0],
+        scales=[0.4],
+        convergence_tol=1e-4,
+    )
+
+    # ask a filler — effective scale should be max(0.5*0.4, 0.01) = 0.2
+    trial_number, x = sampler._ask_filler()
+    assert trial_number >= 0
+
+
+def test_nmcore_psi_convergence_uses_relative_diameter():
+    core = _NMCore(
+        ndim=1,
+        center=[0.0],
+        scales=[1.0],
+        convergence_tol=1e-6,
+        psi=0.5,
+    )
+    core._vertices = [[0.0], [0.4]]
+    core._scores = [0.0, 1.0]
+    core._initial_simplex_diameter = 1.0
+
+    core._begin_reflect()
+
+    assert core.converged
+
+
+def test_nm_sampler_exits_init_phase_with_inf_scores():
+    from cotengra.hyperoptimizers.hyper_neldermead import (
+        HyperNelderMeadSampler,
+    )
+
+    sampler = HyperNelderMeadSampler(
+        SBPLEX_TEST_SPACE,
+        seed=42,
+        n_initial=3,
+        explore_prob=0.0,
+    )
+
+    assert sampler._init_phase
+
+    # simulate all init trials scoring inf (e.g. BadTrial / timeout)
+    tokens = []
+    for _ in range(3):
+        token, _ = sampler.ask()
+        tokens.append(token)
+
+    for token in tokens:
+        sampler.tell(token, float("inf"))
+
+    # init phase must have ended despite all-inf scores
+    assert not sampler._init_phase
+
+
+def test_cmaes_report_result_handles_inf():
+    cmaes = pytest.importorskip("cmaes")  # noqa: F841
+    from cotengra.hyperoptimizers.hyper_cmaes import CMAESOptLib
+
+    space = {"greedy": SBPLEX_TEST_SPACE}
+    optlib = CMAESOptLib()
+    optlib.setup(methods=["greedy"], space=space)
+
+    # ask enough trials to fill one population, report all as inf
+    pop_size = optlib._optimizers["greedy"].opt.population_size
+    settings = [optlib.get_setting() for _ in range(pop_size)]
+    for s in settings:
+        optlib.report_result(s, {}, float("inf"))
+
+    # should still be able to ask for more trials afterwards
+    s = optlib.get_setting()
+    assert s["method"] == "greedy"
+
+
+def test_optuna_report_result_handles_inf():
+    pytest.importorskip("optuna")
+    from cotengra.hyperoptimizers.hyper_optuna import OptunaOptLib
+
+    space = {"greedy": SBPLEX_TEST_SPACE}
+    optlib = OptunaOptLib()
+    optlib.setup(methods=["greedy"], space=space)
+
+    # ask a trial and report inf
+    s = optlib.get_setting()
+    optlib.report_result(s, {}, float("inf"))
+
+    # ask another trial and report a normal score
+    s2 = optlib.get_setting()
+    optlib.report_result(s2, {}, 1.0)
+
+    # should still be functional
+    s3 = optlib.get_setting()
+    assert s3["method"] == "greedy"
 
 
 @pytest.mark.parametrize(

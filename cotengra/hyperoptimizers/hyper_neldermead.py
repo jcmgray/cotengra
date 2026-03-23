@@ -25,6 +25,11 @@ def _clip(x, lo=-1.0, hi=1.0):
     return min(max(x, lo), hi)
 
 
+def clamp(xs, lo=-1.0, hi=1.0):
+    """Clip each element of the list ``xs`` to the interval ``[lo, hi]``."""
+    return [_clip(xi, lo, hi) for xi in xs]
+
+
 class _NMCore:
     """Minimal Nelder-Mead simplex state machine on raw vectors. Manages n+1
     vertices and iteratively improves via reflection, expansion, contraction,
@@ -59,6 +64,23 @@ class _NMCore:
     convergence_tol : float
         When the Chebyshev diameter of the simplex falls below this value the
         core signals convergence.
+    psi : float, optional
+        Relative simplex reduction target. When set, the core also converges
+        once the simplex diameter has been reduced below ``psi`` times its
+        initialized diameter. This mirrors the internal convergence mode used
+        by Sbplex in NLopt.
+    inject_diameter_fraction : float
+        Maximum allowed simplex diameter inflation when injecting an external
+        vertex. The candidate's max distance to any non-worst vertex must be
+        at most ``inject_diameter_fraction * current_diameter``. Use ``1.0``
+        (default) to prevent any inflation, ``> 1.0`` to allow some growth,
+        or ``float('inf')`` to disable the gate entirely.
+    inject_restart_fraction : float
+        When injecting an external vertex that is far from the current simplex
+        (beyond the diameter-based gate above), if its score is better than
+        this fraction of the current best score, flag convergence to trigger an
+        early restart focused on the better region. Set to ``0.0`` to disable
+        this behavior.
     """
 
     def __init__(
@@ -71,7 +93,10 @@ class _NMCore:
         gamma=2.0,
         rho=0.5,
         sigma=0.5,
-        convergence_tol=0.1,
+        convergence_tol=0.01,
+        psi=None,
+        inject_diameter_fraction=1.5,
+        inject_restart_fraction=0.6,
     ):
         self.ndim = ndim
 
@@ -87,11 +112,16 @@ class _NMCore:
             self.sigma = sigma
 
         self.convergence_tol = convergence_tol
+        self.psi = psi
+        self.inject_diameter_fraction = inject_diameter_fraction
+        self.inject_restart_fraction = inject_restart_fraction
 
         self._token_counter = 0
+        self._tell_count = 0
         self._best_vertex = None
         self._best_score = float("inf")
         self._converged = False
+        self._initial_simplex_diameter = None
 
         self._vertices = []
         self._scores = []
@@ -125,15 +155,12 @@ class _NMCore:
     def best_score(self):
         return self._best_score
 
-    def _clamp(self, x):
-        return [_clip(xi) for xi in x]
-
     def _centroid_of(self, vertices):
         n = len(vertices)
         return [sum(v[d] for v in vertices) / n for d in range(self.ndim)]
 
     def _reflect(self, centroid, worst):
-        return self._clamp(
+        return clamp(
             [
                 centroid[d] + self.alpha * (centroid[d] - worst[d])
                 for d in range(self.ndim)
@@ -141,7 +168,7 @@ class _NMCore:
         )
 
     def _expand(self, centroid, reflected):
-        return self._clamp(
+        return clamp(
             [
                 centroid[d] + self.gamma * (reflected[d] - centroid[d])
                 for d in range(self.ndim)
@@ -149,7 +176,7 @@ class _NMCore:
         )
 
     def _contract_outside_pt(self, centroid, reflected):
-        return self._clamp(
+        return clamp(
             [
                 centroid[d] + self.rho * (reflected[d] - centroid[d])
                 for d in range(self.ndim)
@@ -157,7 +184,7 @@ class _NMCore:
         )
 
     def _contract_inside_pt(self, centroid, worst):
-        return self._clamp(
+        return clamp(
             [
                 centroid[d] + self.rho * (worst[d] - centroid[d])
                 for d in range(self.ndim)
@@ -165,7 +192,7 @@ class _NMCore:
         )
 
     def _shrink_vertex(self, best, vertex):
-        return self._clamp(
+        return clamp(
             [
                 best[d] + self.sigma * (vertex[d] - best[d])
                 for d in range(self.ndim)
@@ -191,6 +218,22 @@ class _NMCore:
                     diam = d
         return diam
 
+    def _diameter_converged(self):
+        diameter = self._simplex_diameter()
+
+        if diameter < self.convergence_tol:
+            # absolute diameter convergence
+            return True
+
+        if self.psi is None or self._initial_simplex_diameter is None:
+            # relative diameter convergence not enabled or not initialized
+            return False
+
+        # relative diameter convergence
+        converged = diameter < self.psi * self._initial_simplex_diameter
+
+        return converged
+
     def _initialize_simplex(self, center, scales):
         self._vertices = []
         self._scores = []
@@ -200,11 +243,11 @@ class _NMCore:
         self._state = _INIT
 
         # n+1 vertices: center plus one axis-aligned perturbation per dimension
-        self._enqueue(self._clamp(list(center)), "init")
+        self._enqueue(clamp(list(center)), "init")
         for i in range(self.ndim):
             v = list(center)
             v[i] += scales[i]
-            self._enqueue(self._clamp(v), "init")
+            self._enqueue(clamp(v), "init")
 
     def _enqueue(self, x, role):
         token = self._token_counter
@@ -245,6 +288,9 @@ class _NMCore:
             del self._results[tn]
 
         self._sort_simplex()
+        self._initial_simplex_diameter = max(
+            self._simplex_diameter(), self.convergence_tol
+        )
         self._begin_reflect()
 
     def inject_vertex(self, x, score):
@@ -267,11 +313,38 @@ class _NMCore:
             Whether the injection was accepted (deferred).
         """
         if self._converged:
+            # in finished state
             return False
+
         if self._state == _INIT:
+            # not ready
             return False
+
         if not self._scores or score >= self._scores[-1]:
+            # not better than current worst vertex
             return False
+
+        if self._pending_injection is not None:
+            # not better than a previously injected vertex
+            if score >= self._pending_injection[1]:
+                return False
+
+        # only inject if it won't inflate the simplex beyond the threshold
+        threshold = self._simplex_diameter() * self.inject_diameter_fraction
+        for v in self._vertices[:-1]:
+            d = max(abs(x[k] - v[k]) for k in range(self.ndim))
+            if d > threshold:
+                # vertex is too far from simplex to accept
+                if (
+                    self._best_score is not None
+                    and score < self.inject_restart_fraction * self._best_score
+                    and self._tell_count >= self.ndim + 1
+                ):
+                    # BUT, early convergence signal: if pointdramatically
+                    # better, force convergence to restart from better region
+                    self._converged = True
+                return False
+
         self._pending_injection = (list(x), score)
         return True
 
@@ -284,7 +357,7 @@ class _NMCore:
             self._scores[-1] = inj_score
             self._sort_simplex()
 
-        if self._simplex_diameter() < self.convergence_tol:
+        if self._diameter_converged():
             # convergence is checked at the start of each NM iteration - if the
             # simplex has collapsed, flag upstream rather than issuing
             self._converged = True
@@ -440,6 +513,7 @@ class _NMCore:
         silently ignored so that late-arriving results from a
         previous core instance do not cause errors.
         """
+        self._tell_count += 1
         x, role = self._token_map.pop(token, (None, None))
 
         if x is not None and score < self._best_score:
@@ -496,6 +570,9 @@ class HyperNelderMeadSampler:
         Probability of issuing a uniform random point instead of the
         NM-directed point during normal operation. Maintains diversity
         throughout the search.
+    inject_diameter_fraction : float, optional
+        Passed to ``_NMCore`` — controls the maximum allowed simplex
+        diameter inflation when injecting an external vertex.
     exponential_param_power : float, optional
         Passed through to the shared parameter mapping.
     """
@@ -504,17 +581,19 @@ class HyperNelderMeadSampler:
         self,
         space,
         seed=None,
-        adaptive=True,
+        adaptive=False,
         alpha=1.0,
         gamma=2.0,
         rho=0.5,
         sigma=0.5,
-        initial_scale=0.5,
-        restart_tol=1e-4,
-        restart_scale=0.3,
-        filler_scale=0.25,
+        initial_scale=0.6,
+        restart_tol=0.01,
+        restart_scale=0.5,
+        filler_scale=0.3,
         n_initial=None,
         explore_prob=0.05,
+        inject_diameter_fraction=1.5,
+        inject_restart_fraction=0.6,
         exponential_param_power=None,
     ):
         self.rng = get_rng(seed)
@@ -535,12 +614,15 @@ class HyperNelderMeadSampler:
         self.restart_scale = restart_scale
         self.filler_scale = filler_scale
         self.explore_prob = explore_prob
+        self.inject_diameter_fraction = inject_diameter_fraction
+        self.inject_restart_fraction = inject_restart_fraction
 
         if n_initial is None:
             n_initial = 2 * self.ndim
         self.n_initial = n_initial
 
         self._trial_counter = 0
+        self._restart_count = 0
         self._best_x = None
         self._best_score = float("inf")
         # trial_number -> ("nm", core_token, raw_x) or
@@ -578,21 +660,32 @@ class HyperNelderMeadSampler:
             rho=self.rho,
             sigma=self.sigma,
             convergence_tol=self.restart_tol,
+            inject_diameter_fraction=self.inject_diameter_fraction,
+            inject_restart_fraction=self.inject_restart_fraction,
         )
 
     def _ask_filler(self):
-        if self._best_x is not None:
+        if self._core is not None and self._core.best_vertex is not None:
+            center = self._core.best_vertex
+        elif self._best_x is not None:
             center = self._best_x
         else:
             center = [0.0] * self.ndim
 
         if self.filler_scale == "uniform":
+            # global sampling
             x = [self.rng.uniform(-1.0, 1.0) for _ in center]
         else:
-            x = [
-                _clip(ci + self.rng.gauss(0, self.filler_scale))
-                for ci in center
-            ]
+            # locally sample around best point
+            scale = self.filler_scale
+            if self._core is not None and not self._core.converged:
+                # if the core is active, scale with the current simplex
+                # diameter so that fillers are more likely to be accepted
+                diameter = self._core._simplex_diameter()
+                scale = max(diameter, self.filler_scale)
+
+            x = [_clip(self.rng.gauss(ci, scale)) for ci in center]
+
         trial_number = self._trial_counter
         self._trial_counter += 1
         self._trial_map[trial_number] = ("filler", None, x)
@@ -698,9 +791,19 @@ class HyperNelderMeadSampler:
         # the best-known point. Any in-flight trials from the old core will be
         # silently ignored by the new core's tell().
         if self._core is not None and self._core.converged:
-            center = (
-                self._best_x if self._best_x is not None else [0.0] * self.ndim
-            )
+            self._restart_count += 1
+            if self._restart_count % 2 == 1:
+                # odd restarts: local refine around best known point
+                center = (
+                    self._best_x
+                    if self._best_x is not None
+                    else [0.0] * self.ndim
+                )
+            else:
+                # even restarts: global random point
+                center = [
+                    self.rng.uniform(-1.0, 1.0) for _ in range(self.ndim)
+                ]
             scales = [self.restart_scale] * self.ndim
             self._core = self._make_core(center, scales)
 
@@ -713,17 +816,19 @@ class NelderMeadOptLib(HyperOptLib):
         methods,
         space,
         optimizer=None,
-        adaptive=True,
+        adaptive=False,
         alpha=1.0,
         gamma=2.0,
         rho=0.5,
         sigma=0.5,
-        initial_scale=0.5,
-        restart_tol=1e-4,
-        restart_scale=0.3,
-        filler_scale=0.25,
+        initial_scale=0.6,
+        restart_tol=0.01,
+        restart_scale=0.5,
+        filler_scale=0.3,
         n_initial=None,
         explore_prob=0.05,
+        inject_diameter_fraction=1.5,
+        inject_restart_fraction=0.6,
         method_exploration=1.0,
         method_temperature=1.0,
         exponential_param_power=None,
@@ -766,6 +871,9 @@ class NelderMeadOptLib(HyperOptLib):
         explore_prob : float, optional
             Probability of issuing a uniform random exploration point
             during normal operation.
+        inject_diameter_fraction : float, optional
+            Passed to ``_NMCore`` — controls the maximum allowed simplex
+            diameter inflation when injecting an external vertex.
         method_exploration : float, optional
             Exploration strength for the LCB method chooser.
         method_temperature : float, optional
@@ -801,6 +909,8 @@ class NelderMeadOptLib(HyperOptLib):
                 filler_scale=filler_scale,
                 n_initial=n_initial,
                 explore_prob=explore_prob,
+                inject_diameter_fraction=inject_diameter_fraction,
+                inject_restart_fraction=inject_restart_fraction,
                 exponential_param_power=exponential_param_power,
             )
             for method in methods
@@ -827,4 +937,9 @@ class NelderMeadOptLib(HyperOptLib):
         )
 
 
-register_hyper_optlib("neldermead", NelderMeadOptLib)
+register_hyper_optlib(
+    "neldermead", NelderMeadOptLib, defaults={"adaptive": False}
+)
+register_hyper_optlib(
+    "neldermead-adapt", NelderMeadOptLib, defaults={"adaptive": True}
+)

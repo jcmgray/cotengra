@@ -48,16 +48,9 @@ def get_default_optlib_eco():
         optlib = "cmaes"
     elif importlib.util.find_spec("nevergrad"):
         optlib = "nevergrad"
-    elif importlib.util.find_spec("optuna"):
-        optlib = "optuna"
     else:
-        optlib = "random"
-        warnings.warn(
-            "Couldn't find `cmaes`, `nevergrad`, or `optuna` so will use "
-            "completely random sampling in place of hyper-optimization. "
-            "It is recommended to install one of these libraries for higher "
-            "quality contraction paths."
-        )
+        # cotengra's dependency free steady state evolutionary strategy
+        optlib = "sses"
     return optlib
 
 
@@ -68,16 +61,9 @@ def get_default_optlib():
         optlib = "optuna"
     elif importlib.util.find_spec("cmaes"):
         optlib = "cmaes"
-    elif importlib.util.find_spec("nevergrad"):
-        optlib = "nevergrad"
     else:
-        optlib = "random"
-        warnings.warn(
-            "Couldn't find `optuna`, `cmaes`, or `nevergrad` so will use "
-            "completely random sampling in place of hyper-optimization. "
-            "It is recommended to install one of these libraries for higher "
-            "quality hyper-optimization."
-        )
+        # cotengra's dependency free implementation of Nelder-Mead Subplex
+        optlib = "sbplx"
     return optlib
 
 
@@ -478,7 +464,7 @@ class HyperOptimizer(PathOptimizer):
         If supplied, once a trial contraction path is found, try subtree
         reconfiguation with the given options, and then update the flops and
         size of the trial with the reconfigured versions.
-    optlib : {'optuna', 'cmaes', 'nevergrad', 'skopt', ...}, optional
+    optlib : {'optuna', 'cmaes', 'nevergrad', 'sses', 'sbplx', ...}, optional
         Which optimizer to sample and train with.
     optlib_opts
         Supplied to the hyper-optimizer library initialization.
@@ -694,10 +680,10 @@ class HyperOptimizer(PathOptimizer):
             (self.max_training_steps is None)
             or (len(self.scores) < self.max_training_steps)
             or new_best
-        ) and (
-            # don't report bad trials
-            # XXX: should we map to some high value?
-            trial["score"] < float("inf")
+            # always report inf-scored trials so sampler internal state
+            # (e.g. init-phase counters) stays consistent, the optlib itself
+            # can decide to ignore these if it wants to
+            or trial["score"] == float("inf")
         )
 
         if should_report:

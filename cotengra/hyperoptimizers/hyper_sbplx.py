@@ -1,4 +1,4 @@
-"""Hyper optimization using the Sbplex method (Rowan, 1990)."""
+"""Hyper optimization using the Sbplx method (Rowan, 1990)."""
 
 import warnings
 
@@ -13,9 +13,11 @@ from ._param_mapping import (
 from .hyper import HyperOptLib, register_hyper_optlib
 from .hyper_neldermead import _clip, _NMCore
 
+_SBPLX_OMEGA = 0.1
 
-class HyperSbplexSampler:
-    """Sbplex optimizer in raw ``[-1, 1]`` parameter space.
+
+class HyperSbplxSampler:
+    """Sbplx optimizer in raw ``[-1, 1]`` parameter space.
 
     This is derived from Subplex (Rowan, 1990) which decomposes the full
     parameter space into low-dimensional subspaces (i.e. subsets of parameters)
@@ -52,9 +54,16 @@ class HyperSbplexSampler:
     psi : float, optional
         Step reduction factor applied when a subspace shows no movement, and
         used to scale the jitter on restart.
+    partition : str, optional
+        Subspace partitioning strategy. ``"greedy"`` takes equal chunks of
+        up to ``nsmax`` dimensions, shrinking only to avoid a remainder
+        smaller than ``nsmin``. ``"goodness"`` uses Rowan's heuristic,
+        favoring splits where average step magnitude drops sharply.
+        Default ``"greedy"``.
     convergence_tol : float, optional
-        Convergence threshold for the sub-NM simplex diameter and for the
-        overall cycle displacement check.
+        Relative convergence threshold for the overall cycle check. It is also
+        passed as the absolute simplex diameter fallback for the inner
+        Nelder-Mead cores.
     filler_scale : float, optional
         Standard deviation of the gaussian noise used for filler points issued
         while the sub-NM is blocked.
@@ -70,6 +79,9 @@ class HyperSbplexSampler:
         Probability of issuing a uniform random point instead of the
         NM-directed point during normal cycling. Maintains diversity throughout
         the search.
+    inject_diameter_fraction : float, optional
+        Passed to each sub-``_NMCore`` — controls the maximum allowed
+        simplex diameter inflation when injecting an external vertex.
     exponential_param_power : float, optional
         Passed through to the shared parameter mapping.
     """
@@ -78,20 +90,23 @@ class HyperSbplexSampler:
         self,
         space,
         seed=None,
-        adaptive=True,
+        adaptive=False,
         alpha=1.0,
         gamma=2.0,
         rho=0.5,
         sigma=0.5,
-        initial_scale=0.5,
-        nsmin=None,
-        nsmax=None,
+        initial_scale=0.6,
+        nsmin=2,
+        nsmax=5,
+        partition="greedy",
         psi=0.25,
-        convergence_tol=0.1,
-        filler_scale=0.25,
+        convergence_tol=0.01,
+        filler_scale=0.3,
         n_initial=None,
         restart_patience="auto",
         explore_prob=0.05,
+        inject_diameter_fraction=1.5,
+        inject_restart_fraction=0.5,
         exponential_param_power=None,
     ):
         self.rng = get_rng(seed)
@@ -111,13 +126,12 @@ class HyperSbplexSampler:
         self.convergence_tol = convergence_tol
         self.filler_scale = filler_scale
         self.explore_prob = explore_prob
+        self.inject_diameter_fraction = inject_diameter_fraction
+        self.inject_restart_fraction = inject_restart_fraction
 
-        if nsmin is None:
-            nsmin = min(2, self.ndim)
-        if nsmax is None:
-            nsmax = min(5, self.ndim)
-        self.nsmin = nsmin
-        self.nsmax = nsmax
+        self.nsmin = min(nsmin, self.ndim)
+        self.nsmax = min(nsmax, self.ndim)
+        self.partition = partition
 
         if n_initial is None:
             n_initial = 2 * self.ndim
@@ -168,20 +182,33 @@ class HyperSbplexSampler:
         self._sub_nm_id = None
         self._next_sub_nm_id = 0
         self._x_at_cycle_start = None
+        self._step_at_cycle_start = None
         self._best_score_at_cycle_start = float("inf")
 
     def _partition_dims(self):
-        """Partition dimensions into subspaces. Dimensions are sorted by
-        ``abs(step[d])`` descending so the most-active dimensions are grouped
-        first. Chunks of up to ``nsmax`` dimensions are taken greedily, but
-        the last chunk is shortened if it would leave a remainder smaller than
-        ``nsmin``.
+        """Partition dimensions into subspaces.
+
+        Dimensions are first sorted by ``abs(step[d])`` descending. The
+        partition strategy is selected by ``self.partition``:
+
+        - ``"greedy"``: equal chunks of up to ``nsmax``, shrinking only
+          to avoid a remainder smaller than ``nsmin``.
+        - ``"goodness"``: Rowan's heuristic, favoring splits where the
+          average step magnitude drops sharply.
         """
         order = sorted(
             range(self.ndim),
             key=lambda d: abs(self._step[d]),
             reverse=True,
         )
+        if self.partition == "goodness":
+            magnitudes = [abs(self._step[d]) for d in order]
+            self._subspaces = self._partition_goodness(order, magnitudes)
+        else:
+            self._subspaces = self._partition_greedy(order)
+
+    def _partition_greedy(self, order):
+        """Equal-chunk partitioning."""
         subspaces = []
         i = 0
         while i < len(order):
@@ -191,17 +218,59 @@ class HyperSbplexSampler:
                 break
             chunk_size = self.nsmax
             leftover = remaining - chunk_size
-            # if the leftover would be too small to form a valid subspace,
-            # shrink this chunk so the leftover is exactly nsmin
             if 0 < leftover < self.nsmin:
                 chunk_size = remaining - self.nsmin
             subspaces.append(order[i : i + chunk_size])
             i += chunk_size
-        self._subspaces = subspaces
+        return subspaces
+
+    def _partition_goodness(self, order, magnitudes):
+        """Rowan's goodness heuristic partitioning."""
+        subspaces = []
+        start = 0
+        while start < len(order):
+            remaining = len(order) - start
+            if remaining <= self.nsmax:
+                subspaces.append(order[start:])
+                break
+
+            total_remaining = sum(magnitudes[start:])
+            prefix_total = 0.0
+            best_goodness = float("-inf")
+            best_size = self.nsmin
+            max_size = min(self.nsmax, remaining)
+
+            for offset in range(max_size):
+                prefix_total += magnitudes[start + offset]
+                size = offset + 1
+                leftover = remaining - size
+
+                if size < self.nsmin:
+                    continue
+                if leftover and leftover < self.nsmin:
+                    continue
+
+                if leftover:
+                    suffix_total = total_remaining - prefix_total
+                    goodness = prefix_total / size - suffix_total / leftover
+                else:
+                    goodness = prefix_total / size
+
+                if goodness > best_goodness:
+                    best_goodness = goodness
+                    best_size = size
+
+            subspaces.append(order[start : start + best_size])
+            start += best_size
+        return subspaces
+
+    def _clamp_scale_factor(self, factor):
+        return min(max(factor, _SBPLX_OMEGA), 1.0 / _SBPLX_OMEGA)
 
     def _start_cycle(self):
         """Snapshot the current point and begin a new cycle."""
         self._x_at_cycle_start = list(self._x)
+        self._step_at_cycle_start = list(self._step)
         self._best_score_at_cycle_start = self._best_score
         self._partition_dims()
         self._sub_idx = 0
@@ -225,7 +294,23 @@ class HyperSbplexSampler:
             rho=self.rho,
             sigma=self.sigma,
             convergence_tol=self.convergence_tol,
+            psi=self.psi,
+            inject_diameter_fraction=self.inject_diameter_fraction,
+            inject_restart_fraction=self.inject_restart_fraction,
         )
+
+    def _cycle_converged(self):
+        if self._x_at_cycle_start is None or self._step is None:
+            return False
+
+        for d in range(self.ndim):
+            scale = max(abs(self._x[d]), 1.0)
+            rel_change = abs(self._x[d] - self._x_at_cycle_start[d]) / scale
+            rel_step = abs(self._step[d]) * self.psi / scale
+            if max(rel_change, rel_step) > self.convergence_tol:
+                return False
+
+        return True
 
     def _embed_sub_vector(self, sub_x):
         """Embed a subspace vector into a full-dimensional point, keeping
@@ -245,7 +330,11 @@ class HyperSbplexSampler:
         if self.filler_scale == "uniform":
             x = [self.rng.uniform(-1.0, 1.0) for _ in center]
         else:
-            x = [_clip(self.rng.gauss(ci, self.filler_scale)) for ci in center]
+            scale = self.filler_scale
+            if self._sub_nm is not None and not self._sub_nm.converged:
+                step_mag = max((abs(s) for s in self._step), default=0.0)
+                scale = max(0.5 * step_mag, self.filler_scale)
+            x = [_clip(self.rng.gauss(ci, scale)) for ci in center]
         trial_number = self._trial_counter
         self._trial_counter += 1
         self._trial_map[trial_number] = ("filler", None, None, x)
@@ -275,6 +364,7 @@ class HyperSbplexSampler:
         self._sub_nm = None
         self._sub_nm_id = None
         self._x_at_cycle_start = None
+        self._step_at_cycle_start = None
         self._best_score_at_cycle_start = self._best_score
 
     def _restart(self, mode):
@@ -288,10 +378,6 @@ class HyperSbplexSampler:
             preserving step geometry. Global restarts jump to a random point
             and reset step sizes to ``initial_scale``.
         """
-        print(
-            f"Restarting Sbplex in {mode} mode (restart count={self._restart_count})"
-        )
-
         if mode == "global":
             self._x = [self.rng.uniform(-1.0, 1.0) for _ in range(self.ndim)]
             self._step = [self.initial_scale] * self.ndim
@@ -447,16 +533,7 @@ class HyperSbplexSampler:
 
         if best_sub is not None:
             for i, d in enumerate(sub_dims):
-                old = self._x[d]
                 self._x[d] = best_sub[i]
-                displacement = best_sub[i] - old
-                # use the actual displacement as the new step if it is
-                # meaningful; otherwise decay the step by psi to avoid stalling
-                # on flat dimensions
-                if abs(displacement) > self.convergence_tol:
-                    self._step[d] = displacement
-                else:
-                    self._step[d] *= self.psi
 
         self._sub_idx += 1
         if self._sub_idx < len(self._subspaces):
@@ -464,17 +541,51 @@ class HyperSbplexSampler:
         else:
             self._finish_cycle()
 
+    def _update_steps_after_cycle(self):
+        if self._x_at_cycle_start is None or self._step_at_cycle_start is None:
+            return
+
+        deltax = [
+            self._x[d] - self._x_at_cycle_start[d] for d in range(self.ndim)
+        ]
+
+        if len(self._subspaces) > 1:
+            stepnorm = sum(abs(step) for step in self._step_at_cycle_start)
+            dxnorm = sum(abs(dx) for dx in deltax)
+            if stepnorm > 0.0:
+                scale = dxnorm / stepnorm
+            else:
+                scale = 1.0
+            scale = self._clamp_scale_factor(scale)
+        else:
+            scale = self.psi
+
+        for d in range(self.ndim):
+            base_step = self._step_at_cycle_start[d]
+            magnitude = abs(base_step) * scale
+
+            if magnitude == 0.0:
+                magnitude = self.initial_scale * scale
+            if magnitude < self.convergence_tol:
+                magnitude = self.convergence_tol
+
+            if deltax[d] > 0.0:
+                self._step[d] = magnitude
+            elif deltax[d] < 0.0:
+                self._step[d] = -magnitude
+            elif base_step < 0.0:
+                self._step[d] = magnitude
+            else:
+                self._step[d] = -magnitude
+
     def _finish_cycle(self):
-        """Check overall convergence across all subspaces. If the total
-        displacement over the whole cycle is below ``convergence_tol``, the
-        search has stalled and we restart from a jittered copy of the
-        best known point with reduced step sizes. Repeated non-improving
-        cycles also trigger restarts, escalating to broader exploration.
+        """Check overall convergence across all subspaces.
+
+        Following the NLopt Sbplx logic, convergence is based on a relative
+        per-dimension test using both the cycle displacement and the current
+        step size. Repeated non-improving cycles still trigger restarts to
+        preserve the asynchrcoonous wrapper behavior.
         """
-        max_disp = max(
-            abs(self._x[d] - self._x_at_cycle_start[d])
-            for d in range(self.ndim)
-        )
         improved = self._best_score < self._best_score_at_cycle_start
 
         if improved:
@@ -482,15 +593,14 @@ class HyperSbplexSampler:
         else:
             self._cycles_since_improvement += 1
 
-        should_restart = (
-            # simplex has converged
-            (max_disp < self.convergence_tol)
-            # no score improvement in too many cycles
-            or (
-                self.restart_patience is not None
-                and self._cycles_since_improvement >= self.restart_patience
-            )
+        self._update_steps_after_cycle()
+
+        converged = self._cycle_converged()
+        patience_exhausted = (
+            self.restart_patience is not None
+            and self._cycles_since_improvement >= self.restart_patience
         )
+        should_restart = converged or patience_exhausted
 
         if should_restart:
             if self._stagnant_restart_count % 2 == 0:
@@ -503,8 +613,8 @@ class HyperSbplexSampler:
         self._reset_cycle_state()
 
 
-class SbplexOptLib(HyperOptLib):
-    """Hyper-optimization backend using the 'Sbplex' method adapted from the
+class SbplxOptLib(HyperOptLib):
+    """Hyper-optimization backend using the 'Sbplx' method adapted from the
     Subplex method (Rowan, 1990).
     """
 
@@ -513,27 +623,30 @@ class SbplexOptLib(HyperOptLib):
         methods,
         space,
         optimizer=None,
-        adaptive=True,
+        adaptive=False,
         alpha=1.0,
         gamma=2.0,
         rho=0.5,
         sigma=0.5,
-        initial_scale=0.5,
-        nsmin=None,
-        nsmax=None,
+        initial_scale=0.6,
+        nsmin=2,
+        nsmax=5,
+        partition="greedy",
         psi=0.25,
-        convergence_tol=0.1,
-        filler_scale=0.25,
+        convergence_tol=0.01,
+        filler_scale=0.3,
         n_initial=None,
         restart_patience="auto",
         explore_prob=0.05,
+        inject_diameter_fraction=1.5,
+        inject_restart_fraction=0.5,
         method_exploration=1.0,
         method_temperature=1.0,
         exponential_param_power=None,
         seed=None,
         **kwargs,
     ):
-        """Initialize Sbplex optimizers for each method.
+        """Initialize Sbplx optimizers for each method.
 
         Parameters
         ----------
@@ -561,6 +674,9 @@ class SbplexOptLib(HyperOptLib):
             Minimum subspace size.
         nsmax : int or None, optional
             Maximum subspace size.
+        partition : str, optional
+            Subspace partitioning strategy. ``"greedy"`` or ``"goodness"``.
+            Default ``"greedy"``.
         psi : float, optional
             Step reduction factor.
         convergence_tol : float, optional
@@ -577,6 +693,11 @@ class SbplexOptLib(HyperOptLib):
         explore_prob : float, optional
             Probability of issuing a uniform random exploration point during
             normal cycling.
+        inject_diameter_fraction : float, optional
+            Passed to each sub-``_NMCore`` — controls the maximum allowed
+            simplex diameter inflation when injecting an external vertex.
+        inject_restart_fraction : float, optional
+            Passed to each sub-``_NMCore`` — controls th XXX
         method_exploration : float, optional
             Exploration strength for the LCB method chooser.
         method_temperature : float, optional
@@ -588,7 +709,7 @@ class SbplexOptLib(HyperOptLib):
         """
         if kwargs:
             warnings.warn(
-                f"Sbplex: ignoring unknown keyword arguments: {kwargs}"
+                f"Sbplx: ignoring unknown keyword arguments: {kwargs}"
             )
         self._method_chooser = LCBOptimizer(
             options=methods,
@@ -597,7 +718,7 @@ class SbplexOptLib(HyperOptLib):
             seed=seed,
         )
         self._optimizers = {
-            method: HyperSbplexSampler(
+            method: HyperSbplxSampler(
                 space[method],
                 seed=seed,
                 adaptive=adaptive,
@@ -608,12 +729,15 @@ class SbplexOptLib(HyperOptLib):
                 initial_scale=initial_scale,
                 nsmin=nsmin,
                 nsmax=nsmax,
+                partition=partition,
                 psi=psi,
                 convergence_tol=convergence_tol,
                 filler_scale=filler_scale,
                 n_initial=n_initial,
                 restart_patience=restart_patience,
                 explore_prob=explore_prob,
+                inject_diameter_fraction=inject_diameter_fraction,
+                inject_restart_fraction=inject_restart_fraction,
                 exponential_param_power=exponential_param_power,
             )
             for method in methods
@@ -632,7 +756,7 @@ class SbplexOptLib(HyperOptLib):
 
     def report_result(self, setting, trial, score):
         """Report a completed trial back to the method chooser and the
-        per-method Sbplex sampler.
+        per-method Sbplx sampler.
         """
         self._method_chooser.tell(setting["method"], score)
         self._optimizers[setting["method"]].tell(
@@ -640,7 +764,4 @@ class SbplexOptLib(HyperOptLib):
         )
 
 
-register_hyper_optlib("sbplex", SbplexOptLib, defaults={"adaptive": True})
-register_hyper_optlib(
-    "sbplex-noadapt", SbplexOptLib, defaults={"adaptive": False}
-)
+register_hyper_optlib("sbplx", SbplxOptLib)
