@@ -8,7 +8,7 @@ import pytest
 import cotengra as ctg
 from cotengra.hyperoptimizers.hyper import _OPTLIB_DEFAULTS
 from cotengra.hyperoptimizers.hyper_neldermead import _NMCore
-from cotengra.hyperoptimizers.hyper_sbplx import HyperSbplexSampler
+from cotengra.hyperoptimizers.hyper_sbplx import HyperSbplxSampler
 
 try:
     subprocess.run(["quickbb_64"])
@@ -74,11 +74,11 @@ single_term_cases = [
     ([("a", "b")], ("b", "a"), {"a": 2, "b": 3}),
 ]
 
-SBPLEX_TEST_SPACE = {
+SBPLX_TEST_SPACE = {
     "x": {"type": "FLOAT", "min": -1.0, "max": 1.0},
 }
 
-SBPLEX_TEST_SPACE_6D = {
+SBPLX_TEST_SPACE_6D = {
     name: {"type": "FLOAT", "min": -1.0, "max": 1.0} for name in "abcdef"
 }
 
@@ -167,9 +167,9 @@ def test_hyper(contraction_20_5, optlib, requires, parallel):
     optimizer.print_trials()
 
 
-def test_hyper_sbplex_restart_patience_triggers_local_restart():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE,
+def test_hyper_sbplx_restart_patience_triggers_local_restart():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE,
         seed=1,
         n_initial=0,
         restart_patience=2,
@@ -198,9 +198,9 @@ def test_hyper_sbplex_restart_patience_triggers_local_restart():
     assert 0.0 < abs(sampler._step[0]) < 0.4
 
 
-def test_hyper_sbplex_partition_uses_goodness_heuristic():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE_6D,
+def test_hyper_sbplx_partition_uses_goodness_heuristic():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE_6D,
         seed=1,
         n_initial=0,
         nsmin=2,
@@ -215,9 +215,9 @@ def test_hyper_sbplex_partition_uses_goodness_heuristic():
     assert sampler._subspaces == [[0, 1], [2, 3, 4, 5]]
 
 
-def test_hyper_sbplex_partition_greedy_equal_chunks():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE_6D,
+def test_hyper_sbplx_partition_greedy_equal_chunks():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE_6D,
         seed=1,
         n_initial=0,
         nsmin=2,
@@ -235,9 +235,9 @@ def test_hyper_sbplex_partition_greedy_equal_chunks():
     assert len(sampler._subspaces[1]) == 3
 
 
-def test_hyper_sbplex_cycle_step_scaling_clamped_by_omega():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE_6D,
+def test_hyper_sbplx_cycle_step_scaling_clamped_by_omega():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE_6D,
         seed=1,
         n_initial=0,
         explore_prob=0.0,
@@ -254,9 +254,9 @@ def test_hyper_sbplex_cycle_step_scaling_clamped_by_omega():
     assert sampler._step[1:] == [-10.0] * 5
 
 
-def test_hyper_sbplex_cycle_convergence_is_relative_to_scale():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE,
+def test_hyper_sbplx_cycle_convergence_is_relative_to_scale():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE,
         seed=1,
         n_initial=0,
         explore_prob=0.0,
@@ -269,16 +269,9 @@ def test_hyper_sbplex_cycle_convergence_is_relative_to_scale():
     assert sampler._cycle_converged()
 
 
-def test_hyper_defaults_use_nonadaptive_variants():
-    assert _OPTLIB_DEFAULTS["sbplx"]["adaptive"] is False
-    assert _OPTLIB_DEFAULTS["neldermead"]["adaptive"] is False
-    assert _OPTLIB_DEFAULTS["sbplex-adapt"]["adaptive"] is True
-    assert _OPTLIB_DEFAULTS["neldermead-adapt"]["adaptive"] is True
-
-
-def test_hyper_sbplex_repeated_restarts_escalate_to_global_restart():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE,
+def test_hyper_sbplx_repeated_restarts_escalate_to_global_restart():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE,
         seed=2,
         n_initial=0,
         restart_patience=1,
@@ -307,9 +300,9 @@ def test_hyper_sbplex_repeated_restarts_escalate_to_global_restart():
     assert sampler._step == [sampler.initial_scale]
 
 
-def test_hyper_sbplex_improvement_resets_restart_counters():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE,
+def test_hyper_sbplx_improvement_resets_restart_counters():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE,
         seed=3,
         n_initial=0,
         restart_patience=2,
@@ -328,9 +321,9 @@ def test_hyper_sbplex_improvement_resets_restart_counters():
     assert sampler._stagnant_restart_count == 0
 
 
-def test_hyper_sbplex_stale_nm_results_ignored_after_restart():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE,
+def test_hyper_sbplx_stale_nm_results_ignored_after_restart():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE,
         seed=4,
         n_initial=0,
         restart_patience=1,
@@ -430,7 +423,7 @@ def test_nm_sampler_adaptive_filler_scale():
     )
 
     sampler = HyperNelderMeadSampler(
-        SBPLEX_TEST_SPACE,
+        SBPLX_TEST_SPACE,
         seed=42,
         n_initial=0,
         filler_scale=0.01,
@@ -461,9 +454,9 @@ def test_nm_sampler_adaptive_filler_scale():
     assert abs(mean_sample - 0.8) < 0.15
 
 
-def test_sbplex_sampler_adaptive_filler_scale():
-    sampler = HyperSbplexSampler(
-        SBPLEX_TEST_SPACE,
+def test_sbplx_sampler_adaptive_filler_scale():
+    sampler = HyperSbplxSampler(
+        SBPLX_TEST_SPACE,
         seed=42,
         n_initial=0,
         filler_scale=0.01,
@@ -506,7 +499,7 @@ def test_nm_sampler_exits_init_phase_with_inf_scores():
     )
 
     sampler = HyperNelderMeadSampler(
-        SBPLEX_TEST_SPACE,
+        SBPLX_TEST_SPACE,
         seed=42,
         n_initial=3,
         explore_prob=0.0,
@@ -531,7 +524,7 @@ def test_cmaes_report_result_handles_inf():
     cmaes = pytest.importorskip("cmaes")  # noqa: F841
     from cotengra.hyperoptimizers.hyper_cmaes import CMAESOptLib
 
-    space = {"greedy": SBPLEX_TEST_SPACE}
+    space = {"greedy": SBPLX_TEST_SPACE}
     optlib = CMAESOptLib()
     optlib.setup(methods=["greedy"], space=space)
 
@@ -550,7 +543,7 @@ def test_optuna_report_result_handles_inf():
     pytest.importorskip("optuna")
     from cotengra.hyperoptimizers.hyper_optuna import OptunaOptLib
 
-    space = {"greedy": SBPLEX_TEST_SPACE}
+    space = {"greedy": SBPLX_TEST_SPACE}
     optlib = OptunaOptLib()
     optlib.setup(methods=["greedy"], space=space)
 

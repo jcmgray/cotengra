@@ -68,7 +68,7 @@ class _NMCore:
         Relative simplex reduction target. When set, the core also converges
         once the simplex diameter has been reduced below ``psi`` times its
         initialized diameter. This mirrors the internal convergence mode used
-        by Sbplex in NLopt.
+        by Sbplx in NLopt.
     inject_diameter_fraction : float
         Maximum allowed simplex diameter inflation when injecting an external
         vertex. The candidate's max distance to any non-worst vertex must be
