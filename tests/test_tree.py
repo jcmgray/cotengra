@@ -3,7 +3,7 @@ import pytest
 import cotengra as ctg
 
 
-@pytest.mark.parametrize("nodeops", ["frozenset[int]", "BitSetInt"])
+@pytest.mark.parametrize("nodeops", ["frozenset[int]", "BitSetInt", "ssa"])
 def test_contraction_tree_equivalency(nodeops):
     eq = "a,ab,bc,c->"
     shapes = [(4,), (4, 2), (2, 5), (5,)]
@@ -31,9 +31,14 @@ def test_contraction_tree_equivalency(nodeops):
         nodeops=nodeops,
     )
     assert ct1.total_flops() == ct2.total_flops() == 20
-    assert ct1.children == ct2.children
     assert ct1.is_complete()
     assert ct2.is_complete()
+    # for SSA nodes, children dicts have different opaque labels,
+    # but the tree structure (path) should be equivalent
+    if nodeops != "ssa":
+        assert ct1.children == ct2.children
+    else:
+        assert len(ct1.children) == len(ct2.children)
 
 
 @pytest.mark.parametrize("ssa", [False, True])
@@ -390,15 +395,16 @@ def test_tree_with_one_node():
     assert tree.contraction_width(None) == 2 * 3 * 4
 
 
+@pytest.mark.parametrize("nodeops", ["BitSetInt", "ssa"])
 @pytest.mark.parametrize("seed", range(4))
-def test_slice_and_restore_preprocessed_inds(seed):
+def test_slice_and_restore_preprocessed_inds(seed, nodeops):
     import numpy as np
 
     eq = "abc,bde,dfg,fah->"
     inputs, output = ctg.utils.eq_to_inputs_output(eq)
     size_dict = ctg.utils.make_rand_size_dict_from_inputs(inputs, seed=seed)
     arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
-    tree = ctg.ContractionTree(inputs, output, size_dict, nodeops="BitSetInt")
+    tree = ctg.ContractionTree(inputs, output, size_dict, nodeops=nodeops)
     tree.autocomplete()
     stats0 = tree.contract_stats()
     xe = np.einsum(eq, *arrays)
@@ -424,9 +430,10 @@ def test_slice_and_restore_preprocessed_inds(seed):
     assert tree.contract_stats() == stats0
 
 
+@pytest.mark.parametrize("nodeops", ["frozenset[int]", "ssa"])
 @pytest.mark.parametrize("n", [3, 10, 30])
 @pytest.mark.parametrize("seed", range(4))
-def test_tree_from_edge_path(n, seed):
+def test_tree_from_edge_path(n, seed, nodeops):
     import random
 
     con = ctg.utils.rand_equation(n, 3, 2, 2, 2, seed=seed)
@@ -440,6 +447,7 @@ def test_tree_from_edge_path(n, seed):
         con.size_dict,
         edge_path=indices,
         check=True,
+        nodeops=nodeops,
     )
 
     assert tree.is_complete()
@@ -477,6 +485,70 @@ def test_tree_peak_size_reorder(seed):
     pd = tree.get_peak_size(tree.root)
     assert pd <= pc
     assert pd <= pb
+
+
+@pytest.mark.parametrize("nodeops", ["frozenset[int]", "BitSetInt", "ssa"])
+def test_contraction_tree_from_ssa_path_complete(nodeops):
+    import numpy as np
+
+    eq = "ab,bc,cd,da->"
+    inputs, output = ctg.utils.eq_to_inputs_output(eq)
+    size_dict = {"a": 2, "b": 3, "c": 4, "d": 5}
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict)
+
+    ssa_path = [(0, 1), (2, 3), (4, 5)]
+    tree = ctg.ContractionTree.from_path(
+        inputs,
+        output,
+        size_dict,
+        ssa_path=ssa_path,
+        nodeops=nodeops,
+    )
+    assert tree.is_complete()
+    assert tree.total_flops() > 0
+    expected = np.einsum(eq, *arrays)
+    assert tree.contract(arrays) == pytest.approx(expected)
+
+
+def test_ssa_subgraph_tracking():
+    eq = "ab,bc,cd,da->"
+    inputs, output = ctg.utils.eq_to_inputs_output(eq)
+    size_dict = {"a": 2, "b": 3, "c": 4, "d": 5}
+
+    ssa_path = [(0, 1), (2, 3), (4, 5)]
+    tree = ctg.ContractionTree.from_path(
+        inputs,
+        output,
+        size_dict,
+        ssa_path=ssa_path,
+        nodeops="ssa",
+    )
+    # check subgraphs of intermediate nodes
+    for node, (left, right) in tree.children.items():
+        sg = set(tree.get_subgraph(node))
+        sg_l = set(tree.get_subgraph(left))
+        sg_r = set(tree.get_subgraph(right))
+        # parent subgraph should be union of children
+        assert sg == sg_l | sg_r
+    # root should contain all inputs
+    assert set(tree.get_subgraph(tree.root)) == set(range(tree.N))
+
+
+def test_ssa_surface_order():
+    inputs, output, _, size_dict = ctg.utils.lattice_equation([6, 6])
+    tree = ctg.array_contract_tree(
+        inputs,
+        output,
+        size_dict,
+        optimize="greedy-compressed",
+    )
+    assert isinstance(tree, ctg.ContractionTreeCompressed)
+    path_surface = tree.get_path_surface()
+    # should be a valid path
+    assert len(path_surface) == tree.N - 1
+    # each entry should be a pair of ints
+    for pair in path_surface:
+        assert len(pair) == 2
 
 
 @pytest.mark.parametrize("path", [None, [], [(0,)]])
