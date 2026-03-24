@@ -347,6 +347,7 @@ def simulated_anneal_tree(
                             legs=new_legs0,
                             cost=new_cost0,
                             size=new_size0,
+                            # XXX: reuse other intermediate node label?
                         ),
                         new_order[2],
                         legs=new_legs1,

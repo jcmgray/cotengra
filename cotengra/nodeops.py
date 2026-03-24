@@ -17,11 +17,13 @@ class NodeOpsFrozenset:
     """Function to get the size of a node."""
 
     node_from_seq = frozenset
-    """From a sequence of integers, make a node (``frozenset``)."""
+    """From a sequence of integers, construct node (``frozenset``)."""
+
+    new_node_for_seq = node_from_seq
 
     @staticmethod
     def node_from_single(x):
-        """From single integer ``x``, make a node (``frozenset``)."""
+        """From single integer ``x``, construct node (``frozenset``)."""
         return frozenset((x,))
 
     @staticmethod
@@ -65,6 +67,8 @@ class NodeOpsFrozenset:
         """Return the node given by the union of an iterable of nodes."""
         b0, *bs = bs
         return b0.union(*bs)
+
+    new_node_for_union = node_union_it
 
     @staticmethod
     def node_issubset(x, y):
@@ -200,6 +204,7 @@ class NodeOpsBitSetInt:
     node_type = BitSetInt
     node_size = BitSetInt.__len__
     node_from_seq = BitSetInt
+    new_node_for_seq = node_from_seq
 
     @staticmethod
     def node_from_single(x):
@@ -232,6 +237,8 @@ class NodeOpsBitSetInt:
     def node_union_it(bs):
         b0, *bs = bs
         return b0.union(*bs)
+
+    new_node_for_union = node_union_it
 
     @staticmethod
     def node_issubset(x, y):
@@ -285,15 +292,30 @@ class NodeOpsSSA:
         return isinstance(node, int)
 
     def node_union(self, x, y):
-        # rely on tree for tracking associated subgraph
-        return self.get_next_ssa()
-
-    def node_from_seq(self, seq):
-        # rely on tree for tracking associated subgraph
-        return self.get_next_ssa()
+        raise NotImplementedError
 
     def node_union_it(self, bs):
         raise NotImplementedError
+
+    def new_node_for_union(self, nodes):
+        """Get a new node label for the union of `nodes`. We use this rather
+        than the above methods to be explicit that we can only create new node
+        labels, not reconstruct labels from the constituent nodes.
+        """
+        # rely on tree for tracking associated subgraph / extent etc
+        return self.get_next_ssa()
+
+    def node_from_seq(self, seq):
+        raise NotImplementedError
+
+    def new_node_for_seq(self, seq):
+        """Get a new node for  a sequence of raw input positions. We use this
+        rather than the above method to be explicit that we can only create new
+        node labels, not reconstruct labels from the constituent raw input
+        positions.
+        """
+        # rely on tree for tracking associated subgraph / extent etc
+        return self.get_next_ssa()
 
     def node_issubset(self, x, y):
         raise NotImplementedError
@@ -323,8 +345,8 @@ def get_nodeops(node_type_str: str, N=None):
         The corresponding node operations namespace.
     """
     if node_type_str == "auto":
-        node_type_str = "frozenset[int]"
-        # node_type_str = "ssa"
+        # node_type_str = "frozenset[int]"
+        node_type_str = "ssa"
 
     if node_type_str == "frozenset[int]":
         return nodeops_frozenset

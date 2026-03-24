@@ -91,10 +91,6 @@ def test_tree_incomplete(nodeops):
         n_hyper_out=1,
         seed=42,
     )
-
-    if nodeops == "ssa":
-        pytest.xfail("SSA does not support incomplete trees")
-
     tree = ctg.ContractionTree(
         c.inputs, c.output, c.size_dict, nodeops=nodeops
     )
