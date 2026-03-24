@@ -509,9 +509,7 @@ class ContractionTree:
         groups = self.get_incomplete_nodes()
         for grandparent, parentless_subnodes in groups.items():
             self.contract_nodes(
-                parentless_subnodes,
-                grandparent=grandparent,
-                **contract_opts,
+                parentless_subnodes, grandparent=grandparent, **contract_opts
             )
 
     @classmethod
@@ -593,15 +591,7 @@ class ContractionTree:
             ssa = len(nodes)
             for p in path:
                 merge = [nodes.pop(i) for i in p]
-
-                grandparent = tree.contract_nodes(
-                    merge,
-                    # explicitly supply root node label for final contraction
-                    grandparent=None if nodes else tree.root,
-                    **contract_opts,
-                )
-
-                nodes[ssa] = grandparent
+                nodes[ssa] = tree.contract_nodes(merge, **contract_opts)
                 ssa += 1
             nodes = nodes.values()
         else:
@@ -609,15 +599,7 @@ class ContractionTree:
             nodes = list(tree.gen_leaves())
             for p in path:
                 merge = [nodes.pop(i) for i in sorted(p, reverse=True)]
-
-                grandparent = tree.contract_nodes(
-                    merge,
-                    # explicitly supply root node label for final contraction
-                    grandparent=None if nodes else tree.root,
-                    **contract_opts,
-                )
-
-                nodes.append(grandparent)
+                nodes.append(tree.contract_nodes(merge, **contract_opts))
 
         if len(nodes) > 1 and autocomplete:
             if autocomplete == "auto":
@@ -628,11 +610,7 @@ class ContractionTree:
                     "Or produce an incomplete tree with `autocomplete=False`."
                 )
 
-            tree.contract_nodes(
-                nodes,
-                grandparent=tree.root,
-                **contract_opts,
-            )
+            tree.contract_nodes(nodes, grandparent=tree.root, **contract_opts)
 
         return tree
 
@@ -1692,7 +1670,13 @@ class ContractionTree:
 
         # create the bottom and top nodes
         if grandparent is None:
-            grandparent = self.nodeops.new_node_for_union(nodes)
+            if sum(map(self.get_extent, nodes)) == self.N:
+                # don't generate new node if root
+                grandparent = self.root
+            else:
+                # assume we can generate new node
+                grandparent = self.nodeops.new_node_for_union(nodes)
+
         self._add_node(grandparent, check=check)
 
         # if more than two nodes need to find the path to fill in between
@@ -1741,7 +1725,8 @@ class ContractionTree:
             to_contract = [temp_nodes.pop(i) for i in sorted(p, reverse=True)]
             temp_nodes.append(self.contract_nodes(to_contract, check=check))
 
-        # want to explicitly specify the grandparent node so do separately
+        # want to explicitly specify the grandparent node:
+        #     so do the final pairwise contraction separately
         self.contract_nodes(temp_nodes, grandparent=grandparent, check=check)
 
         return grandparent

@@ -258,20 +258,16 @@ def test_einsum_expression(
     optimize_type,
     sort_contraction_indices,
 ):
-    pytest.importorskip("opt_einsum")
-
-    import opt_einsum as oe
-
     c = ctg.utils.lattice_equation([4, 8])
     eq = ctg.utils.inputs_output_to_eq(c.inputs, c.output)
     arrays = [np.random.rand(*s) for s in c.shapes]
-    x0 = oe.contract(eq, *arrays)
+    x0 = ctg.einsum(eq, *arrays)
 
     if optimize_type == "str":
         optimize = "greedy"
     elif optimize_type == "path":
-        path = oe.contract_path(eq, *arrays, optimize="greedy")[0]
-        optimize = path
+        tree = ctg.einsum_tree(eq, *c.shapes, optimize="greedy")
+        optimize = tree.get_path()
     elif optimize_type == "tree":
         tree = ctg.ContractionTree(c.inputs, c.output, c.size_dict)
         tree.contract_nodes(tuple(tree.gen_leaves()), optimize="greedy")
