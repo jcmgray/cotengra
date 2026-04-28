@@ -3,6 +3,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import datetime
 import os
 import sys
 
@@ -13,7 +14,7 @@ sys.path.append(os.path.abspath("./_pygments"))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "cotengra"
-copyright = "2020-2024, Johnnie Gray"
+copyright = f"2020-{datetime.date.today().year}, Johnnie Gray"
 author = "Johnnie Gray"
 
 try:
@@ -33,14 +34,15 @@ except ImportError:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    "myst_nb",
-    "sphinx.ext.intersphinx",
-    "sphinx.ext.extlinks",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.linkcode",
-    "sphinx_copybutton",
     "autoapi.extension",
+    "myst_nb",
+    "sphinx_copybutton",
     "sphinx_design",
+    "sphinx.ext.autosectionlabel",
+    "sphinx.ext.extlinks",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.linkcode",
+    "sphinx.ext.napoleon",
 ]
 
 nb_execution_mode = "off"
@@ -52,6 +54,7 @@ myst_enable_extensions = [
     "dollarmath",
     "html_image",
 ]
+autosectionlabel_prefix_document = True
 
 # sphinx-autoapi
 autoapi_dirs = ["../cotengra"]
@@ -149,4 +152,11 @@ def linkcode_resolve(domain, info):
 extlinks = {
     "issue": ("https://github.com/jcmgray/cotengra/issues/%s", "GH %s"),
     "pull": ("https://github.com/jcmgray/cotengra/pull/%s", "PR %s"),
+}
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "autoray": ("https://autoray.readthedocs.io/en/latest/", None),
+    "opt_einsum": ("https://optimized-einsum.readthedocs.io/en/stable/", None),
+    "networkx": ("https://networkx.org/documentation/stable/", None),
 }

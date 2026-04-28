@@ -1,25 +1,33 @@
 # Installation
 
-`cotengra` is available on both [pypi](https://pypi.org/project/cotengra/) and [conda-forge](https://anaconda.org/conda-forge/cotengra). While `cotengra` is itself pure python, the recommended distribution would be [miniforge](https://github.com/conda-forge/miniforge) for installing the various optional dependencies.
+`cotengra` is available on both [pypi](https://pypi.org/project/cotengra/) and
+[conda-forge](https://anaconda.org/conda-forge/cotengra). While `cotengra` is
+pure python itself, the preferred way to install it is with
+[pixi](https://pixi.sh), which creates isolated and reproducible environments
+that can mix packages from [`conda-forge`](https://conda-forge.org/) (the
+default) and also [`pypi`](https://pypi.org/).
+
+**Installing with `pixi` (preferred):**
+```bash
+pixi init cotengra-project
+cd cotengra-project
+pixi add cotengra
+```
 
 **Installing with `pip`:**
 ```bash
 pip install cotengra
+# or
+uv pip install cotengra
 ```
+It is recommended to use [`uv`](https://docs.astral.sh/uv/) to install and manage purely pypi based environments.
 
-**Installing with `conda`:**
+**Installing with `conda` / `mamba`:**
 ```bash
 conda install -c conda-forge cotengra
 ```
+[`miniforge`](https://github.com/conda-forge/miniforge) is the recommended way to manage and install a conda-based environment.
 
-**Installing with `mambaforge`:**
-```bash
-mamba install cotengra
-```
-
-```{hint}
-Mamba is a faster version of `conda`, and the -forge distribution comes pre-configured with only the `conda-forge` channel, which further simplifies and speeds up installing dependencies.
-```
 
 **Installing the latest version directly from github:**
 
