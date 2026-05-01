@@ -551,6 +551,40 @@ def test_ssa_surface_order():
         assert len(pair) == 2
 
 
+def test_simulated_anneal_tree():
+    tree = ctg.utils.rand_tree(10, 3, seed=42)
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    expected = tree.contract(arrays)
+    initial_flops = tree.total_flops()
+
+    # low temperature -> only accept improvements
+    tree_sa = tree.simulated_anneal(
+        tstart=0.001, tfinal=0.001, tsteps=3, numiter=5, seed=42
+    )
+
+    assert tree_sa.is_complete()
+    assert tree_sa.total_flops() <= initial_flops
+    assert tree_sa.contract(arrays) == pytest.approx(expected)
+
+
+def test_simulated_anneal_tree_with_slicing():
+    tree = ctg.utils.rand_tree(10, 3, seed=42)
+    arrays = ctg.utils.make_arrays_from_inputs(tree.inputs, tree.size_dict)
+    expected = tree.contract(arrays)
+    target_size = tree.max_size() // 4
+
+    tree_sa = tree.simulated_anneal(
+        tsteps=3,
+        numiter=5,
+        target_size=target_size,
+        seed=42,
+    )
+
+    assert tree_sa.is_complete()
+    assert tree_sa.max_size() <= target_size
+    assert tree_sa.contract(arrays) == pytest.approx(expected)
+
+
 @pytest.mark.parametrize("path", [None, [], [(0,)]])
 @pytest.mark.parametrize("slice", [False, "a"])
 def test_tree_single_input_nosimp(path, slice):

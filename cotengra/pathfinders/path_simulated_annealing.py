@@ -171,6 +171,8 @@ def simulated_anneal_tree(
 
     Parameters
     ----------
+    tree : ContractionTree
+        The tree to optimize.
     tfinal : float, optional
         The final temperature.
     tstart : float, optional
@@ -347,7 +349,7 @@ def simulated_anneal_tree(
                             legs=new_legs0,
                             cost=new_cost0,
                             size=new_size0,
-                            # XXX: reuse other intermediate node label?
+                            # NOTE: for ssa nodes only we could reuse `x` label
                         ),
                         new_order[2],
                         legs=new_legs1,

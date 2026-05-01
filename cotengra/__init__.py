@@ -1,4 +1,5 @@
 """Hyper optimized contraction trees for large tensor networks and einsums."""
+
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _version
 
