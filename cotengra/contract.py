@@ -5,7 +5,7 @@ import functools
 import itertools
 import operator
 
-from autoray import do, get_lib_fn, infer_backend_multi, shape
+from autoray import do, get_namespace, infer_backend_multi, shape
 
 DEFAULT_IMPLEMENTATION = "auto"
 
@@ -743,6 +743,7 @@ class Contractor:
 
         if backend is None:
             backend = infer_backend_multi(*arrays)
+            xp = get_namespace(backend)
 
         if implementation == "auto":
             if backend == "numpy":
@@ -760,13 +761,13 @@ class Contractor:
             _tensordot = pytblis.tensordot
         elif implementation == "autoray":
             try:
-                _einsum = get_lib_fn(backend, "einsum")
+                _einsum = xp.einsum
             except ImportError:
                 # fallback to cotengra (matmul) implementation
                 _einsum = einsum
 
             try:
-                _tensordot = get_lib_fn(backend, "tensordot")
+                _tensordot = xp.tensordot
             except ImportError:
                 # fallback to cotengra (matmul) implementation
                 _tensordot = tensordot
@@ -808,17 +809,23 @@ class Contractor:
             if tdot:
                 p_array = _tensordot(l_array, r_array, arg)
                 if perm:
-                    p_array = do("transpose", p_array, perm, like=backend)
+                    p_array = xp.transpose(p_array, perm)
             else:
                 p_array = _einsum(arg, l_array, r_array)
 
             if exponent is not None:
-                factor = do(
-                    "max", do("abs", p_array, like=backend), like=backend
-                )
+                factor = xp.max(xp.abs(p_array))
+
                 if check_zero and float(factor) == 0.0:
                     return 0.0, float("-inf")
-                exponent = exponent + do("log10", factor, like=backend)
+                exponent = exponent + xp.log10(factor)
+
+                if backend == "tensorflow":
+                    factor = xp.astype(factor, p_array.dtype)
+                    # TODO:
+                    # currently special case tensorflow
+                    # autoray needs fix for autojit and astype to use generally
+
                 p_array = p_array / factor
 
             # insert the new intermediate array

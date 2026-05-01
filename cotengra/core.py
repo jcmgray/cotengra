@@ -8,7 +8,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Optional
 
-from autoray import do
+from autoray import do, get_namespace, infer_backend
 
 from .contract import make_contractor
 from .hypergraph import get_hypergraph
@@ -122,33 +122,54 @@ def get_slice_strides(sliced_inds):
     return strides
 
 
-def add_maybe_exponent_stripped(x, y):
-    """Add two arrays, or tuples of (array, exponent) together in a stable
-    and branchless way.
+class AdderWithMaybeExponentStripped:
+    """Object that ddds two arrays, or tuples of (array, exponent) together in
+    a stable and branchless way. It also internally caches the backend on the
+    first call.
     """
-    xistup = isinstance(x, tuple)
-    yistup = isinstance(y, tuple)
-    if not (xistup or yistup):
-        # simple sum without exponent
-        return x + y
 
-    if xistup:
-        xm, xe = x
-    else:
-        xm = x
-        xe = 0.0
+    __slots__ = ("backend", "namespace", "need_to_cast")
 
-    if yistup:
-        ym, ye = y
-    else:
-        ym = y
-        ye = 0.0
+    def __init__(self):
+        self.backend = None
+        self.namespace = None
+        self.need_to_cast = False
 
-    # perform branchless for jit etc.
-    e = max(xe, ye)
-    m = xm * 10 ** (xe - e) + ym * 10 ** (ye - e)
+    def __call__(self, x, y):
+        xistup = isinstance(x, tuple)
+        yistup = isinstance(y, tuple)
+        if not (xistup or yistup):
+            # simple sum without exponent
+            return x + y
 
-    return (m, e)
+        if xistup:
+            xm, xe = x
+        else:
+            xm = x
+            xe = 0.0
+
+        if yistup:
+            ym, ye = y
+        else:
+            ym = y
+            ye = 0.0
+
+        if self.backend is None:
+            self.backend = infer_backend(xm)
+            self.namespace = get_namespace(self.backend)
+            self.need_to_cast = self.backend == "tensorflow"
+
+        # perform branchless for jit etc.
+        e = max(xe, ye)
+
+        if self.need_to_cast:
+            xcoeff = self.namespace.astype(10.0 ** (xe - e), xm.dtype)
+            ycoeff = self.namespace.astype(10.0 ** (ye - e), ym.dtype)
+            m = xm * xcoeff + ym * ycoeff
+        else:
+            m = xm * 10 ** (xe - e) + ym * 10 ** (ye - e)
+
+        return (m, e)
 
 
 class ContractionTree:
@@ -3805,6 +3826,8 @@ class ContractionTree:
         output_pos = {
             ix: i for i, ix in enumerate(self.output) if ix in self.sliced_inds
         }
+
+        add_maybe_exponent_stripped = AdderWithMaybeExponentStripped()
 
         if not output_pos:
             # we can just sum everything
