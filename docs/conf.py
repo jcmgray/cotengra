@@ -157,6 +157,6 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "autoray": ("https://autoray.readthedocs.io/en/latest/", None),
-    "opt_einsum": ("https://optimized-einsum.readthedocs.io/en/stable/", None),
+    "opt_einsum": ("https://dgasmith.github.io/opt_einsum/", None),
     "networkx": ("https://networkx.org/documentation/stable/", None),
 }
