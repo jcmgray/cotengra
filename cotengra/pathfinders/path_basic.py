@@ -8,7 +8,7 @@ import math
 
 from ..core import ContractionTree
 from ..oe import PathOptimizer
-from ..parallel import get_n_workers, parse_parallel_arg
+from ..parallel import get_n_workers, parse_parallel_arg, submit
 from ..reusable import ReusableOptimizer
 from ..utils import GumbelBatchedGenerator, get_rng
 
@@ -1488,7 +1488,8 @@ class RandomGreedyOptimizer(PathOptimizer):
         backend is used if available.
     parallel : bool or str, optional
         Whether to use parallel processing. If "auto" the default is to use
-        threads if the accelerated backend is not used, and processes if it is.
+        processes unless the accelerated backend is used, in which case threads
+        are used.
 
     Attributes
     ----------
@@ -1576,7 +1577,8 @@ class RandomGreedyOptimizer(PathOptimizer):
             ]
 
             fs = [
-                self._pool.submit(
+                submit(
+                    self._pool,
                     self._optimize_fn,
                     inputs,
                     output,

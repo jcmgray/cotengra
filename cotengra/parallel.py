@@ -1,4 +1,25 @@
-"""Interface for parallelism."""
+"""Interface for parallelism.
+
+This module centralizes cotengra's lightweight parallel execution logic. The
+main user entry point is ``parse_parallel_arg``, which turns ``parallel``
+arguments such as ``False``, ``True``, ``"auto"``, ``"threads"``,
+``"loky"``, ``"concurrent.futures"``, ``"dask"``, and ``"ray"`` into a
+pool-like executor or ``None``. Local process pools are cached and reused in
+the process that created them, while distributed backends try to discover an
+existing scheduler or runtime before creating one explicitly.
+
+The ``"auto"`` mode remembers the last persistent non-thread backend and uses
+it for future automatic parallel work. To avoid recursive process pools,
+worker subprocesses are marked when tasks are submitted through ``submit``;
+inside such workers ``parallel="auto"`` resolves to serial execution. A PID
+guard provides the same protection for forked children that inherit module
+state. Threads remain explicit-only and are not remembered as the automatic
+backend.
+
+The helper functions ``submit``, ``scatter``, ``can_scatter``, and
+``should_nest`` provide a small common interface over local, dask, and ray
+executors while preserving backend-specific behavior where needed.
+"""
 
 import atexit
 import collections
@@ -7,9 +28,24 @@ import importlib
 import inspect
 import numbers
 import operator
+import os
 import warnings
 
 _AUTO_BACKEND = None
+_AUTO_BACKEND_PID = None
+_IS_WORKER = False
+
+
+def _remember_auto_backend(backend):
+    global _AUTO_BACKEND, _AUTO_BACKEND_PID
+
+    if backend == "threads":
+        # threads is special case that shouldn't set the default auto backend
+        return
+
+    _AUTO_BACKEND = backend
+    _AUTO_BACKEND_PID = os.getpid()
+
 
 # check for loky, joblib (vendors loky), then default to concurrent.futures
 have_loky = importlib.util.find_spec("loky") is not None
@@ -22,8 +58,6 @@ else:
 
 @functools.lru_cache(None)
 def choose_default_num_workers():
-    import os
-
     if "COTENGRA_NUM_WORKERS" in os.environ:
         return int(os.environ["COTENGRA_NUM_WORKERS"])
 
@@ -53,9 +87,13 @@ def get_pool(n_workers=None, maybe_create=False, backend=None):
         return get_reusable_executor(max_workers=n_workers)
 
     if backend == "concurrent.futures":
+        if not maybe_create and not ProcessPoolHandler.is_initialized():
+            return None
         return _get_process_pool_cf(n_workers=n_workers)
 
     if backend == "threads":
+        if not maybe_create and not ThreadPoolHandler.is_initialized():
+            return None
         return _get_thread_pool_cf(n_workers=n_workers)
 
 
@@ -66,7 +104,12 @@ def _infer_backed_cached(pool_class):
 
     path = pool_class.__module__.split(".")
 
+    # `concurrent.futures` uses different submodules for thread vs process
+    # executors, and we need to keep them distinct here so that only true
+    # subprocess workers get the `_IS_WORKER` marker.
     if path[0] == "concurrent":
+        if (len(path) > 2) and (path[2] == "thread"):
+            return "threads"
         return "concurrent.futures"
 
     if path[0] == "joblib":
@@ -119,48 +162,67 @@ def get_n_workers(pool=None):
 
 def parse_parallel_arg(parallel):
     """ """
-    global _AUTO_BACKEND
-
     if parallel == "auto":
-        return get_pool(maybe_create=False, backend=_AUTO_BACKEND)
+        if _IS_WORKER:
+            # worker subprocesses should not auto-create pools
+            return None
+
+        if _AUTO_BACKEND in (None, "threads"):
+            _remember_auto_backend(_DEFAULT_BACKEND)
+
+        # distributed backends: discover existing cluster only
+        if _AUTO_BACKEND in ("dask", "ray"):
+            return get_pool(maybe_create=False, backend=_AUTO_BACKEND)
+
+        # local backends: only create in the originating process
+        # (fallback guard for fork, where _IS_WORKER isn't set via submit)
+        if _AUTO_BACKEND_PID is not None and os.getpid() != _AUTO_BACKEND_PID:
+            return None
+
+        return get_pool(maybe_create=True, backend=_AUTO_BACKEND)
 
     if parallel is False:
         return None
 
     if parallel is True:
-        if _AUTO_BACKEND is None:
-            _AUTO_BACKEND = _DEFAULT_BACKEND
+        if _AUTO_BACKEND in (None, "threads"):
+            _remember_auto_backend(_DEFAULT_BACKEND)
         parallel = _AUTO_BACKEND
 
     if isinstance(parallel, numbers.Integral):
-        _AUTO_BACKEND = _DEFAULT_BACKEND
+        _remember_auto_backend(_DEFAULT_BACKEND)
         return get_pool(
             n_workers=parallel, maybe_create=True, backend=_DEFAULT_BACKEND
         )
 
     if parallel == "loky":
+        _remember_auto_backend("loky")
         return get_pool(maybe_create=True, backend="loky")
 
     if parallel == "concurrent.futures":
+        _remember_auto_backend("concurrent.futures")
         return get_pool(maybe_create=True, backend="concurrent.futures")
 
     if parallel == "threads":
         return get_pool(maybe_create=True, backend="threads")
 
     if parallel == "dask":
-        _AUTO_BACKEND = "dask"
+        _remember_auto_backend("dask")
         return get_pool(maybe_create=True, backend="dask")
 
     if parallel == "ray":
-        _AUTO_BACKEND = "ray"
+        _remember_auto_backend("ray")
         return get_pool(maybe_create=True, backend="ray")
 
     return parallel
 
 
 def set_parallel_backend(backend):
-    """Create a parallel pool of type ``backend`` which registers it as the
-    default for ``'auto'`` parallel.
+    """Create a parallel pool of type ``backend`` and register persistent
+    backends as the default for ``'auto'`` parallel.
+
+    The ``'threads'`` backend remains explicit-only and is never remembered as
+    the default for ``'auto'``.
     """
     return parse_parallel_arg(backend)
 
@@ -177,10 +239,30 @@ def maybe_rejoin_pool(is_worker, pool):
         _rejoin_pool_dask()
 
 
+def _worker_call(fn, args, kwargs):
+    """Run ``fn`` inside a worker, marking the process as a worker first.
+
+    The marker is intentionally sticky for the lifetime of the worker process:
+    any later ``parallel=\"auto\"`` work in the same subprocess should remain
+    serial rather than creating nested process pools.
+    """
+    import cotengra.parallel as par
+
+    par._IS_WORKER = True
+    return fn(*args, **kwargs)
+
+
 def submit(pool, fn, *args, **kwargs):
     """Interface for submitting ``fn(*args, **kwargs)`` to ``pool``."""
-    if _infer_backend(pool) == "dask":
+    backend = _infer_backend(pool)
+
+    if backend == "dask":
         kwargs.setdefault("pure", False)
+        return pool.submit(fn, *args, **kwargs)
+
+    if backend in ("concurrent.futures", "loky"):
+        return pool.submit(_worker_call, fn, args, kwargs)
+
     return pool.submit(fn, *args, **kwargs)
 
 
@@ -225,24 +307,33 @@ class CachedProcessPoolExecutor:
     def __init__(self):
         self._pool = None
         self._n_workers = -1
+        self._pid = None
         atexit.register(self.shutdown)
 
     def __call__(self, n_workers=None):
-        if n_workers != self._n_workers:
+        pid = os.getpid()
+        if pid != self._pid or n_workers != self._n_workers:
+            if pid == self._pid:
+                self.shutdown()
+            else:
+                # after fork, discard stale reference without shutdown
+                self._pool = None
             from concurrent.futures import ProcessPoolExecutor
 
-            self.shutdown()
             self._pool = ProcessPoolExecutor(n_workers)
             self._n_workers = n_workers
+            self._pid = pid
         return self._pool
 
     def is_initialized(self):
-        return self._pool is not None
+        return self._pool is not None and self._pid == os.getpid()
 
     def shutdown(self):
         if self._pool is not None:
             self._pool.shutdown()
             self._pool = None
+        self._n_workers = -1
+        self._pid = None
 
     def __del__(self):
         self.shutdown()
@@ -259,24 +350,32 @@ class CachedThreadPoolExecutor:
     def __init__(self):
         self._pool = None
         self._n_workers = -1
+        self._pid = None
         atexit.register(self.shutdown)
 
     def __call__(self, n_workers=None):
-        if n_workers != self._n_workers:
+        pid = os.getpid()
+        if pid != self._pid or n_workers != self._n_workers:
+            if pid == self._pid:
+                self.shutdown()
+            else:
+                self._pool = None
             from concurrent.futures import ThreadPoolExecutor
 
-            self.shutdown()
             self._pool = ThreadPoolExecutor(n_workers)
             self._n_workers = n_workers
+            self._pid = pid
         return self._pool
 
     def is_initialized(self):
-        return self._pool is not None
+        return self._pool is not None and self._pid == os.getpid()
 
     def shutdown(self):
         if self._pool is not None:
             self._pool.shutdown()
             self._pool = None
+        self._n_workers = -1
+        self._pid = None
 
     def __del__(self):
         self.shutdown()
