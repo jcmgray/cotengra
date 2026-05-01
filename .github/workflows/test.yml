@@ -17,18 +17,35 @@ jobs:
         include:
         - os: ubuntu-latest
           pixi_environment: testminimal
+          pixi_task: test
 
         - os: ubuntu-latest
           pixi_environment: testpyold
+          pixi_task: test
 
         - os: ubuntu-latest
           pixi_environment: testpynew
+          pixi_task: test
 
         - os: macos-latest
           pixi_environment: testpymid
+          pixi_task: test
 
         - os: windows-latest
           pixi_environment: testpymid
+          pixi_task: test
+
+        - os: ubuntu-latest
+          pixi_environment: testtorch
+          pixi_task: test-backends
+
+        - os: ubuntu-latest
+          pixi_environment: testjax
+          pixi_task: test-backends
+
+        - os: ubuntu-latest
+          pixi_environment: testtensorflow
+          pixi_task: test-backends
 
     steps:
     - uses: actions/checkout@v6
@@ -38,7 +55,7 @@ jobs:
         environments: ${{ matrix.pixi_environment }}
 
     - name: Test with pytest
-      run: pixi run -e ${{ matrix.pixi_environment }} test
+      run: pixi run -e ${{ matrix.pixi_environment }} ${{ matrix.pixi_task }}
 
     - name: Report to codecov
       uses: codecov/codecov-action@v5
