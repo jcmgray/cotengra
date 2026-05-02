@@ -2375,6 +2375,7 @@ class ContractionTree:
         ContractionTree
         """
         tree = self if inplace else self.copy()
+        tree.reset_contraction_indices()
 
         # ensure these have been computed and thus are being tracked
         tree.contract_stats()
@@ -2428,9 +2429,6 @@ class ContractionTree:
         finally:
             if progbar:
                 pbar.close()
-
-        # invalidate any compiled contractions
-        tree.contraction_cores.clear()
 
         return tree
 
@@ -2509,9 +2507,7 @@ class ContractionTree:
         ContractionTree
         """
         tree = self if inplace else self.copy()
-
-        # some of these might be unpicklable
-        tree.contraction_cores.clear()
+        tree.reset_contraction_indices()
 
         # candidate trees
         num_keep = max(1, int(num_trees * restart_fraction))
@@ -2853,9 +2849,7 @@ class ContractionTree:
         ContractionTree
         """
         tree = self if inplace else self.copy()
-
-        # some of these might be unpicklable
-        tree.contraction_cores.clear()
+        tree.reset_contraction_indices()
 
         # candidate trees
         num_keep = max(1, int(num_trees * restart_fraction))
@@ -3070,7 +3064,7 @@ class ContractionTree:
             self.set_state_from(rtree)
             rtree = self
 
-        rtree.contraction_cores.clear()
+        rtree.reset_contraction_indices()
         return rtree
 
     compressed_reconfigure_ = functools.partialmethod(
@@ -3133,7 +3127,7 @@ class ContractionTree:
             self.set_state_from(rtree)
             rtree = self
 
-        rtree.contraction_cores.clear()
+        rtree.reset_contraction_indices()
         return rtree
 
     windowed_reconfigure_ = functools.partialmethod(
@@ -3392,10 +3386,13 @@ class ContractionTree:
         return get_hypergraph(self.inputs, self.output, self.size_dict, accel)
 
     def reset_contraction_indices(self):
-        """Reset all information regarding the explicit contraction indices
-        ordering.
+        """Reset all information regarding a) the explicit contraction indices
+        ordering and b) cached contraction expressions. This should probably be
+        called any time structural changes are made to the tree, e.g.
+        reconfiguration.
         """
         # delete all derived information
+        # (note legs, involved, etc. are order invariant so we can keep those)
         for node in self.children:
             for k in (
                 "inds",
@@ -3492,8 +3489,9 @@ class ContractionTree:
                     r_inds = "".join(sorted(self.get_legs(r), key=rsort))
                     self.info[r]["inds"] = r_inds
 
-        # invalidate any compiled contractions
-        self.contraction_cores.clear()
+        if not reset:
+            # still need to invalidate any cached contraction expressions
+            self.contraction_cores.clear()
 
     def print_contractions(self, sort=None, show_brackets=True):
         """Print each pairwise contraction, with colorized indices (if
@@ -4081,7 +4079,7 @@ class ContractionTree:
 
     def benchmark(
         self,
-        dtype,
+        dtype="float64",
         max_time=60,
         min_reps=3,
         max_reps=100,
@@ -4402,7 +4400,7 @@ class ContractionTreeCompressed(ContractionTree):
             self.set_state_from(rtree)
             rtree = self
 
-        rtree.contraction_cores.clear()
+        rtree.reset_contraction_indices()
         return rtree
 
     simulated_anneal_ = functools.partialmethod(simulated_anneal, inplace=True)
