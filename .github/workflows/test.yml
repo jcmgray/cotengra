@@ -58,6 +58,6 @@ jobs:
       run: pixi run -e ${{ matrix.pixi_environment }} ${{ matrix.pixi_task }}
 
     - name: Report to codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v6
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
