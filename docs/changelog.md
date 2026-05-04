@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.8.0 (unreleased)
+
+**Enhancements**
+
+- `"auto"` and `"auto-hq"` presets now default to `parallel="auto"`
+- Default node type for [`ContractionTree`](cotengra.ContractionTree) changed to SSA-based representation, which is faster and uses less memory for big trees. Factored out node logic into a new [`nodeops`](cotengra.nodeops) module, with dynamic namespaces supporting both `frozenset`-based and SSA-based nodes.
+- [`ContractionTree`](cotengra.ContractionTree): add [`get_peak_size`](cotengra.ContractionTree.get_peak_size), [`reorder_for_peak_size`](cotengra.ContractionTree.reorder_for_peak_size), and [`max_contraction_size`](cotengra.ContractionTree.max_contraction_size).
+- [`ContractionTree`](cotengra.ContractionTree): support single input "contractions" (trivial trees with a single tensor).
+- [`HyperOptimizer.search`](cotengra.HyperOptimizer.search): support single terms ({issue}`77`).
+- Change default *finishing* optimize step (e.g. for slicing/subtree reconfigure) to `"auto"`.
+- Subtree reconfigure: add `select="descend"` mode.
+- [`PartitionTreeBuilder.build_divide`](cotengra.pathfinders.path_kahypar.PartitionTreeBuilder.build_divide): default to `random-greedy-128` for `super_optimize`.
+- Greedy optimizers: add `max_neighbors` option to limit candidate pair generation, which helps for graphs with very large batch indices.
+- Allow hashing `optimize` when given as a list of lists (e.g. nested SSA paths).
+- Refactor the `optlib` interface for cleaner integration of multiple Bayesian / population-based optimizers; add `sbplx`, `sses` (steady-state evolutionary strategy), and `neldermead` / `neldermead-adapt` simple internal optimizers.
+- Add `implementation="pytblis"` for contraction via [pytblis](https://github.com/chillenb/pytblis).
+- Update parallel logic for sub-workers, allowing nested parallelism without oversubscription.
+- [`DiskDict`](cotengra.utils.DiskDict): add `get`, `keys`, `values`, `items`, `__delitem__`; enhance `clear` and `cleanup` methods.
+- Python `optimal` optimizer: accept float `factors` ({issue}`58`).
+- Update [`schematic`](cotengra.schematic) module with improvements pulled in from `quimb`.
+- `einsum` via bmm (`implementation="cotengra"`): update einsum-string parsing to follow more recent numpy behavior.
+
+**Bug fixes**
+
+- Fix a rare bug relating to wrongly cached index ordering in [`ContractionTree`](cotengra.ContractionTree).
+- Fix + test `tensorflow` contraction with `strip_exponent` ({issue}`81`).
+- [`ContractionTree.contract_nodes`](cotengra.ContractionTree.contract_nodes): always check for root, fixing an edge case in incremental contraction.
+
+**Infrastructure**
+
+- Move CI and developer workflow to [Pixi](https://pixi.sh) (per-environment jobs, formatting tasks, readthedocs config). Add `torch`/`jax`/`tensorflow` test jobs. Various dependabot bumps.
+
+
 ## v0.7.5 (2025-06-12)
 
 **Enhancements**

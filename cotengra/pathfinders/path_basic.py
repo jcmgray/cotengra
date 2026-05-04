@@ -1067,11 +1067,11 @@ def optimize_greedy(
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
 
-            - ignore any indices that appear in all terms
-            - combine any repeated indices within a single term
-            - reduce any non-output indices that only appear on a single term
-            - combine any scalar terms
-            - combine any tensors with matching indices (hadamard products)
+        - ignore any indices that appear in all terms
+        - combine any repeated indices within a single term
+        - reduce any non-output indices that only appear on a single term
+        - combine any scalar terms
+        - combine any tensors with matching indices (hadamard products)
 
         Such simpifications may be required in the general case for the proper
         functioning of the core optimization, but may be skipped if the input
@@ -1150,11 +1150,11 @@ def optimize_random_greedy_track_flops(
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
 
-            - ignore any indices that appear in all terms
-            - combine any repeated indices within a single term
-            - reduce any non-output indices that only appear on a single term
-            - combine any scalar terms
-            - combine any tensors with matching indices (hadamard products)
+        - ignore any indices that appear in all terms
+        - combine any repeated indices within a single term
+        - reduce any non-output indices that only appear on a single term
+        - combine any scalar terms
+        - combine any tensors with matching indices (hadamard products)
 
         Such simpifications may be required in the general case for the proper
         functioning of the core optimization, but may be skipped if the input
@@ -1474,11 +1474,11 @@ class RandomGreedyOptimizer(PathOptimizer):
     simplify : bool, optional
         Whether to perform simplifications before optimizing. These are:
 
-            - ignore any indices that appear in all terms
-            - combine any repeated indices within a single term
-            - reduce any non-output indices that only appear on a single term
-            - combine any scalar terms
-            - combine any tensors with matching indices (hadamard products)
+        - ignore any indices that appear in all terms
+        - combine any repeated indices within a single term
+        - reduce any non-output indices that only appear on a single term
+        - combine any scalar terms
+        - combine any tensors with matching indices (hadamard products)
 
         Such simpifications may be required in the general case for the proper
         functioning of the core optimization, but may be skipped if the input
