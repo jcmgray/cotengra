@@ -152,7 +152,7 @@ def test_reconfigure(select, minimize):
     elif minimize == "size":
         final_score = tree_gr.max_size()
 
-    if select == "min" and minimize == "size":
+    if minimize == "size":
         # just check hasn't made worse
         assert final_score <= initial_score
     else:
