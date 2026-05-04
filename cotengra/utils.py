@@ -703,9 +703,46 @@ def get_symbol_map(inputs):
     return symbol_map
 
 
-Contraction = collections.namedtuple(
-    "Contraction", ("inputs", "output", "shapes", "size_dict")
-)
+class Contraction(
+    collections.namedtuple(
+        "Contraction", ("inputs", "output", "shapes", "size_dict")
+    )
+):
+    @property
+    def eq(self):
+        """Get the einsum equation string corresponding to this contraction."""
+        return inputs_output_to_eq(self.inputs, self.output)
+
+    def make_arrays(self, seed=None, dtype="float64"):
+        """Make example arrays to match the inputs, shapes and size_dict of
+        this contraction.
+
+        Parameters
+        ----------
+        seed : None or int, optional
+            Seed for random generator for repeatibility, by default None.
+        dtype : str or np.dtype, optional
+            The dtype of the arrays to create, by default 'float64'.
+
+        Returns
+        -------
+        arrays : list[np.ndarray]
+        """
+        return make_arrays_from_inputs(
+            self.inputs, self.size_dict, seed=seed, dtype=dtype
+        )
+
+    def get_hypergraph(self):
+        """Get the hypergraph corresponding to this contraction."""
+        from .hypergraph import HyperGraph
+
+        return HyperGraph(self.inputs, self.output, self.size_dict)
+
+    def plot(self, **kwargs):
+        """Draw the hypergraph corresponding to this contraction."""
+        return self.get_hypergraph().plot(**kwargs)
+
+    draw = plot
 
 
 def rand_equation(
