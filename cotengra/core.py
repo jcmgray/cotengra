@@ -2385,6 +2385,10 @@ class ContractionTree:
         # ensure these have been computed and thus are being tracked
         tree.contract_stats()
 
+        if tree.N <= 2:
+            # nothing to reconfigure
+            return tree
+
         if maxiter == "auto":
             maxiter = min(tree.N, maxiter_auto_cap)
 
