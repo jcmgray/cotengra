@@ -430,7 +430,16 @@ def progress_description(best, info="concise"):
 
 class HyperOptimizer(PathOptimizer):
     """A path optimizer that samples a series of contraction trees
-    while optimizing the hyper parameters used to generate them.
+    while optimizing the hyper parameters used to generate them. The drivers
+    specified in ``methods`` are used to generate the trial contraction trees
+    according to certain hyper-parameters, and the results are scored according
+    to ``minimize`` and fed back to ``optlib`` to suggest new parameters.
+
+    If any of ``simulated_annealing_opts``, ``slicing_opts``,
+    ``slicing_reconf_opts``, or ``reconf_opts`` are supplied, then once a trial
+    tree is generated, it will be modified by the corresponding options (and in
+    the order above) and the flops and size of the trial will be updated to the
+    modified version, before the score is reported.
 
     Parameters
     ----------
@@ -439,7 +448,8 @@ class HyperOptimizer(PathOptimizer):
     minimize : str, Objective or callable, optional
         How to score each trial, used to train the optimizer and rank the
         results. If a custom callable, it should take a ``trial`` dict as its
-        argument and return a single float.
+        argument and return a single float. It is also supplied by default to
+        any relevant refinement stages, such as subtree reconfiguration.
     max_repeats : int, optional
         The maximum number of trial contraction trees to generate.
         Default: 128.
@@ -451,19 +461,50 @@ class HyperOptimizer(PathOptimizer):
         searching, allowing quick termination on easy contractions.
     parallel : 'auto', False, True, int, or distributed.Client
         Whether to parallelize the search.
+    simulated_annealing_opts : dict, optional
+        If supplied, once a trial contraction path is found, refine it using
+        simulated annealing with the given options, and then update the flops
+        and size of the trial with the refined version. Notable options and
+        defaults:
+
+        - `tsteps=50`: number of temperature steps,
+        - `target_size`: simulteneously slice the tree to this size,
+        - `tfinal=0.05`: final temperature,
+        - `tstart=2`: initial temperature.
+
+        See :meth:`ContractionTree.simulated_anneal` for full details.
     slicing_opts : dict, optional
         If supplied, once a trial contraction path is found, try slicing with
         the given options, and then update the flops and size of the trial with
-        the sliced versions.
+        the sliced versions. Notable options:
+
+        - `target_size`: slice until reaching this size,
+        - `target_slices`: slice into this many slices.
+
+        See :meth:`ContractionTree.slice` for full details.
     slicing_reconf_opts : dict, optional
         If supplied, once a trial contraction path is found, try slicing
         interleaved with subtree reconfiguation with the given options, and
         then update the flops and size of the trial with the sliced and
         reconfigured versions.
+
+        - `target_size`: slice until reaching this size,
+        - `reconf_opts`: options passed to the subtree reconfiguration stage,
+          see below.
+
+        See :meth:`ContractionTree.slice_and_reconfigure` for full details.
     reconf_opts : dict, optional
         If supplied, once a trial contraction path is found, try subtree
         reconfiguation with the given options, and then update the flops and
-        size of the trial with the reconfigured versions.
+        size of the trial with the reconfigured versions. Notable options and
+        defaults are:
+
+        - `subtree_size=6`: size of subtree to optimally reconfigure,
+        - `maxiter="auto"`: maximum number of subtree reconfigurations, by
+          default scales with size of contraction (up to 1024),
+        - `select='max'`: which subtrees to prioritize for reconfiguration.
+
+        See :meth:`ContractionTree.subtree_reconfigure` for full details.
     optlib : {'optuna', 'cmaes', 'nevergrad', 'sses', 'sbplx', ...}, optional
         Which optimizer to sample and train with.
     optlib_opts
@@ -489,6 +530,9 @@ class HyperOptimizer(PathOptimizer):
         override those in the search space.
     progbar : bool, optional
         Show live progress of the best contraction found so far.
+    kwargs
+        Extra options to pass to the optimizer library initialization, on top
+        of those in ``optlib_opts`` (which take precedence).
     """
 
     compressed = False
@@ -501,10 +545,10 @@ class HyperOptimizer(PathOptimizer):
         max_repeats=128,
         max_time=None,
         parallel="auto",
-        simulated_annealing_opts=None,
-        slicing_opts=None,
-        slicing_reconf_opts=None,
-        reconf_opts=None,
+        simulated_annealing_opts="auto",
+        slicing_opts="auto",
+        slicing_reconf_opts="auto",
+        reconf_opts="auto",
         optlib=None,
         optlib_opts=None,
         space=None,
@@ -527,6 +571,36 @@ class HyperOptimizer(PathOptimizer):
         self.costs_flops = []
         self.costs_write = []
         self.costs_size = []
+
+        # refinement steps
+        if (
+            (simulated_annealing_opts == "auto")
+            and (slicing_opts == "auto")
+            and (slicing_reconf_opts == "auto")
+            and (reconf_opts == "auto")
+        ):
+            # default to subtree reconfiguration only
+            simulated_annealing_opts = None
+            slicing_opts = None
+            slicing_reconf_opts = None
+            reconf_opts = {}
+
+        self.simulated_annealing_opts = (
+            None
+            if simulated_annealing_opts in ("auto", None)
+            else dict(simulated_annealing_opts)
+        )
+        self.slicing_opts = (
+            None if slicing_opts in ("auto", None) else dict(slicing_opts)
+        )
+        self.reconf_opts = (
+            None if reconf_opts in ("auto", None) else dict(reconf_opts)
+        )
+        self.slicing_reconf_opts = (
+            None
+            if slicing_reconf_opts in ("auto", None)
+            else dict(slicing_reconf_opts)
+        )
 
         if methods is None:
             self._methods = get_default_hq_methods()
@@ -558,20 +632,6 @@ class HyperOptimizer(PathOptimizer):
         self.best = {"score": inf, "size": inf, "flops": inf}
         self.trials_since_best = 0
 
-        self.simulated_annealing_opts = (
-            None
-            if simulated_annealing_opts is None
-            else dict(simulated_annealing_opts)
-        )
-        self.slicing_opts = (
-            None if slicing_opts is None else dict(slicing_opts)
-        )
-        self.reconf_opts = None if reconf_opts is None else dict(reconf_opts)
-        self.slicing_reconf_opts = (
-            None if slicing_reconf_opts is None else dict(slicing_reconf_opts)
-        )
-        self.progbar = progbar
-
         if space is None:
             space = get_hyper_space()
 
@@ -583,6 +643,7 @@ class HyperOptimizer(PathOptimizer):
             optimizer=self,
             **optlib_opts,
         )
+        self.progbar = progbar
 
     @property
     def minimize(self):
@@ -1101,6 +1162,8 @@ class HyperCompressedOptimizer(HyperOptimizer):
         chi=None,
         methods=("greedy-compressed", "greedy-span", "kahypar-agglom"),
         minimize="peak-compressed",
+        simulated_annealing_opts="auto",
+        reconf_opts="auto",
         **kwargs,
     ):
         if (chi is not None) and not callable(minimize):
@@ -1109,14 +1172,20 @@ class HyperCompressedOptimizer(HyperOptimizer):
         kwargs["methods"] = methods
         kwargs["minimize"] = minimize
 
-        if kwargs.pop("slicing_opts", None) is not None:
+        if kwargs.pop("slicing_opts", None) not in (None, "auto"):
             raise ValueError(
                 "Cannot use slicing_opts with compressed contraction."
             )
-        if kwargs.pop("slicing_reconf_opts", None) is not None:
+        if kwargs.pop("slicing_reconf_opts", None) not in (None, "auto"):
             raise ValueError(
                 "Cannot use slicing_reconf_opts with compressed contraction."
             )
+
+        if simulated_annealing_opts == "auto" and reconf_opts == "auto":
+            # for compressed contraction, we turn these off
+            # TODO: benchmark the time vs cost benefit of using?
+            kwargs["simulated_annealing_opts"] = None
+            kwargs["reconf_opts"] = None
 
         super().__init__(**kwargs)
 

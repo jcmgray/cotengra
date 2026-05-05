@@ -65,7 +65,8 @@ class AutoOptimizer(PathOptimizer):
         self.kwargs.setdefault("parallel", "auto")
         reconf_opts = self.kwargs.setdefault("reconf_opts", {})
         reconf_opts.setdefault("subtree_size", 4)
-        reconf_opts.setdefault("maxiter", 100)
+        reconf_opts.setdefault("maxiter", "auto")
+        reconf_opts.setdefault("maxiter_auto_cap", 128)
 
         self._hyperoptimizers_by_thread = {}
         if cache:
@@ -146,7 +147,8 @@ class AutoHQOptimizer(AutoOptimizer):
         kwargs.setdefault("parallel", "auto")
         reconf_opts = kwargs.setdefault("reconf_opts", {})
         reconf_opts.setdefault("subtree_size", 8)
-        reconf_opts.setdefault("maxiter", 500)
+        reconf_opts.setdefault("maxiter", "auto")
+        reconf_opts.setdefault("maxiter_auto_cap", 1024)
         super().__init__(**kwargs)
 
 

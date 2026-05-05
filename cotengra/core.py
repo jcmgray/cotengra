@@ -2320,7 +2320,8 @@ class ContractionTree:
         weight_what="flops",
         weight_pwr=2,
         select="max",
-        maxiter=500,
+        maxiter="auto",
+        maxiter_auto_cap=1024,
         seed=None,
         minimize=None,
         optimize=None,
@@ -2361,6 +2362,10 @@ class ContractionTree:
         maxiter : int, optional
             How many subtree optimizations to perform, the algorithm can
             terminate before this if all subtrees have been optimized.
+            If 'auto', defaults to ``min(tree.N, maxiter_auto_cap)``
+        maxiter_auto_cap : int, optional
+            The maximum cap to apply to the default value of maxiter when
+            ``maxiter='auto'``.
         seed : int, optional
             A random seed (seeds python system random module).
         minimize : {'flops', 'size'}, optional
@@ -2379,6 +2384,9 @@ class ContractionTree:
 
         # ensure these have been computed and thus are being tracked
         tree.contract_stats()
+
+        if maxiter == "auto":
+            maxiter = min(tree.N, maxiter_auto_cap)
 
         if minimize is None:
             minimize = self.get_default_objective()
