@@ -7,6 +7,7 @@
 - `"auto"` and `"auto-hq"` presets now default to `parallel="auto"`
 - [`HyperOptimizer`](cotengra.HyperOptimizer): now defaults to *using* subtree reconfiguration (turned off if any other refinement options are explitly given)
 - [`ContractionTree.subtree_reconfigure`](cotengra.ContractionTree.subtree_reconfigure): add `maxiter="auto"` option, which defaults to `min(tree.N, maxiter_auto_cap)`, where `maxiter_auto_cap` is a new argument to the preset constructors (default 128 for `auto` and 1024 for `auto-hq`).
+- Added a benchmarking example - {ref}`ex-benchmarking`.
 - Default node type for [`ContractionTree`](cotengra.ContractionTree) changed to SSA-based representation, which is faster and uses less memory for big trees. Factored out node logic into a new [`nodeops`](cotengra.nodeops) module, with dynamic namespaces supporting both `frozenset`-based and SSA-based nodes.
 - [`ContractionTree`](cotengra.ContractionTree): add [`get_peak_size`](cotengra.ContractionTree.get_peak_size), [`reorder_for_peak_size`](cotengra.ContractionTree.reorder_for_peak_size), and [`max_contraction_size`](cotengra.ContractionTree.max_contraction_size).
 - [`ContractionTree`](cotengra.ContractionTree): support single input "contractions" (trivial trees with a single tensor).
