@@ -4,19 +4,22 @@ description = "Hyper optimized contraction trees for large tensor networks and e
 readme = { file = "README.md", content-type = "text/markdown" }
 dynamic = ["version"]
 authors = [{ name = "Johnnie Gray", email = "johnniemcgray@gmail.com" }]
-license = { file = "LICENSE.md" }
+license = "Apache-2.0"
+license-files = ["LICENSE.md"]
 requires-python = ">=3.10"
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: Apache Software License",
-    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
 keywords = [
     "contraction",
@@ -121,6 +124,9 @@ coverage = "*"
 pytest = "*"
 pytest-cov = "*"
 
+[tool.pixi.feature.tests.pypi-dependencies]
+build = "*"
+
 [tool.pixi.feature.pyold.dependencies]
 python = "3.10.*"
 [tool.pixi.feature.pymid.dependencies]
@@ -188,6 +194,15 @@ pytest \
 cwd = "."
 default-environment = "testpymid"
 description = "Run the test suite."
+
+[tool.pixi.tasks.build-test]
+cmd = """
+    rm -rf dist/build-test &&
+    python -m build --sdist --wheel --outdir dist/build-test
+"""
+cwd = "."
+description = "Build source and wheel distributions as a smoke test."
+default-environment = "testpymid"
 
 [tool.pixi.tasks.test-backends]
 cmd = """
