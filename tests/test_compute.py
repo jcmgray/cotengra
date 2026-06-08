@@ -115,6 +115,27 @@ def test_basic_equations(eq, dtype, strip_exponent):
     assert_allclose(x, y, rtol=rtol, atol=atol)
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        # explicit backend reaching the autoray implementation
+        {"backend": "numpy", "implementation": "autoray"},
+        # explicit backend reaching the strip-exponent path
+        {"backend": "numpy", "strip_exponent": True},
+    ],
+)
+def test_explicit_backend_resolves_namespace(kwargs):
+    # a backend passed explicitly (not inferred) must still resolve ``xp``;
+    # it was previously left unbound, raising UnboundLocalError (gh #83)
+    eq = "ab,bc->ac"
+    arrays = ctg.utils.make_arrays_from_eq(eq, dtype="float64")
+    expected = np.einsum(eq, *arrays)
+    y = ctg.einsum(eq, *arrays, **kwargs)
+    if kwargs.get("strip_exponent"):
+        y = y[0] * 10 ** y[1]
+    assert_allclose(y, expected, rtol=5e-6, atol=1e-8)
+
+
 @pytest.mark.parametrize("n", [10])
 @pytest.mark.parametrize("d_min", [2])
 @pytest.mark.parametrize("d_max", [4])

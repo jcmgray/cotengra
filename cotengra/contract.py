@@ -743,7 +743,9 @@ class Contractor:
 
         if backend is None:
             backend = infer_backend_multi(*arrays)
-            xp = get_namespace(backend)
+        # resolve ``xp`` whether backend was inferred or passed explicitly,
+        # otherwise it is unbound below for an explicit backend (gh #83)
+        xp = get_namespace(backend)
 
         if implementation == "auto":
             if backend == "numpy":
