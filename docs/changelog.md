@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.1 (2026-06-08)
+
+**Bug fixes**
+
+- fix [`Contractor`](cotengra.contract.Contractor) called with explicit backend ({issue}`83`).
+
+
 ## v0.8.0 (2026-05-04)
 
 **Enhancements**

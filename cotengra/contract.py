@@ -743,7 +743,7 @@ class Contractor:
 
         if backend is None:
             backend = infer_backend_multi(*arrays)
-            xp = get_namespace(backend)
+        xp = get_namespace(backend)
 
         if implementation == "auto":
             if backend == "numpy":
