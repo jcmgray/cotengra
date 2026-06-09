@@ -47,5 +47,6 @@ index_examples.md
 :hidden:
 
 changelog.md
+develop.md
 GitHub Repository <https://github.com/jcmgray/cotengra>
 ```
