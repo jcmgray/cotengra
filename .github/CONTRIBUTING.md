@@ -12,6 +12,11 @@ useful:
 - [GitHub - Creating a pull request](https://help.github.com/articles/creating-a-pull-request/)
 
 
+## AI Policy
+
+Please treat the [numpy AI policy](https://numpy.org/devdocs/dev/ai_policy.html) as a rough guide.
+
+
 ## Development Setup
 
 `cotengra` uses [pixi](https://pixi.sh) for development environments and
