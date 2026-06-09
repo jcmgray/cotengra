@@ -591,14 +591,14 @@ def extract_contractions(
         A tuple of tuples, each containing the information needed to
         perform a pairwise contraction. Each tuple contains:
 
-            - ``p``: the parent node,
-            - ``l``: the left child node,
-            - ``r``: the right child node,
-            - ``tdot``: whether to use ``tensordot`` or ``einsum``,
-            - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
-                i.e. ``axes`` or ``eq``,
-            - ``perm``: the permutation required after the contraction, if
-                any (only applies to tensordot).
+        - ``p``: the parent node,
+        - ``l``: the left child node,
+        - ``r``: the right child node,
+        - ``tdot``: whether to use ``tensordot`` or ``einsum``,
+        - ``arg``: the argument to pass to ``tensordot`` or ``einsum`` i.e.
+           ``axes`` or ``eq``,
+        - ``perm``: the permutation required after the contraction, if any
+          (only applies to tensordot).
 
         If both ``l`` and ``r`` are ``None``, the the operation is a single
         term simplification performed with ``einsum``.
@@ -660,14 +660,14 @@ class Contractor:
         The sequence of contractions to perform. Each contraction should be a
         tuple containing:
 
-            - ``p``: the parent node,
-            - ``l``: the left child node,
-            - ``r``: the right child node,
-            - ``tdot``: whether to use ``tensordot`` or ``einsum``,
-            - ``arg``: the argument to pass to ``tensordot`` or ``einsum``
-                i.e. ``axes`` or ``eq``,
-            - ``perm``: the permutation required after the contraction, if
-                any (only applies to tensordot).
+        - ``p``: the parent node,
+        - ``l``: the left child node,
+        - ``r``: the right child node,
+        - ``tdot``: whether to use ``tensordot`` or ``einsum``,
+        - ``arg``: the argument to pass to ``tensordot`` or ``einsum`` i.e.
+          ``axes`` or ``eq``,
+        - ``perm``: the permutation required after the contraction, if any
+          (only applies to tensordot).
 
         e.g. built by calling ``extract_contractions(tree)``.
 

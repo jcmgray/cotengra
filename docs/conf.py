@@ -150,8 +150,9 @@ def linkcode_resolve(domain, info):
 
 
 extlinks = {
-    "issue": ("https://github.com/jcmgray/cotengra/issues/%s", "GH %s"),
-    "pull": ("https://github.com/jcmgray/cotengra/pull/%s", "PR %s"),
+    "issue": ("https://github.com/jcmgray/cotengra/issues/%s", "GH #%s"),
+    "pull": ("https://github.com/jcmgray/cotengra/pull/%s", "PR #%s"),
+    "pr": ("https://github.com/jcmgray/cotengra/pull/%s", "PR #%s"),
 }
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
