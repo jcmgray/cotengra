@@ -267,10 +267,10 @@ def array_contract_path(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
     canonicalize : bool, optional
         If ``True``, canonicalize the inputs and output so that the indices
@@ -364,10 +364,10 @@ def find_tree(inputs, output, size_dict, optimize="auto", **kwargs):
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
     Returns
     -------
@@ -418,10 +418,10 @@ def array_contract_tree(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
     canonicalize : bool, optional
         If ``True``, canonicalize the inputs and output so that the indices
@@ -699,10 +699,10 @@ def array_contract_expression(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
         If the optimizer provides sliced indices they will be used.
     constants : dict[int, array_like], optional
@@ -828,10 +828,10 @@ def array_contract(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
         If the optimizer provides sliced indices they will be used.
     strip_exponent : bool, optional
@@ -891,10 +891,10 @@ def einsum_tree(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
     canonicalize : bool, optional
         If ``True``, canonicalize the inputs and output so that the indices
@@ -948,10 +948,10 @@ def einsum_expression(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
         If the optimizer provides sliced indices they will be used.
     constants : Sequence of int, optional
@@ -1058,10 +1058,10 @@ def einsum(
     optimize : str, path_like, PathOptimizer, or ContractionTree
         The optimization strategy to use. This can be:
 
-            - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
-            - A ``PathOptimizer`` instance.
-            - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
-            - An explicit ``ContractionTree`` instance.
+        - A string preset, e.g. ``'auto'``, ``'greedy'``, ``'optimal'``.
+        - A ``PathOptimizer`` instance.
+        - An explicit path, e.g. ``[(0, 1), (2, 3), ...]``.
+        - An explicit ``ContractionTree`` instance.
 
         If the optimizer provides sliced indices they will be used.
     strip_exponent : bool, optional

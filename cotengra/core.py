@@ -1908,9 +1908,9 @@ class ContractionTree:
         search : {'bfs', 'dfs', 'random'}, optional
             How to build the tree:
 
-                - 'bfs': breadth first expansion
-                - 'dfs': depth first expansion (largest nodes first)
-                - 'random': random expansion
+            - 'bfs': breadth first expansion
+            - 'dfs': depth first expansion (largest nodes first)
+            - 'random': random expansion
 
         seed : None, int or random.Random, optional
             Random number generator seed, if ``search`` is 'random'.
