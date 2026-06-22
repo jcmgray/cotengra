@@ -371,7 +371,7 @@ def find_tree(inputs, output, size_dict, optimize="auto", **kwargs):
 
     Returns
     -------
-    tree : ContractionTree
+    ContractionTree
     """
     cls = optimize.__class__
     try:
@@ -716,16 +716,15 @@ def array_contract_expression(
 
         - None: let cotengra choose.
         - "autoray": dispatch with autoray, using the ``tensordot`` and
-            ``einsum`` implementation of the backend.
+          ``einsum`` implementation of the backend.
         - "cotengra": use the ``tensordot`` and ``einsum`` implementation
-            of cotengra, which is based on batch matrix multiplication. This
-            is faster for some backends like numpy, and also enables
-            libraries which don't yet provide ``tensordot`` and ``einsum`` to
-            be used.
+          of cotengra, which is based on batch matrix multiplication. This
+          is faster for some backends like numpy, and also enables libraries
+          which don't yet provide ``tensordot`` and ``einsum`` to be used.
         - "cuquantum": use the cuquantum library to perform the whole
-            contraction (not just individual contractions).
+          contraction (not just individual contractions).
         - tuple[callable, callable]: manually supply the ``tensordot`` and
-            ``einsum`` implementations to use.
+          ``einsum`` implementations to use.
 
     autojit : bool, optional
         If ``True``, use :func:`autoray.autojit` to compile the contraction
@@ -835,10 +834,10 @@ def array_contract(
 
         If the optimizer provides sliced indices they will be used.
     strip_exponent : bool, optional
-            If ``True``, eagerly strip the exponent (in log10) from
-            intermediate tensors to control numerical problems from leaving the
-            range of the datatype. This method then returns the scaled
-            'mantissa' output array and the exponent separately.
+        If ``True``, eagerly strip the exponent (in log10) from intermediate
+        tensors to control numerical problems from leaving the range of the
+        datatype. This method then returns the scaled 'mantissa' output array
+        and the exponent separately.
     cache_expression : bool, optional
         If ``True``, cache the expression used to contract the arrays. This
         negates the overhead of pathfinding and building the expression when
@@ -850,6 +849,8 @@ def array_contract(
     kwargs
         Passed to :func:`~cotengra.interface.array_contract_expression`.
 
+    Returns
+    -------
     array_like or (array_like, scalar)
         The result of the contraction. If ``strip_exponent`` is ``True``, the
         result is a tuple of the output array mantissae and the exponent
@@ -966,16 +967,15 @@ def einsum_expression(
 
         - None: let cotengra choose.
         - "autoray": dispatch with autoray, using the ``tensordot`` and
-            ``einsum`` implementation of the backend.
-        - "cotengra": use the ``tensordot`` and ``einsum`` implementation
-            of cotengra, which is based on batch matrix multiplication. This
-            is faster for some backends like numpy, and also enables
-            libraries which don't yet provide ``tensordot`` and ``einsum`` to
-            be used.
+          ``einsum`` implementation of the backend.
+        - "cotengra": use the ``tensordot`` and ``einsum`` implementation of
+          cotengra, which is based on batch matrix multiplication. This is
+          faster for some backends like numpy, and also enables libraries which
+          don't yet provide ``tensordot`` and ``einsum`` to be used.
         - "cuquantum": use the cuquantum library to perform the whole
-            contraction (not just individual contractions).
+          contraction (not just individual contractions).
         - tuple[callable, callable]: manually supply the ``tensordot`` and
-            ``einsum`` implementations to use.
+          ``einsum`` implementations to use.
 
     autojit : bool, optional
         If ``True``, use :func:`autoray.autojit` to compile the contraction
