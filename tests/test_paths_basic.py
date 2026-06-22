@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -241,3 +243,130 @@ def test_edgesort_optimize_manual_labelled_reverse():
         optimize="edgesort",
     )
     assert tree.get_path() == ((1, 2), (0, 1))
+
+
+# ---- size 1 indices ---- #
+# these are simply ignored when finding a path (they contribute a factor of 1
+# to every cost), then reintroduced when the tree is rebuilt from the original
+# inputs - so the path is valid but the search avoids any blowup from them.
+
+
+def _size_one_roundtrip(inputs, output, size_dict, which):
+    """Strip -> path -> rebuild on original inputs -> contract, vs einsum."""
+    path = {
+        "greedy": pb.optimize_greedy,
+        "optimal": pb.optimize_optimal,
+    }[which](inputs, output, size_dict)
+    tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
+    eq = ctg.utils.inputs_output_to_eq(inputs, output)
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict, seed=0)
+    assert_allclose(
+        tree.contract(arrays), np.einsum(eq, *arrays, optimize=True)
+    )
+    return tree
+
+
+@pytest.mark.parametrize("eq", test_case_eqs)
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+@pytest.mark.parametrize("seed", range(3))
+def test_manual_cases_with_size_one(eq, which, seed):
+    # reuse every manual eq but allow size 1 dims (d_min=1)
+    inputs, output = ctg.utils.eq_to_inputs_output(eq)
+    size_dict = ctg.utils.make_rand_size_dict_from_inputs(
+        inputs, d_min=1, d_max=3, seed=seed
+    )
+    _size_one_roundtrip(inputs, output, size_dict, which)
+
+
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+def test_all_size_one(which):
+    # closed loop, every bond size 1 -> whole thing is trivial
+    inputs = [("a", "b"), ("b", "c"), ("c", "d"), ("a", "d")]
+    output = ()
+    size_dict = dict.fromkeys("abcd", 1)
+    _size_one_roundtrip(inputs, output, size_dict, which)
+
+
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+def test_size_one_in_output(which):
+    # 'a' is size 1 AND in the output -> exercises the output-loop guard
+    inputs = [("a", "b"), ("b", "c")]
+    output = ("a", "c")
+    size_dict = {"a": 1, "b": 3, "c": 4}
+    tree = _size_one_roundtrip(inputs, output, size_dict, which)
+    arrays = ctg.utils.make_arrays_from_inputs(inputs, size_dict, seed=0)
+    assert tree.contract(arrays).shape == (1, 4)
+
+
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+def test_size_one_bond_is_outer_product(which):
+    # 'b' size-1 bond -> the contraction is really an outer product
+    inputs = [("a", "b"), ("b", "c")]
+    output = ("a", "c")
+    size_dict = {"a": 3, "b": 1, "c": 4}
+    _size_one_roundtrip(inputs, output, size_dict, which)
+
+
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+def test_size_one_hyperedge(which):
+    # 'h' size-1 shared by all n terms: previously a fully-connected blowup
+    # for optimal (no max_neighbors guard), now stripped entirely
+    n = 8
+    letters = [ctg.utils.get_symbol(i) for i in range(n)]
+    inputs = [("h", x) for x in letters]
+    output = tuple(letters)
+    size_dict = {x: 2 for x in letters}
+    size_dict["h"] = 1
+    _size_one_roundtrip(inputs, output, size_dict, which)
+
+
+@pytest.mark.parametrize("which", ["greedy", "optimal"])
+def test_scalar_after_stripping(which):
+    # one term collapses to a scalar once its size-1 dims are dropped
+    inputs = [("a", "b"), ("p", "q"), ("a", "b")]
+    output = ()
+    size_dict = {"a": 3, "b": 2, "p": 1, "q": 1}
+    _size_one_roundtrip(inputs, output, size_dict, which)
+
+
+def test_processor_strips_all_size_one():
+    inputs = [("a", "b"), ("b", "c")]
+    output = ("a",)
+    size_dict = dict.fromkeys("abc", 1)
+    cp = pb.ContractionProcessor(inputs, output, size_dict)
+    # no edges/indices registered at all...
+    assert cp.edges == {}
+    assert cp.indmap == {}
+    assert cp.sizes == []
+    # ...but the nodes (and thus path positions) are preserved
+    assert len(cp.nodes) == 2
+    assert all(legs == () for legs in cp.nodes.values())
+
+
+def test_processor_keeps_only_large_indices():
+    inputs = [("a", "b"), ("b", "c")]
+    # 'a' size 1 and in output -> must not KeyError, must not be registered
+    output = ("a",)
+    size_dict = {"a": 1, "b": 5, "c": 1}
+    cp = pb.ContractionProcessor(inputs, output, size_dict)
+    assert set(cp.indmap) == {"b"}
+    assert cp.sizes == [5]
+
+
+def test_processor_no_size_one_blowup():
+    # the motivating case: dense all-size-1 graph -> empty edge set, so optimal
+    # enumerates no contraction candidates and the build completes instantly
+    n = 20
+    inputs = [[] for _ in range(n)]
+    size_dict = {}
+    for k, (i, j) in enumerate(itertools.combinations(range(n), 2)):
+        ix = ctg.utils.get_symbol(k)
+        size_dict[ix] = 1
+        inputs[i].append(ix)
+        inputs[j].append(ix)
+    inputs = [tuple(t) for t in inputs]
+    cp = pb.ContractionProcessor(inputs, (), size_dict)
+    assert cp.edges == {}
+    path = pb.optimize_optimal(inputs, (), size_dict)
+    tree = ctg.ContractionTree.from_path(inputs, (), size_dict, path=path)
+    assert tree.is_complete()

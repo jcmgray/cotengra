@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.2 (2026-06-22)
+
+**Enhancements**
+
+- Greedy and optimal path optimizers ([`optimize_greedy`](cotengra.pathfinders.path_basic.optimize_greedy), [`optimize_optimal`](cotengra.pathfinders.path_basic.optimize_optimal), and the underlying `ContractionProcessor`): size-1 indices are now ignored during path finding. Such indices only ever contribute a constant factor to contraction costs, but previously could cause severe slowdowns - in particular a size-1 hyperedge shared by many tensors created spurious fully-connected structure. They are dropped up front and reintroduced when the tree is rebuilt from the original inputs, so the path remains valid while the search avoids the blowup.
+
+**Infrastructure**
+
+- Add contributing guides, a code of conduct, and an AI contribution policy.
+- Add a changelog resolver to the docs build for rendering issue/PR cross-references.
+
+
 ## v0.8.1 (2026-06-08)
 
 **Bug fixes**

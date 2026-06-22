@@ -711,8 +711,7 @@ def array_contract_expression(
         inputs. Note this is a different format to the ``constants`` kwarg of
         :func:`einsum_expression` since it also provides the constant arrays.
     implementation : str or tuple[callable, callable], optional
-        What library to use to actually perform the contractions. Options
-        are:
+        What library to use to actually perform the contractions. Options are:
 
         - None: let cotengra choose.
         - "autoray": dispatch with autoray, using the ``tensordot`` and

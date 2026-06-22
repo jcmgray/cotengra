@@ -349,13 +349,18 @@ class ContractionProcessor:
         for i, term in enumerate(inputs):
             legs = []
             for ind in term:
+                d = size_dict[ind]
+                if d == 1:
+                    # we can just ignore size 1 dimensions
+                    continue
+
                 ix = self.indmap.get(ind, None)
                 if ix is None:
                     # index not processed yet
                     ix = self.indmap[ind] = c
                     self.edges[ix] = {i: None}
                     self.appearances.append(1)
-                    self.sizes.append(size_dict[ind])
+                    self.sizes.append(d)
                     c += 1
                 else:
                     # seen index already
@@ -367,7 +372,11 @@ class ContractionProcessor:
             self.nodes[i] = tuple(legs)
 
         for ind in output:
-            self.appearances[self.indmap[ind]] += 1
+            try:
+                self.appearances[self.indmap[ind]] += 1
+            except KeyError:
+                # size 1 output indices are never registered
+                continue
 
         self.ssa = len(self.nodes)
         self.ssa_path = []
