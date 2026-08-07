@@ -4,7 +4,7 @@
 
 **Enhancements**
 
-- Greedy and optimal path optimizers ([`optimize_greedy`](cotengra.pathfinders.path_basic.optimize_greedy), [`optimize_optimal`](cotengra.pathfinders.path_basic.optimize_optimal), and the underlying `ContractionProcessor`): size-1 indices are now ignored during path finding. Such indices only ever contribute a constant factor to contraction costs, but previously could cause severe slowdowns - in particular a size-1 hyperedge shared by many tensors created spurious fully-connected structure. They are dropped up front and reintroduced when the tree is rebuilt from the original inputs, so the path remains valid while the search avoids the blowup.
+- Greedy and optimal path optimizers ([`optimize_greedy`](#path_basic.optimize_greedy), [`optimize_optimal`](#path_basic.optimize_optimal), and the underlying `ContractionProcessor`): size-1 indices are now ignored during path finding. Such indices only ever contribute a constant factor to contraction costs, but previously could cause severe slowdowns - in particular a size-1 hyperedge shared by many tensors created spurious fully-connected structure. They are dropped up front and reintroduced when the tree is rebuilt from the original inputs, so the path remains valid while the search avoids the blowup.
 
 **Infrastructure**
 
@@ -16,7 +16,7 @@
 
 **Bug fixes**
 
-- fix [`Contractor`](cotengra.contract.Contractor) called with explicit backend ({issue}`83`).
+- fix [`Contractor`](#Contractor) called with explicit backend ({issue}`83`).
 
 
 ## v0.8.0 (2026-05-04)
@@ -24,31 +24,31 @@
 **Enhancements**
 
 - `"auto"` and `"auto-hq"` presets now default to `parallel="auto"`
-- [`HyperOptimizer`](cotengra.HyperOptimizer): now defaults to *using* subtree reconfiguration (turned off if any other refinement options are explitly given)
-- [`ContractionTree.subtree_reconfigure`](cotengra.ContractionTree.subtree_reconfigure): add `maxiter="auto"` option, which defaults to `min(tree.N, maxiter_auto_cap)`, where `maxiter_auto_cap` is a new argument to the preset constructors (default 128 for `auto` and 1024 for `auto-hq`).
+- [`HyperOptimizer`](#HyperOptimizer): now defaults to *using* subtree reconfiguration (turned off if any other refinement options are explitly given)
+- [`ContractionTree.subtree_reconfigure`](#ContractionTree.subtree_reconfigure): add `maxiter="auto"` option, which defaults to `min(tree.N, maxiter_auto_cap)`, where `maxiter_auto_cap` is a new argument to the preset constructors (default 128 for `auto` and 1024 for `auto-hq`).
 - Added a benchmarking example - {ref}`ex-benchmarking`.
-- Default node type for [`ContractionTree`](cotengra.ContractionTree) changed to SSA-based representation, which is faster and uses less memory for big trees. Factored out node logic into a new [`nodeops`](cotengra.nodeops) module, with dynamic namespaces supporting both `frozenset`-based and SSA-based nodes.
-- [`ContractionTree`](cotengra.ContractionTree): add [`get_peak_size`](cotengra.ContractionTree.get_peak_size), [`reorder_for_peak_size`](cotengra.ContractionTree.reorder_for_peak_size), and [`max_contraction_size`](cotengra.ContractionTree.max_contraction_size).
-- [`ContractionTree`](cotengra.ContractionTree): support single input "contractions" (trivial trees with a single tensor).
-- [`HyperOptimizer.search`](cotengra.HyperOptimizer.search): support single terms ({issue}`77`).
+- Default node type for [`ContractionTree`](#ContractionTree) changed to SSA-based representation, which is faster and uses less memory for big trees. Factored out node logic into a new [`nodeops`](#cotengra.nodeops) module, with dynamic namespaces supporting both `frozenset`-based and SSA-based nodes.
+- [`ContractionTree`](#ContractionTree): add [`get_peak_size`](#ContractionTree.get_peak_size), [`reorder_for_peak_size`](#ContractionTree.reorder_for_peak_size), and [`max_contraction_size`](#ContractionTree.max_contraction_size).
+- [`ContractionTree`](#ContractionTree): support single input "contractions" (trivial trees with a single tensor).
+- [`HyperOptimizer.search`](#HyperOptimizer.search): support single terms ({issue}`77`).
 - Change default *finishing* optimize step (e.g. for slicing/subtree reconfigure) to `"auto"`.
 - Subtree reconfigure: add `select="descend"` mode.
-- [`PartitionTreeBuilder.build_divide`](cotengra.pathfinders.path_kahypar.PartitionTreeBuilder.build_divide): default to `random-greedy-128` for `super_optimize`.
+- [`PartitionTreeBuilder.build_divide`](#PartitionTreeBuilder.build_divide): default to `random-greedy-128` for `super_optimize`.
 - Greedy optimizers: add `max_neighbors` option to limit candidate pair generation, which helps for graphs with very large batch indices.
 - Allow hashing `optimize` when given as a list of lists (e.g. nested SSA paths).
 - Refactor the `optlib` interface for cleaner integration of multiple Bayesian / population-based optimizers; add `sbplx`, `sses` (steady-state evolutionary strategy), and `neldermead` / `neldermead-adapt` simple internal optimizers.
 - Add `implementation="pytblis"` for contraction via [pytblis](https://github.com/chillenb/pytblis).
 - Update parallel logic for sub-workers, allowing nested parallelism without oversubscription.
-- [`DiskDict`](cotengra.utils.DiskDict): add `get`, `keys`, `values`, `items`, `__delitem__`; enhance `clear` and `cleanup` methods.
+- [`DiskDict`](#DiskDict): add `get`, `keys`, `values`, `items`, `__delitem__`; enhance `clear` and `cleanup` methods.
 - Python `optimal` optimizer: accept float `factors` ({issue}`58`).
-- Update [`schematic`](cotengra.schematic) module with improvements pulled in from `quimb`.
+- Update [`schematic`](#schematic) module with improvements pulled in from `quimb`.
 - `einsum` via bmm (`implementation="cotengra"`): update einsum-string parsing to follow more recent numpy behavior.
 
 **Bug fixes**
 
-- Fix a rare bug relating to wrongly cached index ordering in [`ContractionTree`](cotengra.ContractionTree).
+- Fix a rare bug relating to wrongly cached index ordering in [`ContractionTree`](#ContractionTree).
 - Fix + test `tensorflow` contraction with `strip_exponent` ({issue}`81`).
-- [`ContractionTree.contract_nodes`](cotengra.ContractionTree.contract_nodes): always check for root, fixing an edge case in incremental contraction.
+- [`ContractionTree.contract_nodes`](#ContractionTree.contract_nodes): always check for root, fixing an edge case in incremental contraction.
 
 **Infrastructure**
 
@@ -59,7 +59,7 @@
 
 **Enhancements**
 
-- [`ContractionTree.print_contractions`](cotengra.ContractionTree.print_contractions): fix `show_brackets` option, show preprocessing steps with original inputs indices.
+- [`ContractionTree.print_contractions`](#ContractionTree.print_contractions): fix `show_brackets` option, show preprocessing steps with original inputs indices.
 - Only warn about missing recommended dependencies when they otherwise would be used, i.e. for hyper optimization only.
 
 
@@ -76,24 +76,24 @@
 
 - Allow manual path specification as edge path, e.g. `optimize=['b', 'c', 'a']`
 - Add `optimize="edgesort"` (aliased to `optimize="ncon"` too), which performs a contraction by contracting edges in *sorted* order, thus can be entirely specified by the graph labelling.
-- Add [`edge_path_to_ssa`](cotengra.pathfinders.path_basic.edge_path_to_ssa) and [`edge_path_to_linear`](cotengra.pathfinders.path_basic.edge_path_to_linear) for converting edge paths to SSA and linear paths respectively.
-- [`ContractionTree.from_path`](cotengra.ContractionTree.from_path): allow an `edge_path` argument. Deprecate `ContractionTree.from_edge_path` method in favor of this.
-- Speed up [`ContractionTree.get_path`](cotengra.ContractionTree.get_path) to ~ n log(n).
+- Add [`edge_path_to_ssa`](#edge_path_to_ssa) and [`edge_path_to_linear`](#edge_path_to_linear) for converting edge paths to SSA and linear paths respectively.
+- [`ContractionTree.from_path`](#ContractionTree.from_path): allow an `edge_path` argument. Deprecate `ContractionTree.from_edge_path` method in favor of this.
+- Speed up [`ContractionTree.get_path`](#ContractionTree.get_path) to ~ n log(n).
 
 
 ## v0.7.2 (2025-04-01)
 
 **Breaking Changes**
 
-- When contracting with slices and `strip_exponent` enabled, each slice result is returned with the exponent separately, rather than matching the first, these are are now combined in [`gather_slices`](cotengra.ContractionTree.gather_slices).
+- When contracting with slices and `strip_exponent` enabled, each slice result is returned with the exponent separately, rather than matching the first, these are are now combined in [`gather_slices`](#ContractionTree.gather_slices).
 - If `check_zero=True`, `strip_exponent=True`, and a zero slice is encountered, the returned exponent will now be `float('-inf')` rather than `0.0` for compatbility with the above.
 
 
 ## v0.7.1 (2025-02-24)
 
-- [`ReusableHyperOptimizer`](cotengra.ReusableHyperOptimizer) and [`DiskDict`](cotengra.utils.DiskDict), allow splitting key into subdirectory structure (sharding) for better performance. Enabled for new caches by default.
+- [`ReusableHyperOptimizer`](#ReusableHyperOptimizer) and [`DiskDict`](#DiskDict), allow splitting key into subdirectory structure (sharding) for better performance. Enabled for new caches by default.
 - High level interface functions accept the `strip_exponent` kwarg, which eagerly strips a scaling exponent (log10) as the contraction proceeds, avoiding issues to do with very large or very small numeric values.
-- add [`ReusableRandomGreedyOptimizer`](cotengra.ReusableRandomGreedyOptimizer) for reusing the same random greedy optimizer across multiple contractions, which is faster than creating a new one each time.
+- add [`ReusableRandomGreedyOptimizer`](#ReusableRandomGreedyOptimizer) for reusing the same random greedy optimizer across multiple contractions, which is faster than creating a new one each time.
 
 
 ## v0.7.0 (2025-01-07)
@@ -101,23 +101,23 @@
 **Enhancements**
 
 - Add [`cmaes`](https://github.com/CyberAgentAILab/cmaes) as an `optlib` method, use it by default for `'auto'` preset if available since ih has less overhead than `optuna`.
-- Add [`HyperOptimizer.plot_parameters_parallel`](cotengra.plot.plot_parameters_parallel) for plotting the sampled parameter space of a hyper optimizer method in parallel coordinates.
-- Add [`ncon`](cotengra.ncon) interface.
-- Add [`utils.save_to_json`](cotengra.utils.save_to_json) and [`utils.load_from_json`](cotengra.utils.load_from_json) for saving and loading contractions to/from json.
+- Add [`HyperOptimizer.plot_parameters_parallel`](#plot.plot_parameters_parallel) for plotting the sampled parameter space of a hyper optimizer method in parallel coordinates.
+- Add [`ncon`](#ncon) interface.
+- Add [`utils.save_to_json`](#save_to_json) and [`utils.load_from_json`](#load_from_json) for saving and loading contractions to/from json.
 - Add `examples/benchmarks` with various json benchmark contractions
-- Add [`utils.networkx_graph_to_equation`](cotengra.utils.networkx_graph_to_equation) for converting a networkx graph to cotengra style `inputs`, `output` and `size_dict`.
+- Add [`utils.networkx_graph_to_equation`](#networkx_graph_to_equation) for converting a networkx graph to cotengra style `inputs`, `output` and `size_dict`.
 - Add `"max"` as a valid `minimize` option for `optimize_optimal` (also added to `cotengrust`), which minimizes the single most expensive contraction (i.e. the cost *scaling*)
-- Add [`RandomOptimizer`](cotengra.RandomOptimizer), a fully random optimizer for testing and initialization purposes. It can be used with `optimize="random"` but is not recommended for actual optimization.
-- Add [`PathOptimizer`](cotengra.PathOptimizer) to top-level namespace.
-- [`ContractTreeCompressed.from_path`](cotengra.ContractionTreeCompressed.from_path): add the `autocomplete` option
+- Add [`RandomOptimizer`](#RandomOptimizer), a fully random optimizer for testing and initialization purposes. It can be used with `optimize="random"` but is not recommended for actual optimization.
+- Add [`PathOptimizer`](opt_einsum.paths.PathOptimizer) to top-level namespace.
+- [`ContractTreeCompressed.from_path`](#ContractionTreeCompressed.from_path): add the `autocomplete` option
 - Add option `overwrite="improved"` to reusable hyper optimizers, which always searches but only overwrites if the new tree is better, allowing easy incremental refining of a collection of trees.
 - einsum via bmm (`implementation="cotengra"`) avoids using einsum for transposing inputs.
 - add example {ref}`ex_extract_contraction` doc
 
 **Bug fixes**
 
-- Fix [`HyperGraph.plot`](cotengra.plot.plot_hypergraph) when nodes are not labelled as consecutive integers ({issue}`36`)
-- Fix [`ContractionTreeCompressed.windowed_reconfigure`](ContractionTreeCompressed.windowed_reconfigure) not propagating the default objective
+- Fix [`HyperGraph.plot`](#plot.plot_hypergraph) when nodes are not labelled as consecutive integers ({issue}`36`)
+- Fix [`ContractionTreeCompressed.windowed_reconfigure`](#ContractionTree.windowed_reconfigure) not propagating the default objective
 - Fix `kahypar` path optimization when no edges are present ({issue}`48`)
 
 
@@ -137,10 +137,10 @@
 
 **Enhancements**
 
-- add [RandomGreedyOptimizer](cotengra.pathfinders.path_basic.RandomGreedyOptimizer) which is a lightweight and performant randomized greedy optimizer, eschewing both hyper parameter tuning and full contraction tree construction, making it suitable for very large contractions (10,000s of tensors+).
-- add [optimize_random_greedy_track_flops](cotengra.pathfinders.path_basic.optimize_random_greedy_track_flops) which runs N trials of (random) greedy path optimization, whilst computing the FLOP count simultaneously. This or its accelerated rust counterpart in `cotengrust` is the driver for the above optimizer.
+- add [RandomGreedyOptimizer](#RandomGreedyOptimizer) which is a lightweight and performant randomized greedy optimizer, eschewing both hyper parameter tuning and full contraction tree construction, making it suitable for very large contractions (10,000s of tensors+).
+- add [optimize_random_greedy_track_flops](#optimize_random_greedy_track_flops) which runs N trials of (random) greedy path optimization, whilst computing the FLOP count simultaneously. This or its accelerated rust counterpart in `cotengrust` is the driver for the above optimizer.
 - add `parallel="threads"` backend, and make it the default for `RandomGreedyOptimizer` when `cotengrust` is present, since its version of `optimize_random_greedy_track_flops` releases the GIL.
-- significantly improve both the speed and memory usage of [`SliceFinder`](cotengra.slicer.SliceFinder)
+- significantly improve both the speed and memory usage of [`SliceFinder`](#SliceFinder)
 - alias `tree.total_cost()` to `tree.combo_cost()`
 
 
@@ -150,7 +150,7 @@
 
 - all input node legs and pre-processing steps are now calculated lazily,
   allowing slicing of indices including those 'simplified' away {issue}`31`.
-- make [`tree.peak_size`](cotengra.ContractionTree.peak_size) more accurate,
+- make [`tree.peak_size`](#ContractionTree.peak_size) more accurate,
   by taking max assuming left, right and parent intermediate tensors are all
   present at the same time.
 
@@ -163,38 +163,38 @@
   OMEinsumContractionOrders.jl by Jin-Guo Liu and Pan Zhang. This can be
   accessed most easily by supplying
   `opt = HyperOptimizer(simulated_annealing_opts={})`.
-- add [`ContractionTree.plot_flat`](cotengra.plot.plot_tree_flat): a new method
+- add [`ContractionTree.plot_flat`](#plot_tree_flat): a new method
   for plotting the contraction tree as a flat diagram showing all indices on
   every intermediate (without requiring any graph layouts), which is useful for
   visualizing and understanding small contractions.
-- [`HyperGraph.plot`](cotengra.plot.plot_hypergraph): support showing hyper
+- [`HyperGraph.plot`](#plot.plot_hypergraph): support showing hyper
   outer indices, multi-edges, and automatic unique coloring of nodes and
   indices (to match `plot_flat`).
-- add [`ContractionTree.plot_circuit](cotengra.plot.plot_tree_circuit) for
+- add [`ContractionTree.plot_circuit](#plot_tree_circuit) for
   plotting the contraction tree as a circuit diagram, which is fast and useful
   for visualizing the traversal ordering for larger trees.
-- add [`ContractionTree.restore_ind`](cotengra.ContractionTree.restore_ind)
+- add [`ContractionTree.restore_ind`](#ContractionTree.restore_ind)
   for 'unslicing' or 'unprojecting' previously removed indices.
-- [`ContractionTree.from_path`](cotengra.ContractionTree.from_path): add option
+- [`ContractionTree.from_path`](#ContractionTree.from_path): add option
   `complete` to automatically complete the tree given an incomplete path
   (usually disconnected subgraphs - {issue}`29`).
-- add [`ContractionTree.get_incomplete_nodes`](cotengra.ContractionTree.get_incomplete_nodes)
+- add [`ContractionTree.get_incomplete_nodes`](#ContractionTree.get_incomplete_nodes)
   for finding all uncontracted childless-parentless node groups.
-- add [`ContractionTree.autocomplete`](cotengra.ContractionTree.autocomplete)
+- add [`ContractionTree.autocomplete`](#ContractionTree.autocomplete)
   for automatically completing a contraction tree, using above method.
-- [`tree.plot_flat`](cotengra.plot.plot_tree_flat): show any preprocessing
+- [`tree.plot_flat`](#plot_tree_flat): show any preprocessing
   steps and optionally list sliced indices
-- add [get_rng](cotengra.utils.get_rng) as a single entry point for getting or
+- add [get_rng](#get_rng) as a single entry point for getting or
   propagating a random number generator, to help determinism.
 - set ``autojit="auto"`` for contractions, which by default turns on jit for
   `backend="jax"` only.
-- add [`tree.describe`](cotengra.ContractionTree.describe) for a various levels
+- add [`tree.describe`](#ContractionTree.describe) for a various levels
   of information about a tree, e.g. `tree.describe("full")` and
   `tree.describe("concise")`.
-- add [ctg.GreedyOptimizer](cotengra.pathfinders.path_basic.GreedyOptimizer)
-  and [ctg.OptimalOptimizer](cotengra.pathfinders.path_basic.OptimalOptimizer)
+- add [ctg.GreedyOptimizer](#GreedyOptimizer)
+  and [ctg.OptimalOptimizer](#OptimalOptimizer)
   to the top namespace.
-- add [ContractionTree.benchmark](cotengra.ContractionTree.benchmark) for
+- add [ContractionTree.benchmark](#ContractionTree.benchmark) for
   for automatically assessing hardware performance vs theoretical cost.
 - contraction trees now have a `get_default_objective` method to return the
   objective function they were optimized with, for simpler further refinement
@@ -209,7 +209,7 @@
 **Bug fixes**
 
 - fix a very rare but very infuriating bug related somehow to
-  [ReusableHyperOptimizer](cotengra.ReusableHyperOptimizer) not being
+  [ReusableHyperOptimizer](#ReusableHyperOptimizer) not being
   thread-safe and returning the wrong tree on github actions
 
 
@@ -217,7 +217,7 @@
 
 **Enhancements**
 
-- [`HyperOptimizer`](cotengra.HyperOptimizer): by default simply warn if an
+- [`HyperOptimizer`](#HyperOptimizer): by default simply warn if an
   individual trial fails, rather than raising an exception. This is to ensure
   rare failures do not spoil an entire optimization run. The behavior can
   be controlled with the `on_trial_error` argument.
@@ -237,37 +237,37 @@
 
 ## v0.5.3 (2023-10-16)
 
-- [``einsum``](cotengra.einsum), [`einsum_tree`](cotengra.einsum_tree)
-  and [`einsum_expression`](cotengra.einsum_expression): add support for all
+- [``einsum``](#interface.einsum), [`einsum_tree`](#einsum_tree)
+  and [`einsum_expression`](#einsum_expression): add support for all
   numpy input formats, including interleaved indices and ellipses.
 - remove some hidden `opt_einsum` dependence (via a `PathOptimizer` method)
 
 
 ## v0.5.2 (2023-10-13)
 
-- add [``ctg.array_contract_path``](cotengra.array_contract_path) for returning
+- add [``ctg.array_contract_path``](#array_contract_path) for returning
   the raw contraction path only, with caching. Add caching to
-  [``array_contract_expression``](cotengra.array_contract_expression) and
+  [``array_contract_expression``](#array_contract_expression) and
   related functions too.
-- fix [`tree.get_eq()`](cotengra.ContractionTree.get_eq) when the ``inputs``
+- fix [`tree.get_eq()`](#ContractionTree.get_eq) when the ``inputs``
   are a tuple of `Sequence[str]` rather than a `str`.
 
 
 ## v0.5.1 (2023-10-3)
 
-- add [tree.contraction_scaling](cotengra.ContractionTree.contraction_scaling)
-- add [get_symbol_map](cotengra.get_symbol_map)
+- add [tree.contraction_scaling](#ContractionTree.contraction_scaling)
+- add [get_symbol_map](#get_symbol_map)
 
 
 ## v0.5.0 (2023-09-26)
 
-- add [`einsum`](cotengra.einsum)
-- add [`einsum_tree`](cotengra.einsum_tree)
-- add [`einsum_expression`](cotengra.einsum_expression)
-- add [`array_contract`](cotengra.array_contract)
-- add [`array_contract_tree`](cotengra.array_contract_tree)
-- add [`array_contract_expression`](cotengra.array_contract_expression)
-- add [`AutoOptimizer`](cotengra.AutoOptimizer)
-- add [`AutoHQOptimizer`](cotengra.AutoHQOptimizer)
+- add [`einsum`](#interface.einsum)
+- add [`einsum_tree`](#einsum_tree)
+- add [`einsum_expression`](#einsum_expression)
+- add [`array_contract`](#array_contract)
+- add [`array_contract_tree`](#array_contract_tree)
+- add [`array_contract_expression`](#array_contract_expression)
+- add [`AutoOptimizer`](#AutoOptimizer)
+- add [`AutoHQOptimizer`](#AutoHQOptimizer)
 - remove most hard dependencies (`numpy`, `opt_einsum`)
-- update [`tree.plot_contractions`](cotengra.plot.plot_contractions)
+- update [`tree.plot_contractions`](#plot.plot_contractions)

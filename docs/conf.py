@@ -58,6 +58,15 @@ autosectionlabel_prefix_document = True
 
 # sphinx-autoapi
 autoapi_dirs = ["../cotengra"]
+# these are the defaults apart from 'imported-members' is removed
+autoapi_options = [
+    "members",
+    "undoc-members",
+    "private-members",
+    "show-inheritance",
+    "show-module-summary",
+    "special-members",
+]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]

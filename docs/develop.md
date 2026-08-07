@@ -147,6 +147,25 @@ On ReadTheDocs, the build is driven by `.readthedocs.yml` and uses the
 dedicated `readthedocs` pixi task.
 
 
+### Referencing functions and methods
+
+The API docs are generated with
+[`sphinx-autoapi`](https://sphinx-autoapi.readthedocs.io/en/latest/), which
+documents each object only where it is *defined*, not where it is re-exported.
+References should either use the full path or a short suffix-matching form:
+
+- In MyST markdown, use a link with a leading `#`:
+  `` [`ContractionTree`](#ContractionTree) ``,
+  `` [`search`](#HyperOptimizer.search) ``. This is the preferred form, since
+  it also renders cleanly as plain markdown.
+- In a docutils role, use a leading `.`: `` {class}`.ContractionTree` ``,
+  `` {meth}`.HyperOptimizer.search` ``. Roles are typed, so prefer them in
+  docstrings and to disambiguate a name that matches more than one object.
+
+Keep enough trailing components to be unambiguous. If a bare name still
+matches several objects, qualify it further or give an explicit title.
+
+
 ## Minting a release
 
 `cotengra` uses [`hatch-vcs`](https://github.com/ofek/hatch-vcs) to derive the
