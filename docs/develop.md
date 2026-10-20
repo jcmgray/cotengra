@@ -175,7 +175,7 @@ to publish to [PyPI](https://pypi.org/project/cotengra/). To mint a new
 release:
 
 1. Make sure all the
-   [tests are passing on CI](https://github.com/jcmgray/cotengra/actions/workflows/tests.yml).
+   [tests are passing on CI](https://github.com/jcmgray/cotengra/actions/workflows/test.yml).
 2. `git tag` the release with the next `vX.Y.Z`.
 3. Push the tag to GitHub: `git push --tags`. The release workflow will
    build the sdist and wheel and upload them to the

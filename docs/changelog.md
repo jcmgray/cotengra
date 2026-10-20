@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.8.3 (unreleased)
+## v0.8.3 (2026-10-20)
 
 **Bug fixes**
 
