@@ -176,3 +176,83 @@ def test_null_tree():
         optimize=optimize,
     )
     assert tree.N == 1
+
+
+class TestCheckZero:
+    def test_zero_input(self):
+        inputs = [("a", "b"), ("b", "c"), ("c", "d")]
+        output = ("a", "d")
+        rng = np.random.default_rng(42)
+        arrays = [
+            rng.normal(size=(2, 3)),
+            np.zeros((3, 4)),
+            rng.normal(size=(4, 5)),
+        ]
+        m, e = ctg.array_contract(
+            arrays, inputs, output, strip_exponent=True, check_zero=True
+        )
+        assert m.shape == (2, 5)
+        assert not np.any(m)
+        assert e == 0.0
+
+    def test_cancellation(self):
+        inputs = [("x",), ("x",), ("y",), ("y",)]
+        arrays = [
+            np.array([1.0, 1.0]),
+            np.array([1.0, -1.0]),
+            np.array([2.0, 3.0]),
+            np.array([5.0, 7.0]),
+        ]
+        m, e = ctg.array_contract(
+            arrays, inputs, (), strip_exponent=True, check_zero=True
+        )
+        assert m == 0.0
+        assert e == 0.0
+
+    @pytest.mark.parametrize("output", [(), ("k",)])
+    def test_sliced_zero_slices_tiny_values(self, output):
+        # ring of small matrices with ``k`` sliced, the ``k=0`` slice is zero
+        scale = 1e-40
+        inputs = ["ka", "ab", "bc", "cd", "de", "ef", "fg", "gh", "hi", "ik"]
+        size_dict = {ix: 2 for term in inputs for ix in term}
+        rng = np.random.default_rng(42)
+        arrays = [rng.uniform(size=(2, 2)) for _ in inputs]
+        arrays[0][0, :] = 0.0
+        expected = ctg.array_contract(arrays, inputs, output)
+        arrays = [scale * x for x in arrays]
+
+        tree = ctg.array_contract_tree(
+            inputs, output, size_dict, canonicalize=False
+        )
+        tree.remove_ind_("k")
+        m, e = ctg.array_contract(
+            arrays,
+            inputs,
+            output,
+            optimize=tree,
+            strip_exponent=True,
+            check_zero=True,
+        )
+        # rescale relative to the known scale, which would underflow
+        np.testing.assert_allclose(
+            m * 10 ** (e - len(inputs) * np.log10(scale)), expected
+        )
+
+    def test_sliced_all_zero(self):
+        inputs = [("k", "a"), ("a", "k")]
+        size_dict = {"k": 2, "a": 3}
+        arrays = [np.zeros((2, 3)), np.ones((3, 2))]
+        tree = ctg.array_contract_tree(
+            inputs, (), size_dict, canonicalize=False
+        )
+        tree.remove_ind_("k")
+        m, e = ctg.array_contract(
+            arrays,
+            inputs,
+            (),
+            optimize=tree,
+            strip_exponent=True,
+            check_zero=True,
+        )
+        assert m == 0.0
+        assert e == 0.0

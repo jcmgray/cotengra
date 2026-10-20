@@ -6,7 +6,6 @@ import itertools
 import math
 import warnings
 from dataclasses import dataclass
-from typing import Optional
 
 from autoray import do, get_namespace, infer_backend
 
@@ -101,7 +100,7 @@ class SliceInfo:
     inner: bool
     ind: str
     size: int
-    project: Optional[int]
+    project: int | None
 
     @property
     def sliced_range(self):
@@ -122,18 +121,24 @@ def get_slice_strides(sliced_inds):
     return strides
 
 
+def is_exactly_zero(x):
+    """Check whether every element of array ``x`` is exactly zero."""
+    return float(do("max", do("abs", x))) == 0.0
+
+
 class AdderWithMaybeExponentStripped:
-    """Object that ddds two arrays, or tuples of (array, exponent) together in
+    """Object that adds two arrays, or tuples of (array, exponent) together in
     a stable and branchless way. It also internally caches the backend on the
     first call.
     """
 
-    __slots__ = ("backend", "namespace", "need_to_cast")
+    __slots__ = ("backend", "check_zero", "namespace", "need_to_cast")
 
-    def __init__(self):
+    def __init__(self, check_zero=False):
         self.backend = None
         self.namespace = None
         self.need_to_cast = False
+        self.check_zero = check_zero
 
     def __call__(self, x, y):
         xistup = isinstance(x, tuple)
@@ -158,6 +163,13 @@ class AdderWithMaybeExponentStripped:
             self.backend = infer_backend(xm)
             self.namespace = get_namespace(self.backend)
             self.need_to_cast = self.backend == "tensorflow"
+
+        if self.check_zero:
+            # exact zeros have exponent 0.0, which shouldn't set the scale
+            if is_exactly_zero(xm):
+                return (ym, ye)
+            if is_exactly_zero(ym):
+                return (xm, xe)
 
         # perform branchless for jit etc.
         e = max(xe, ye)
@@ -301,7 +313,7 @@ class ContractionTree:
             self._sizes = MaxCounter()
 
         # container for caching subtree reconfiguration condidates
-        self.already_optimized = dict()
+        self.already_optimized = {}
 
         # info relating to slicing (base constructor is always unsliced)
         self.multiplicity = 1
@@ -815,7 +827,7 @@ class ContractionTree:
             if len(self.children) > self.N - 1:
                 raise ValueError("There are too many branches already.")
             if not self.nodeops.is_valid_node(node):
-                raise ValueError("{} is not a valid node.".format(node))
+                raise ValueError(f"{node} is not a valid node.")
 
         try:
             d = self.info[node]
@@ -2210,12 +2222,10 @@ class ContractionTree:
                 if self.get_extent(rnode) >= 2:
                     candidates.append(rnode)
 
-            if len(candidates) == 0:
-                # exhausted queue
-                if any_modified:
-                    # but have made *any* changes -> go again from top
-                    candidates.append(self.root)
-                    any_modified = False
+            if len(candidates) == 0 and any_modified:
+                # exhausted queue but have made *any* changes -> go again
+                candidates.append(self.root)
+                any_modified = False
 
             return any_modified
 
@@ -3666,8 +3676,7 @@ class ContractionTree:
         check_zero : bool, optional
             If ``True``, when ``strip_exponent=True``, explicitly check for
             zero-valued intermediates that would otherwise produce ``nan``,
-            instead terminating early if encountered and returning
-            ``(0.0, 0.0)``.
+            and return a zero mantissa with exponent ``0.0`` if one is found.
         implementation : str or tuple[callable, callable], optional
             What library to use to actually perform the contractions. Options
             are:
@@ -3822,11 +3831,15 @@ class ContractionTree:
         """Get slices ``i`` of ``arrays`` and then contract them."""
         return self.contract_core(self.slice_arrays(arrays, i), **kwargs)
 
-    def gather_slices(self, slices, backend=None, progbar=False):
+    def gather_slices(
+        self, slices, backend=None, check_zero=False, progbar=False
+    ):
         """Gather all the output contracted slices into a single full result.
         If none of the sliced indices appear in the output, then this is a
         simple sum - otherwise the slices need to be partially summed and
-        partially stacked.
+        partially stacked. If ``check_zero=True`` and the slices have
+        stripped exponents, exactly zero slices are ignored when choosing
+        the overall exponent.
         """
         if progbar:
             import tqdm
@@ -3837,11 +3850,21 @@ class ContractionTree:
             ix: i for i, ix in enumerate(self.output) if ix in self.sliced_inds
         }
 
-        add_maybe_exponent_stripped = AdderWithMaybeExponentStripped()
+        add_maybe_exponent_stripped = AdderWithMaybeExponentStripped(
+            check_zero=check_zero
+        )
 
         if not output_pos:
             # we can just sum everything
-            return functools.reduce(add_maybe_exponent_stripped, slices)
+            result = functools.reduce(add_maybe_exponent_stripped, slices)
+            if (
+                check_zero
+                and isinstance(result, tuple)
+                and is_exactly_zero(result[0])
+            ):
+                # slices cancelled exactly
+                return result[0], 0.0
+            return result
 
         # first we sum over non-output sliced indices
         chunks = {}
@@ -3855,7 +3878,19 @@ class ContractionTree:
 
         if isinstance(next(iter(chunks.values())), tuple):
             # have stripped exponents, need to scale to largest
-            emax = max(v[1] for v in chunks.values())
+            if check_zero:
+                # exact zeros shouldn't set the scale, so give them emax
+                zeros = {
+                    k for k, (m, _) in chunks.items() if is_exactly_zero(m)
+                }
+                emax = max(
+                    (e for k, (_, e) in chunks.items() if k not in zeros),
+                    default=0.0,
+                )
+                for k in zeros:
+                    chunks[k] = (chunks[k][0], emax)
+            else:
+                emax = max(v[1] for v in chunks.values())
             chunks = {
                 k: mi * 10 ** (ei - emax) for k, (mi, ei) in chunks.items()
             }
@@ -3974,8 +4009,7 @@ class ContractionTree:
         check_zero : bool, optional
             If ``True``, when ``strip_exponent=True``, explicitly check for
             zero-valued intermediates that would otherwise produce ``nan``,
-            instead terminating early if encountered and returning
-            ``(0.0, 0.0)``.
+            and return a zero mantissa with exponent ``0.0`` if one is found.
         backend : str, optional
             What library to use for ``tensordot``, ``einsum`` and
             ``transpose``, it will be automatically inferred from the input
@@ -4027,7 +4061,9 @@ class ContractionTree:
             for i in range(self.multiplicity)
         )
 
-        return self.gather_slices(slices, backend=backend, progbar=progbar)
+        return self.gather_slices(
+            slices, backend=backend, check_zero=check_zero, progbar=progbar
+        )
 
     def contract_mpi(self, arrays, comm=None, root=None, **kwargs):
         """Contract the slices of this tree and sum them in parallel -

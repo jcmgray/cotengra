@@ -679,8 +679,7 @@ class Contractor:
     check_zero : bool, optional
         If ``True``, when ``strip_exponent=True``, explicitly check for
         zero-valued intermediates that would otherwise produce ``nan``,
-        instead terminating early if encounteredand returning
-        ``(0.0, 0.0)``.
+        and return a zero mantissa with exponent ``0.0`` if one is found.
     backend : str, optional
         What library to use for ``tensordot``, ``einsum`` and
         ``transpose``, it will be automatically inferred from the input
@@ -690,13 +689,13 @@ class Contractor:
     """
 
     __slots__ = (
-        "contractions",
-        "strip_exponent",
-        "check_zero",
-        "implementation",
-        "backend",
-        "progbar",
         "__weakref__",
+        "backend",
+        "check_zero",
+        "contractions",
+        "implementation",
+        "progbar",
+        "strip_exponent",
     )
 
     def __init__(
@@ -780,6 +779,7 @@ class Contractor:
         temps = dict(enumerate(arrays))
 
         exponent = 0.0 if (strip_exponent is not False) else None
+        is_zero = False
 
         if progbar:
             import tqdm
@@ -817,21 +817,25 @@ class Contractor:
                 factor = xp.max(xp.abs(p_array))
 
                 if check_zero and float(factor) == 0.0:
-                    return 0.0, float("-inf")
-                exponent = exponent + xp.log10(factor)
+                    # exact zero, skip scaling
+                    # XXX: to produce a compatible output just keep contracting
+                    is_zero = True
+                else:
+                    exponent = exponent + xp.log10(factor)
 
-                if backend == "tensorflow":
-                    factor = xp.astype(factor, p_array.dtype)
-                    # TODO:
-                    # currently special case tensorflow
-                    # autoray needs fix for autojit and astype to use generally
+                    if backend == "tensorflow":
+                        factor = xp.astype(factor, p_array.dtype)
+                        # TODO: currently special case tensorflow, autoray
+                        # needs fix for autojit and astype to use generally
 
-                p_array = p_array / factor
+                    p_array = p_array / factor
 
             # insert the new intermediate array
             temps[pi] = p_array
 
         if exponent is not None:
+            if is_zero:
+                return p_array, 0.0
             return p_array, exponent
 
         return p_array
@@ -952,8 +956,7 @@ def make_contractor(
     check_zero : bool, optional
         If ``True``, when ``strip_exponent=True``, explicitly check for
         zero-valued intermediates that would otherwise produce ``nan``,
-        instead terminating early if encountered and returning
-        ``(0.0, 0.0)``.
+        and return a zero mantissa with exponent ``0.0`` if one is found.
     implementation : str or tuple[callable, callable], optional
         What library to use to actually perform the contractions. Options are
 

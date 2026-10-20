@@ -72,7 +72,7 @@ def register_preset(
 
 @functools.lru_cache(None)
 def preset_to_optimizer(preset):
-    """ """
+    """Get an optimizer from a preset name."""
     try:
         return _PRESETS_PATH[preset]
     except KeyError:
@@ -90,9 +90,7 @@ def preset_to_optimizer(preset):
 @functools.lru_cache(None)
 def can_hash_optimize(cls):
     """Check if the type of `optimize` supplied can be hashed."""
-    if issubclass(cls, (str, tuple, list)):
-        return True
-    return False
+    return bool(issubclass(cls, (str, tuple, list)))
 
 
 def identity(x):
@@ -478,7 +476,7 @@ class Via:
     the output array. For example, moving the tensors from CPU to GPU and back.
     """
 
-    __slots__ = ("fn", "convert_in", "convert_out")
+    __slots__ = ("convert_in", "convert_out", "fn")
 
     def __init__(self, fn, convert_in, convert_out):
         self.fn = fn
@@ -588,6 +586,7 @@ def _build_expression(
     size_dict=None,
     optimize="auto",
     strip_exponent=False,
+    check_zero=False,
     implementation=None,
     prefer_einsum=False,
     autojit=False,
@@ -647,6 +646,7 @@ def _build_expression(
             # can extract pure sliced contraction function, forget tree
             fn = tree.get_contractor(
                 strip_exponent=strip_exponent,
+                check_zero=check_zero,
                 autojit=autojit,
                 prefer_einsum=prefer_einsum,
                 implementation=implementation,
@@ -656,6 +656,7 @@ def _build_expression(
             fn = Variadic(
                 tree.contract,
                 strip_exponent=strip_exponent,
+                check_zero=check_zero,
                 autojit=autojit,
                 prefer_einsum=prefer_einsum,
                 implementation=implementation,
@@ -806,6 +807,7 @@ def array_contract(
     output=None,
     optimize="auto",
     strip_exponent=False,
+    check_zero=False,
     cache_expression=True,
     backend=None,
     **kwargs,
@@ -837,6 +839,10 @@ def array_contract(
         tensors to control numerical problems from leaving the range of the
         datatype. This method then returns the scaled 'mantissa' output array
         and the exponent separately.
+    check_zero : bool, optional
+        If ``True``, when ``strip_exponent=True``, explicitly check for
+        zero-valued intermediates that would otherwise produce ``nan``, and
+        return a zero mantissa with exponent ``0.0`` if one is found.
     cache_expression : bool, optional
         If ``True``, cache the expression used to contract the arrays. This
         negates the overhead of pathfinding and building the expression when
@@ -866,6 +872,7 @@ def array_contract(
         shapes=shapes,
         optimize=optimize,
         strip_exponent=strip_exponent,
+        check_zero=check_zero,
         cache=cache_expression,
         **kwargs,
     )

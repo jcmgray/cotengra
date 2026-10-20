@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.3 (unreleased)
+
+**Bug fixes**
+
+- `strip_exponent=True` with `check_zero=True` now returns an exactly zero result as a zero mantissa of the correct shape with exponent `0.0`, rather than a scalar `0.0` with exponent `-inf`, including for sliced contractions where zero slices no longer cause `nan` or underflow.
+- [`array_contract`](#array_contract) can now take `check_zero`.
+
+
 ## v0.8.2 (2026-06-22)
 
 **Enhancements**
