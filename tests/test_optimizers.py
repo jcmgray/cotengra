@@ -777,17 +777,17 @@ def test_reusable_disk_cache_unreadable_entry(tmp_path):
         parallel=False,
         directory=tmp_path,
     )
-    opt(inputs, output, size_dict) # make the cache first
+    opt(inputs, output, size_dict)  # make the cache first
     (fname,) = [p for p in tmp_path.rglob("*") if p.is_file()]
-    fname.write_bytes(b"") # corrupt the cache
+    fname.write_bytes(b"")  # corrupt the cache
 
     opt = ctg.ReusableHyperOptimizer(
         methods="greedy",
         max_repeats=2,
         parallel=False,
         directory=tmp_path,
-    ) # new optimizer without in-memory cache
+    )  # new optimizer without in-memory cache
     with pytest.warns(UserWarning):
-        path = opt(inputs, output, size_dict) # should warn and recompute
+        path = opt(inputs, output, size_dict)  # should warn and recompute
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-    assert tree.is_complete() # the recomputed path should work
+    assert tree.is_complete()  # the recomputed path should work

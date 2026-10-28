@@ -110,7 +110,7 @@ def test_concurrent_read_write(tmp_path):
         stop.set()
         for t in threads:
             t.join()
-    
+
     assert not write_errors
     assert not read_errors
     if sys.platform != "win32":  # Windows won't allow replacing open files

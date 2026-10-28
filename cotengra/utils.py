@@ -512,7 +512,9 @@ class DiskDict:
                 os.replace(tmp, fname)
                 tmp = None
             except OSError as e:
-                warnings.warn(f"cotengra: could not write cache entry {fname}: {e!r}")
+                warnings.warn(
+                    f"cotengra: could not write cache entry {fname}: {e!r}"
+                )
             finally:
                 # cleanup (best effort)
                 if tmp is not None:
