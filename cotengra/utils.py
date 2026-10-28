@@ -5,9 +5,12 @@ import functools
 import itertools
 import math
 import operator
+import os
 import pathlib
 import pickle
 import random
+import uuid
+import warnings
 from functools import lru_cache, partial, reduce
 from operator import or_
 
@@ -60,8 +63,6 @@ except ImportError:
 
 def deprecated(fn, old_name, new_name):
     def new_fn(*args, **kwargs):
-        import warnings
-
         warnings.warn(
             f"The {old_name} function is deprecated in favor of {new_name}",
             Warning,
@@ -428,11 +429,10 @@ class DiskDict:
     directory : str or pathlib.Path, optional
         The directory to store the files in. If None, the files will not
         be stored on disk and only kept in memory.
-    max_retries : int, optional
-        The maximum number of retries to read a file if it is not
-        completely written yet. Default is 3.
-    retry_delay : float, optional
-        The delay between retries in seconds. Default is 0.01.
+    max_retries : None, optional
+        Deprecated and ignored.
+    retry_delay : None, optional
+        Deprecated and ignored.
     """
 
     __slots__ = (
@@ -443,7 +443,14 @@ class DiskDict:
         "retry_delay",
     )
 
-    def __init__(self, directory=None, max_retries=3, retry_delay=0.01):
+    def __init__(self, directory=None, max_retries=None, retry_delay=None):
+        if (max_retries is not None) or (retry_delay is not None):
+            warnings.warn(
+                "DiskDict: `max_retries` and `retry_delay` are "
+                "deprecated and ignored.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._mem_cache = {}
         self._directory = directory
         if directory is not None:
@@ -451,8 +458,8 @@ class DiskDict:
             self._path.mkdir(parents=True, exist_ok=True)
         else:
             self._path = None
-        self.max_retries = int(max_retries)
-        self.retry_delay = float(retry_delay)
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
 
     def clear(self):
         """Clear the memory cache and delete all value files, but leave
@@ -473,6 +480,12 @@ class DiskDict:
                     p.rmdir()
             self._path.rmdir()
 
+    def _fname(self, k):
+        if not isinstance(k, tuple):
+            # treat all as nested key
+            k = (k,)
+        return self._path.joinpath(*k)
+
     def __contains__(self, k):
         if k in self._mem_cache:
             return True
@@ -480,24 +493,33 @@ class DiskDict:
         if self._directory is None:
             return False
 
-        if not isinstance(k, tuple):
-            k = (k,)
-
-        return self._path.joinpath(*k).exists()
+        return self._fname(k).exists()
 
     def __setitem__(self, k, v):
         self._mem_cache[k] = v
         if self._directory is not None:
-            if not isinstance(k, tuple):
-                # treat all as nested key
-                k = (k,)
-            fname = self._path.joinpath(*k)
-            if len(k) > 1:
-                # ensure subparent directories exist
+            fname = self._fname(k)
+            tmp = None
+            try:
+                # always try to create the directory just in case the cache dir
+                # itself is missing
                 fname.parent.mkdir(parents=True, exist_ok=True)
-            # write file!
-            with open(fname, "wb+") as f:
-                pickle.dump(v, f)
+                # write to a temp file within the same directory (so same fs)
+                # and atomically replace
+                tmp = fname.with_name(f".{fname.name}.{uuid.uuid4().hex}.tmp")
+                with open(tmp, "xb") as f:
+                    pickle.dump(v, f)
+                os.replace(tmp, fname)
+                tmp = None
+            except OSError as e:
+                warnings.warn(f"cotengra: could not write cache entry {fname}: {e!r}")
+            finally:
+                # cleanup (best effort)
+                if tmp is not None:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
 
     def __delitem__(self, k):
         found = False
@@ -509,11 +531,12 @@ class DiskDict:
 
         # possibly delete from disk
         if self._directory is not None:
-            if not isinstance(k, tuple):
-                k = (k,)
-            if self._path.joinpath(*k).exists():
-                self._path.joinpath(*k).unlink()
+            fname = self._fname(k)
+            try:
+                os.unlink(fname)
                 found = True
+            except FileNotFoundError:
+                pass
 
         if not found:
             raise KeyError(k)
@@ -521,34 +544,24 @@ class DiskDict:
     def __getitem__(self, k):
         try:
             return self._mem_cache[k]
-        except KeyError as e:
+        except KeyError:
             if self._directory is None:
                 # cache is in-memory only
-                raise e
-
-            if not isinstance(k, tuple):
-                # treat all as nested key
-                k = (k,)
-
-            fname = self._path.joinpath(*k)
-            if not fname.exists():
-                # file does not exist on disk
-                raise e
-
-            for _ in range(self.max_retries):
-                try:
-                    with open(fname, "rb") as f:
-                        self._mem_cache[k] = v = pickle.load(f)
-                        return v
-                except (EOFError, pickle.UnpicklingError) as e:
-                    # file was not written completely yet
-                    # e.g. by another process
-                    import time
-
-                    time.sleep(self.retry_delay)
-
-            # file exists but there is some other error after retrying
-            raise e
+                raise
+            fname = self._fname(k)
+            try:
+                with open(fname, "rb") as f:
+                    v = pickle.load(f)
+            except FileNotFoundError:
+                # cache entry doesn't exist
+                raise KeyError(k) from None
+            except Exception as e:
+                warnings.warn(
+                    f"cotengra: treating cache entry {fname} as missing: {e!r}"
+                )
+                raise KeyError(k) from e
+            self._mem_cache[k] = v
+            return v
 
     def get(self, k, default=None):
         try:
@@ -563,6 +576,8 @@ class DiskDict:
             disk_keys = []
             for p in self._path.rglob("*"):
                 if p.is_file():
+                    if p.name.startswith("."):
+                        continue
                     rel = p.relative_to(self._path)
                     if len(rel.parents) == 1:
                         # direct child of root path
@@ -573,11 +588,19 @@ class DiskDict:
 
     def values(self):
         for k in self.keys():
-            yield self[k]
+            try:
+                v = self[k]
+            except KeyError:
+                continue
+            yield v
 
     def items(self):
         for k in self.keys():
-            yield (k, self[k])
+            try:
+                v = self[k]
+            except KeyError:
+                continue
+            yield (k, v)
 
 
 def get_rng(seed=None):
