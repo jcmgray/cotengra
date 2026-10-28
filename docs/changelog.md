@@ -5,6 +5,7 @@
 **Bug fixes**
 
 - fix [`DiskDict`](#DiskDict): writes are now atomic with `os.replace`; reads now only try once and handle nonexistent or unreadable entries with the appropriate `KeyError` and/or warning ({issue}`89`). The `max_retries` and `retry_delay` arguments are deprecated and ignored.
+- [`ReusableOptimizer`](#reusable.ReusableOptimizer): fix crash (`KeyError`) caused by corrupt cache or concurrent cache changes during check-then-read operations ({issue}`89`). Now a single atomic read operation decides whether to recompute the entry.
 
 
 ## v0.8.3 (2026-10-20)

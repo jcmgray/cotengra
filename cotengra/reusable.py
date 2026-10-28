@@ -158,16 +158,20 @@ class ReusableOptimizer(PathOptimizer):
         )
         return hashlib.sha1(pickle.dumps(key)).hexdigest()
 
-    def hash_query(self, inputs, output, size_dict):
-        """Hash the contraction specification, returning this and whether the
-        contraction is already present as a tuple.
-        """
+    def _hash(self, inputs, output, size_dict):
         h = hash_contraction(inputs, output, size_dict, self._hash_method)
 
         if self.directory_split:
             # use first part of the hash (256 options) as sub directory
             h = (h[:2], h[2:])
 
+        return h
+
+    def hash_query(self, inputs, output, size_dict):
+        """Hash the contraction specification, returning this and whether the
+        contraction is already present as a tuple.
+        """
+        h = self._hash(inputs, output, size_dict)
         missing = h not in self._cache
         return h, missing
 
@@ -195,7 +199,9 @@ class ReusableOptimizer(PathOptimizer):
             path is better (the default). Note that the comparison of scores
             is based on default objective of the tree.
         """
-        h, missing = self.hash_query(tree.inputs, tree.output, tree.size_dict)
+        h = self._hash(tree.inputs, tree.output, tree.size_dict)
+        # one-shot read, None means missing or unreadable for any reason
+        old_con = self._cache.get(h)
 
         new_con = {
             "path": tree.get_path(),
@@ -203,12 +209,11 @@ class ReusableOptimizer(PathOptimizer):
             "sliced_inds": tuple(tree.sliced_inds),
         }
 
-        if missing:
+        if old_con is None:
             # write to the cache
             self._cache[h] = new_con
         elif overwrite:
             if overwrite == "improved":
-                old_con = self._cache[h]
                 if new_con["score"] < old_con["score"]:
                     # overwrite only if we have a better score
                     self._cache[h] = new_con
@@ -229,18 +234,19 @@ class ReusableOptimizer(PathOptimizer):
         }
 
     def _maybe_run_optimizer(self, inputs, output, size_dict):
-        h, missing = self.hash_query(inputs, output, size_dict)
+        h = self._hash(inputs, output, size_dict)
+        # one-shot read, None means missing or unreadable for any reason
+        old_con = self._cache.get(h)
 
-        should_run = missing or self.overwrite
+        should_run = (old_con is None) or self.overwrite
         if should_run:
             if self.cache_only:
                 raise KeyError("Contraction missing from cache.")
 
             con = self._run_optimizer(inputs, output, size_dict)
 
-            if (self.overwrite == "improved") and (not missing):
+            if (self.overwrite == "improved") and (old_con is not None):
                 # only overwrite if the new path is better
-                old_con = self._cache[h]
                 if con["score"] < old_con["score"]:
                     # replace the old path
                     self._cache[h] = con
@@ -253,8 +259,8 @@ class ReusableOptimizer(PathOptimizer):
                 # write to the cache
                 self._cache[h] = con
         else:
-            # just retrieve from the cache
-            con = self._cache[h]
+            # use the old path
+            con = old_con
 
         return should_run, con
 
