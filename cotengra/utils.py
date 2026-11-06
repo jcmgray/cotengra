@@ -429,28 +429,15 @@ class DiskDict:
     directory : str or pathlib.Path, optional
         The directory to store the files in. If None, the files will not
         be stored on disk and only kept in memory.
-    max_retries : None, optional
-        Deprecated and ignored.
-    retry_delay : None, optional
-        Deprecated and ignored.
     """
 
     __slots__ = (
         "_directory",
         "_mem_cache",
         "_path",
-        "max_retries",
-        "retry_delay",
     )
 
-    def __init__(self, directory=None, max_retries=None, retry_delay=None):
-        if (max_retries is not None) or (retry_delay is not None):
-            warnings.warn(
-                "DiskDict: `max_retries` and `retry_delay` are "
-                "deprecated and ignored.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+    def __init__(self, directory=None):
         self._mem_cache = {}
         self._directory = directory
         if directory is not None:
@@ -458,8 +445,6 @@ class DiskDict:
             self._path.mkdir(parents=True, exist_ok=True)
         else:
             self._path = None
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
 
     def clear(self):
         """Clear the memory cache and delete all value files, but leave
@@ -501,20 +486,16 @@ class DiskDict:
             fname = self._fname(k)
             tmp = None
             try:
-                # always try to create the directory just in case the cache dir
-                # itself is missing
+                # cache dir itself may have been removed
                 fname.parent.mkdir(parents=True, exist_ok=True)
-                # write to a temp file within the same directory (so same fs)
-                # and atomically replace
+                # temp file in same dir so os.replace is atomic
                 tmp = fname.with_name(f".{fname.name}.{uuid.uuid4().hex}.tmp")
                 with open(tmp, "xb") as f:
                     pickle.dump(v, f)
                 os.replace(tmp, fname)
                 tmp = None
             except OSError as e:
-                warnings.warn(
-                    f"cotengra: could not write cache entry {fname}: {e!r}"
-                )
+                warnings.warn(f"could not write cache entry {fname}: {e!r}")
             finally:
                 # cleanup (best effort)
                 if tmp is not None:
@@ -555,11 +536,10 @@ class DiskDict:
                 with open(fname, "rb") as f:
                     v = pickle.load(f)
             except FileNotFoundError:
-                # cache entry doesn't exist
                 raise KeyError(k) from None
             except Exception as e:
                 warnings.warn(
-                    f"cotengra: treating cache entry {fname} as missing: {e!r}"
+                    f"treating cache entry {fname} as missing: {e!r}"
                 )
                 raise KeyError(k) from e
             self._mem_cache[k] = v
