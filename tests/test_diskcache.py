@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -83,35 +84,36 @@ def test_concurrent_read_write(tmp_path):
     value = list(range(1000))
     DiskDict(tmp_path)["a"] = value
     stop = threading.Event()
-    write_errors = []
-    read_errors = []
 
     def write():
         d = DiskDict(tmp_path)
         while not stop.is_set():
-            try:
-                d["a"] = value
-            except Exception as e:
-                write_errors.append(e)
+            d["a"] = value
 
     def read():
+        misses = 0
         while not stop.is_set():
             try:
                 assert DiskDict(tmp_path)["a"] == value
-            except Exception as e:
-                read_errors.append(e)
+            except KeyError:
+                misses += 1
+        return misses
 
-    threads = [threading.Thread(target=f) for f in [write] * 4 + [read] * 4]
-    with warnings.catch_warnings(record=True) as caught_warnings:
+    with (
+        ThreadPoolExecutor(8) as pool,
+        warnings.catch_warnings(record=True) as caught_warnings,
+    ):
         warnings.simplefilter("always")
-        for t in threads:
-            t.start()
+        writes = [pool.submit(write) for _ in range(4)]
+        reads = [pool.submit(read) for _ in range(4)]
         time.sleep(0.5)
         stop.set()
-        for t in threads:
-            t.join()
+        # result() raises any error from the thread
+        for f in writes:
+            f.result()
+        misses = sum(f.result() for f in reads)
 
-    assert not write_errors
-    assert not read_errors
-    if sys.platform != "win32":  # Windows won't allow replacing open files
+    # windows can't replace open files or open files mid replace
+    if sys.platform != "win32":
+        assert misses == 0
         assert not caught_warnings
