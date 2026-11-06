@@ -771,23 +771,19 @@ def test_reusable_disk_cache_only_missing(tmp_path):
 
 def test_reusable_disk_cache_unreadable_entry(tmp_path):
     inputs, output, _, size_dict = ctg.utils.rand_equation(10, 3, seed=7)
-    opt = ctg.ReusableHyperOptimizer(
-        methods="greedy",
-        max_repeats=2,
-        parallel=False,
-        directory=tmp_path,
-    )
-    opt(inputs, output, size_dict)  # make the cache first
+    opts = {
+        "methods": "greedy",
+        "max_repeats": 2,
+        "parallel": False,
+        "directory": tmp_path,
+    }
+    ctg.ReusableHyperOptimizer(**opts)(inputs, output, size_dict)
     (fname,) = [p for p in tmp_path.rglob("*") if p.is_file()]
-    fname.write_bytes(b"")  # corrupt the cache
+    fname.write_bytes(b"")
 
-    opt = ctg.ReusableHyperOptimizer(
-        methods="greedy",
-        max_repeats=2,
-        parallel=False,
-        directory=tmp_path,
-    )  # new optimizer without in-memory cache
+    # new optimizer without in-memory cache
+    opt = ctg.ReusableHyperOptimizer(**opts)
     with pytest.warns(UserWarning):
-        path = opt(inputs, output, size_dict)  # should warn and recompute
+        path = opt(inputs, output, size_dict)
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
-    assert tree.is_complete()  # the recomputed path should work
+    assert tree.is_complete()

@@ -200,7 +200,7 @@ class ReusableOptimizer(PathOptimizer):
             is based on default objective of the tree.
         """
         h = self._hash(tree.inputs, tree.output, tree.size_dict)
-        # one-shot read, None means missing or unreadable for any reason
+        # single read, None if missing or unreadable
         old_con = self._cache.get(h)
 
         new_con = {
@@ -235,7 +235,7 @@ class ReusableOptimizer(PathOptimizer):
 
     def _maybe_run_optimizer(self, inputs, output, size_dict):
         h = self._hash(inputs, output, size_dict)
-        # one-shot read, None means missing or unreadable for any reason
+        # single read, None if missing or unreadable
         old_con = self._cache.get(h)
 
         should_run = (old_con is None) or self.overwrite
