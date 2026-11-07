@@ -76,6 +76,17 @@ class TestDiskDict:
         del d["b"]
         assert not (tmp_path / "b").exists()
 
+    def test_get_refresh(self, tmp_path):
+        d = DiskDict(tmp_path)
+        d["a"] = 1
+        DiskDict(tmp_path)["a"] = 2
+        assert d.get("a") == 1
+        assert d.get("a", refresh=True) == 2
+        assert d["a"] == 2
+        os.remove(tmp_path / "a")
+        assert d.get("a", refresh=True) == 2
+        assert d.get("b", refresh=True) is None
+
     def test_concurrent_read_write(self, tmp_path):
         value = list(range(1000))
         DiskDict(tmp_path)["a"] = value
