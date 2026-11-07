@@ -200,8 +200,8 @@ class ReusableOptimizer(PathOptimizer):
             is based on default objective of the tree.
         """
         h = self._hash(tree.inputs, tree.output, tree.size_dict)
-        # single read, None if missing or unreadable
-        old_con = self._cache.get(h)
+        # improved mode reads disk, another process may have a better path
+        old_con = self._cache.get(h, refresh=(overwrite == "improved"))
 
         new_con = {
             "path": tree.get_path(),
@@ -244,6 +244,10 @@ class ReusableOptimizer(PathOptimizer):
                 raise KeyError("Contraction missing from cache.")
 
             con = self._run_optimizer(inputs, output, size_dict)
+
+            if self.overwrite == "improved":
+                # another process may have written a better path meanwhile
+                old_con = self._cache.get(h, refresh=True)
 
             if (self.overwrite == "improved") and (old_con is not None):
                 # only overwrite if the new path is better

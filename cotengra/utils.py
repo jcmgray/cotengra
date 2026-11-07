@@ -524,6 +524,19 @@ class DiskDict:
         if not found:
             raise KeyError(k)
 
+    def _read(self, k):
+        fname = self._fname(k)
+        try:
+            with open(fname, "rb") as f:
+                v = pickle.load(f)
+        except FileNotFoundError:
+            raise KeyError(k) from None
+        except Exception as e:
+            warnings.warn(f"treating cache entry {fname} as missing: {e!r}")
+            raise KeyError(k) from e
+        self._mem_cache[k] = v
+        return v
+
     def __getitem__(self, k):
         try:
             return self._mem_cache[k]
@@ -531,21 +544,27 @@ class DiskDict:
             if self._directory is None:
                 # cache is in-memory only
                 raise
-            fname = self._fname(k)
-            try:
-                with open(fname, "rb") as f:
-                    v = pickle.load(f)
-            except FileNotFoundError:
-                raise KeyError(k) from None
-            except Exception as e:
-                warnings.warn(
-                    f"treating cache entry {fname} as missing: {e!r}"
-                )
-                raise KeyError(k) from e
-            self._mem_cache[k] = v
-            return v
+            return self._read(k)
 
-    def get(self, k, default=None):
+    def get(self, k, default=None, refresh=False):
+        """Get the value for key ``k``, or ``default`` if it is missing.
+
+        Parameters
+        ----------
+        k : hashable
+            The key to look up.
+        default : object, optional
+            The value to return if ``k`` is missing.
+        refresh : bool, optional
+            Whether to read the value from disk even if it is in memory,
+            for example to see a value written by another process. If the
+            disk read fails, fall back to the value in memory.
+        """
+        if refresh and (self._directory is not None):
+            try:
+                return self._read(k)
+            except KeyError:
+                return self._mem_cache.get(k, default)
         try:
             return self[k]
         except KeyError:
