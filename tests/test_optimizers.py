@@ -787,3 +787,33 @@ def test_reusable_disk_cache_unreadable_entry(tmp_path):
         path = opt(inputs, output, size_dict)
     tree = ctg.ContractionTree.from_path(inputs, output, size_dict, path=path)
     assert tree.is_complete()
+
+
+@pytest.mark.parametrize("via", ["call", "update_from_tree"])
+def test_reusable_improved_keeps_better_disk_entry(tmp_path, via):
+    inputs, output, _, size_dict = ctg.utils.rand_equation(10, 3, seed=7)
+    opts = {
+        "methods": "greedy",
+        "max_repeats": 2,
+        "parallel": False,
+        "directory": tmp_path,
+        "overwrite": "improved",
+    }
+    opt_a = ctg.ReusableHyperOptimizer(**opts)
+    opt_a(inputs, output, size_dict)
+    h = opt_a._hash(inputs, output, size_dict)
+    con = opt_a._cache[h]
+    # opt_a keeps a bad entry in memory, another process writes a better one
+    opt_a._cache[h] = {**con, "score": float("inf")}
+    opt_b = ctg.ReusableHyperOptimizer(**opts)
+    opt_b._cache[h] = {**con, "score": -1.0}
+
+    if via == "call":
+        opt_a(inputs, output, size_dict)
+    else:
+        tree = ctg.ContractionTree.from_path(
+            inputs, output, size_dict, path=con["path"]
+        )
+        opt_a.update_from_tree(tree)
+
+    assert ctg.utils.DiskDict(tmp_path)[h]["score"] == -1.0
