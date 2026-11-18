@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.8.4 (unreleased)
+## v0.8.4 (2026-11-18)
 
 **Bug fixes**
 
