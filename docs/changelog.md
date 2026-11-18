@@ -7,6 +7,7 @@
 - [`DiskDict`](#utils.DiskDict) can now be shared between processes safely: writes are atomic, and unreadable entries are treated as missing with a warning ({issue}`89`). The `max_retries` and `retry_delay` arguments have been removed.
 - [`ReusableOptimizer`](#reusable.ReusableOptimizer) no longer raises `KeyError` when its disk cache is corrupt or changed by another process, and instead recomputes the entry ({issue}`89`).
 - [`ReusableOptimizer`](#reusable.ReusableOptimizer) with `overwrite="improved"`, and `update_from_tree`, no longer replace a better path written to a shared disk cache by another process ({issue}`89`).
+- [`ReusableHyperCompressedOptimizer`](#ReusableHyperCompressedOptimizer) now returns cached trees with the correct `chi`, rather than falling back to the automatic default.
 
 
 ## v0.8.3 (2026-10-20)

@@ -325,6 +325,8 @@ class ContractionTree:
 
         # a default objective function useful for
         # further optimization and scoring
+        if objective is not None:
+            objective = get_score_fn(objective)
         self._default_objective = objective
 
     def set_state_from(self, other):

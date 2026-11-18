@@ -817,3 +817,23 @@ def test_reusable_improved_keeps_better_disk_entry(tmp_path, via):
         opt_a.update_from_tree(tree)
 
     assert ctg.utils.DiskDict(tmp_path)[h]["score"] == -1.0
+
+
+def test_reusable_compressed_reconstructed_tree_keeps_chi(tmp_path):
+    inputs, output, _, size_dict = ctg.utils.rand_equation(10, 3, seed=7)
+    opts = {
+        "chi": 32,
+        "methods": "greedy-compressed",
+        "max_repeats": 2,
+        "parallel": False,
+        "directory": tmp_path,
+    }
+    tree_a = ctg.ReusableHyperCompressedOptimizer(**opts).search(
+        inputs, output, size_dict
+    )
+    # new optimizer reconstructs the tree from the cached path
+    tree_b = ctg.ReusableHyperCompressedOptimizer(**opts).search(
+        inputs, output, size_dict
+    )
+    assert tree_a.get_default_chi() == tree_b.get_default_chi() == 32
+    assert tree_b.get_score() == pytest.approx(tree_a.get_score())
